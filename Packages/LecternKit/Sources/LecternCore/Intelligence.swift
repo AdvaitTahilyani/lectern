@@ -17,8 +17,12 @@ public enum BrainActivity: Sendable, Hashable {
 public enum BrainUpdate: Sendable, Hashable {
     /// Full current list of takeaways, chronological. The last one may be `isLive`.
     case takeaways([Takeaway])
-    /// Detected current slide (1-based), or nil if unknown.
+    /// Detected current slide (1-based), or nil if unknown. Automatic detection only ever moves
+    /// forward from the current slide.
     case currentSlide(Int?)
+    /// The lecture seems to have gone back to an earlier slide. The app offers a "Jump back?"
+    /// suggestion; it must never switch on its own. `nil` withdraws a previous suggestion.
+    case backtrackSuggestion(Int?)
     /// A quiz question is ready to be offered to the user (the app shows a gentle ping).
     case quizReady(QuizQuestion)
     case activity(BrainActivity)
@@ -92,6 +96,10 @@ public protocol LectureIntelligence: Actor {
     /// Speaker labels arrived for earlier segments (lecturer vs. audience); used to weight
     /// student questions differently in summaries.
     func applySpeakers(_ labels: [UUID: SpeakerRole])
+
+    /// The user changed the current slide manually (clicked a thumbnail, accepted a backtrack
+    /// suggestion). Tracking continues forward from here.
+    func setCurrentSlide(_ page: Int)
 }
 
 // MARK: - "While you were away"
@@ -131,4 +139,6 @@ public extension LectureIntelligence {
     func waitUntilIdle() async {}
 
     func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
+
+    func setCurrentSlide(_ page: Int) {}
 }

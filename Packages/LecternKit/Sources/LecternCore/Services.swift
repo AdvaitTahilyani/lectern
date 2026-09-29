@@ -26,7 +26,17 @@ public protocol SlideSearching: Sendable {
     func search(_ query: String, limit: Int) -> [SlideHit]
     /// Best guess of which slide the given recent transcript text is about, or nil if unclear.
     /// `near` is the previous current slide (lectures mostly move forward by 0–2 pages).
+    /// **Never returns a page before `near`**: automatic tracking only moves forward.
     func likelySlide(forTranscript text: String, near: Int?) -> Int?
+
+    /// An earlier slide the lecture appears to have returned to, backed by strong, sustained
+    /// evidence — surfaced to the user as a suggestion only, never applied automatically.
+    /// Returns nil when there's no convincing backward candidate.
+    func backtrackCandidate(forTranscript text: String, current: Int) -> Int?
+}
+
+public extension SlideSearching {
+    func backtrackCandidate(forTranscript text: String, current: Int) -> Int? { nil }
 }
 
 // MARK: - Persistence contract (implemented in LecternStore)
