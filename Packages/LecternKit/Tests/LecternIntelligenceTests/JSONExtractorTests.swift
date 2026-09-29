@@ -174,10 +174,39 @@ import Testing
         #expect(r.distractors == ["b", "c", "d"])
     }
 
+    static let allSchemas = [SegmentationReply.schema, DetailReply.schema, RecapReply.schema,
+                             MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema]
+
     @Test func schemasAreValidJSON() throws {
-        for schema in [SegmentationReply.schema, DetailReply.schema, MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema] {
+        for schema in Self.allSchemas {
             let object = try JSONSerialization.jsonObject(with: Data(schema.utf8)) as? [String: Any]
             #expect(object?["type"] as? String == "object")
+        }
+    }
+
+    /// OpenAI `strict: true` and Anthropic structured outputs reject a schema unless every object
+    /// forbids extra keys and requires all of its properties, and both only support a subset of
+    /// keywords. Ollama accepts anything, so only this test catches a violation before a paid call.
+    @Test func schemasSatisfyStrictStructuredOutputs() throws {
+        let unsupported: Set<String> = ["minItems", "maxItems", "minLength", "maxLength", "pattern", "format",
+                                        "minimum", "maximum", "oneOf", "allOf", "not", "if", "then", "else"]
+        func check(_ node: Any, path: String) {
+            if let object = node as? [String: Any] {
+                for key in object.keys where unsupported.contains(key) {
+                    Issue.record("\(path): unsupported keyword \"\(key)\"")
+                }
+                if object["type"] as? String == "object" {
+                    let properties = object["properties"] as? [String: Any] ?? [:]
+                    #expect(object["additionalProperties"] as? Bool == false, "\(path) must set additionalProperties:false")
+                    #expect(Set(object["required"] as? [String] ?? []) == Set(properties.keys), "\(path) must require every property")
+                }
+                for (key, value) in object { check(value, path: "\(path)/\(key)") }
+            } else if let array = node as? [Any] {
+                for (i, value) in array.enumerated() { check(value, path: "\(path)[\(i)]") }
+            }
+        }
+        for schema in Self.allSchemas {
+            check(try JSONSerialization.jsonObject(with: Data(schema.utf8)), path: "#")
         }
     }
 

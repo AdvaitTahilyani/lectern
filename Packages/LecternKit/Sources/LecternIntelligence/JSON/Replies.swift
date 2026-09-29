@@ -58,7 +58,7 @@ struct SegmentationReply: ModelReply, Equatable {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "new_lines_about":{"type":"string"},\
     "new_lines_kind":{"type":"string","enum":["same_concept","new_concept","admin_or_chat"]},\
     "action":{"type":"string","enum":["continue","new_topic"]},\
@@ -98,9 +98,9 @@ struct DetailReply: ModelReply {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "bullets":{"type":"array","items":{"type":"string"}},\
-    "key_terms":{"type":"array","items":{"type":"object","properties":{\
+    "key_terms":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{\
     "term":{"type":"string"},"definition":{"type":"string"}},"required":["term","definition"]}},\
     "example":{"type":"string"}},\
     "required":["bullets","key_terms","example"]}
@@ -159,7 +159,7 @@ struct RecapReply: ModelReply {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "headline":{"type":"string"},\
     "bullets":{"type":"array","items":{"type":"string"}},\
     "flagged":{"type":"array","items":{"type":"string"}},\
@@ -193,11 +193,11 @@ struct MultipleChoiceReply: ModelReply {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "concept":{"type":"string"},\
     "question":{"type":"string"},\
     "correct_answer":{"type":"string"},\
-    "distractors":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":3},\
+    "distractors":{"type":"array","items":{"type":"string"}},\
     "explanation":{"type":"string"},\
     "slides":{"type":"array","items":{"type":"integer"}}},\
     "required":["concept","question","correct_answer","distractors","explanation","slides"]}
@@ -222,7 +222,7 @@ struct ShortAnswerReply: ModelReply {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "concept":{"type":"string"},\
     "question":{"type":"string"},\
     "reference_answer":{"type":"string"},\
@@ -244,7 +244,7 @@ struct GradeReply: ModelReply {
     }
 
     static let schema = """
-    {"type":"object","properties":{\
+    {"type":"object","additionalProperties":false,"properties":{\
     "correct":{"type":"boolean"},\
     "feedback":{"type":"string"}},\
     "required":["correct","feedback"]}
