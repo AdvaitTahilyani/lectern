@@ -17,7 +17,7 @@ import Testing
     }
 
     private func body(_ provider: OpenAICompatibleProvider, _ request: LLMRequest, stream: Bool = false) throws -> [String: Any] {
-        try provider.makeBody(request, stream: stream)
+        try wireJSON(provider.makeBody(request, stream: stream))
     }
 
     // MARK: Request bodies

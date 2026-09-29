@@ -24,7 +24,7 @@ extension URLRequest {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
         if let body {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+            request.httpBody = VerbatimJSON.splice(into: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]))
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }

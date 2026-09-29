@@ -11,7 +11,7 @@ import Testing
     }
 
     private func body(_ model: String, _ request: LLMRequest = simpleRequest, stream: Bool = false) throws -> [String: Any] {
-        try provider(StubServer(), model: model).makeBody(request, stream: stream)
+        try wireJSON(provider(StubServer(), model: model).makeBody(request, stream: stream))
     }
 
     private func withReasoning(_ level: ReasoningEffort) -> LLMRequest {

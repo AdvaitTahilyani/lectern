@@ -202,7 +202,7 @@ public struct OpenAICompatibleProvider: LLMProvider {
                 // LM Studio rejects json_object.
                 body["response_format"] = [
                     "type": "json_schema",
-                    "json_schema": ["name": "response", "schema": schema ?? ["type": "object"]] as [String: Any],
+                    "json_schema": ["name": "response", "schema": schema ?? VerbatimJSON.placeholder(for: #"{"type":"object"}"#)] as [String: Any],
                 ] as [String: Any]
             }
         }
