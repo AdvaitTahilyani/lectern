@@ -1,0 +1,73 @@
+import Foundation
+import LecternCore
+
+/// Sampling settings for one kind of call. Values follow docs/research/local-llm.md §5 (Gemma 4
+/// 26B-A4B, thinking off for all live calls; grading compares against a stored reference answer, so
+/// it doesn't need thinking and stays fast enough for the quiz card).
+struct GenerationProfile: Sendable, Hashable {
+    var maxTokens: Int
+    var temperature: Double
+    var reasoning: ReasoningEffort = .off
+
+    static let segmentation = GenerationProfile(maxTokens: 320, temperature: 0.3)
+    static let detail = GenerationProfile(maxTokens: 700, temperature: 0.5)
+    static let recap = GenerationProfile(maxTokens: 350, temperature: 0.3)
+    static let quizQuestion = GenerationProfile(maxTokens: 450, temperature: 0.7)
+    static let feedback = GenerationProfile(maxTokens: 200, temperature: 0.3)
+    static let grading = GenerationProfile(maxTokens: 300, temperature: 0.2)
+    static let answer = GenerationProfile(maxTokens: 800, temperature: 0.5)
+}
+
+/// A reply that parsed but doesn't make sense (e.g. an empty summary). `reason` is fed back to the
+/// model in the repair turn.
+struct ReplyRejected: Error, Sendable {
+    var reason: String
+}
+
+enum StructuredGeneration {
+    /// Calls `provider` for a JSON reply of type `R`, extracts and decodes it tolerantly, then runs
+    /// `validate`. On a parse or validation failure it retries once with a short repair turn that
+    /// keeps the original prompt (so a prefix cache still hits). Provider errors are rethrown as is.
+    static func generate<R: ModelReply, Output>(
+        _ type: R.Type,
+        provider: any LLMProvider,
+        messages: [LLMMessage],
+        profile: GenerationProfile,
+        validate: (R) throws -> Output
+    ) async throws -> Output {
+        let first = try await complete(provider, messages, profile, schema: R.schema)
+        let failure: String
+        do {
+            return try parse(R.self, first, validate)
+        } catch let rejected as ReplyRejected {
+            failure = rejected.reason
+        } catch {
+            failure = "It was not valid JSON."
+        }
+
+        let repair = messages + [.assistant(first), .user(Prompts.repair(shape: R.shape, problem: failure))]
+        let second = try await complete(provider, repair, profile, schema: R.schema)
+        do {
+            return try parse(R.self, second, validate)
+        } catch let rejected as ReplyRejected {
+            throw BrainError.unusableReply(rejected.reason)
+        } catch {
+            throw BrainError.unusableReply(error.localizedDescription)
+        }
+    }
+
+    private static func parse<R: ModelReply, Output>(_ type: R.Type, _ text: String, _ validate: (R) throws -> Output) throws -> Output {
+        try validate(try JSONExtractor.decode(R.self, from: text))
+    }
+
+    private static func complete(_ provider: any LLMProvider, _ messages: [LLMMessage], _ profile: GenerationProfile, schema: String) async throws -> String {
+        let request = LLMRequest(
+            messages: messages,
+            maxTokens: profile.maxTokens,
+            temperature: profile.temperature,
+            responseFormat: .json(schema: schema),
+            reasoning: profile.reasoning
+        )
+        return try await provider.complete(request).text
+    }
+}
