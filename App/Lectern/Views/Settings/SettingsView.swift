@@ -1,0 +1,379 @@
+import SwiftUI
+import LecternCore
+
+/// Settings window (DESIGN.md §4.10): General · Transcription · Models · Quizzes · Focus.
+struct SettingsView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        @Bindable var app = app
+        let model = app.settingsModel
+        TabView(selection: $app.settingsTab) {
+            Tab("General", systemImage: "gearshape", value: "general") { GeneralSettings(model: model) }
+            Tab("Transcription", systemImage: "waveform", value: "transcription") { TranscriptionSettings(model: model) }
+            Tab("Models", systemImage: "cpu", value: "models") { ModelsSettings(model: model) }
+            Tab("Quizzes", systemImage: "questionmark.circle", value: "quizzes") { QuizSettingsView(model: model) }
+            Tab("Focus", systemImage: "rectangle.inset.topright.filled", value: "focus") { FocusSettings(model: model) }
+        }
+        .frame(width: DS.Layout.settingsWidth)
+    }
+}
+
+// MARK: - General
+
+struct GeneralSettings: View {
+    var model: SettingsModel
+    var body: some View {
+        Form {
+            Section("Appearance") {
+                Picker("Appearance", selection: Binding(get: { model.preferences.appearance }, set: { v in model.updatePreferences { $0.appearance = v } })) {
+                    Text("System").tag(UIPreferences.Appearance.system)
+                    Text("Light").tag(UIPreferences.Appearance.light)
+                    Text("Dark").tag(UIPreferences.Appearance.dark)
+                }
+                .pickerStyle(.segmented)
+                Toggle("Show menu bar status while recording", isOn: Binding(get: { model.preferences.showMenuBarWhileRecording }, set: { v in model.updatePreferences { $0.showMenuBarWhileRecording = v } }))
+            }
+            Section("Storage") {
+                LabeledContent("Location") {
+                    HStack {
+                        Text(model.storageLocation.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([model.storageLocation]) }.controlSize(.small)
+                    }
+                }
+                LabeledContent("Used", value: model.storageSummary)
+                Toggle("Keep audio recordings", isOn: Binding(get: { model.preferences.keepAudioRecordings }, set: { v in model.updatePreferences { $0.keepAudioRecordings = v } }))
+            }
+            Section("While you were away") {
+                Toggle("Catch me up when I come back", isOn: Binding(get: { model.preferences.showRecapWhenBack }, set: { v in model.updatePreferences { $0.showRecapWhenBack = v } }))
+                Picker("After being away for", selection: Binding(get: { model.preferences.awayThresholdSeconds }, set: { v in model.updatePreferences { $0.awayThresholdSeconds = v } })) {
+                    Text("30 seconds").tag(30.0)
+                    Text("1½ minutes").tag(90.0)
+                    Text("3 minutes").tag(180.0)
+                    Text("5 minutes").tag(300.0)
+                }
+                .disabled(!model.preferences.showRecapWhenBack)
+            }
+            Section("Privacy") {
+                Label {
+                    Text("With on-device models selected, audio, slides and transcripts never leave this Mac. Cloud providers receive transcript excerpts and slide text for the roles you assign them.")
+                        .font(DS.Typo.footnote).foregroundStyle(.secondary)
+                } icon: { Image(systemName: "lock.fill") }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Transcription
+
+struct TranscriptionSettings: View {
+    @Bindable var model: SettingsModel
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Form {
+            Section("Engine") {
+                Picker("Engine", selection: Binding(get: { model.settings.transcriptionEngine }, set: { model.setEngine($0) })) {
+                    VStack(alignment: .leading) {
+                        Text("Parakeet — on-device, Neural Engine")
+                        Text("Best accuracy and custom vocabulary. 600 MB download.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    }.tag(TranscriptionEngineID.parakeet)
+                    VStack(alignment: .leading) {
+                        Text("Apple Speech — on-device fallback")
+                        Text("No download; tuned for lectures and meetings. No custom vocabulary.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    }.tag(TranscriptionEngineID.apple)
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                LabeledContent("Status") {
+                    HStack(spacing: DS.Space.s) {
+                        let state = model.modelState(TranscriptionEngineID.parakeet.rawValue)
+                        if model.settings.transcriptionEngine == .apple || state.isInstalled {
+                            Circle().fill(DS.Colors.correct).frame(width: 8, height: 8)
+                            Text(model.settings.transcriptionEngine == .apple ? "Ready · system model" : "Ready · 600 MB")
+                        } else if let p = state.progress {
+                            ProgressView(value: p).frame(width: 80)
+                            Text("Downloading \(Int(p * 100))%").contentTransition(.numericText())
+                        } else {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DS.Colors.warning)
+                            Text("Not downloaded")
+                            Button("Download") { model.download(TranscriptionEngineID.parakeet.rawValue) }.controlSize(.small)
+                        }
+                    }
+                }
+            }
+            Section("Microphone") {
+                LabeledContent("Input") {
+                    HStack(spacing: DS.Space.m) {
+                        Picker("Input", selection: Binding(get: { model.settings.inputDeviceID ?? model.inputDevices.first?.id ?? "" }, set: { model.setInputDevice($0) })) {
+                            ForEach(model.inputDevices) { d in Text(d.name).tag(d.id) }
+                        }
+                        .labelsHidden()
+                        LevelMeter(level: model.level, peak: model.peak, width: 120)
+                    }
+                }
+                Toggle("Voice isolation", isOn: Binding(get: { model.preferences.voiceIsolation }, set: { v in model.updatePreferences { $0.voiceIsolation = v } }))
+            }
+            Section {
+                List(selection: $model.selectedVocabulary) {
+                    ForEach(model.settings.vocabulary, id: \.self) { term in Text(term).tag(term) }
+                        .onDelete { model.removeVocabulary(at: $0) }
+                }
+                .frame(minHeight: 120)
+                .onDeleteCommand { model.removeSelectedVocabulary() }
+                HStack(spacing: DS.Space.s) {
+                    TextField("Add a term", text: $model.newVocabularyTerm).textFieldStyle(.roundedBorder).onSubmit { model.addVocabulary() }
+                    Button { model.addVocabulary() } label: { Image(systemName: "plus") }.disabled(model.newVocabularyTerm.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button { model.removeSelectedVocabulary() } label: { Image(systemName: "minus") }.disabled(model.selectedVocabulary == nil)
+                    Spacer()
+                    Button("Import from slide decks…") { model.importVocabularyFromDecks() }
+                }
+                Text("Words and names the transcriber should recognize.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+            } header: {
+                Text("Custom vocabulary")
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { model.startLevel() }
+        .onDisappear { model.stopLevel() }
+    }
+}
+
+// MARK: - Models
+
+struct ModelsSettings: View {
+    @Bindable var model: SettingsModel
+    @State private var openGroups: Set<ProviderKind> = []
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(LLMRole.allCases) { role in roleRow(role) }
+                Text("Each role can use a different provider. On-device keeps everything private.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+            } header: { Text("Roles") }
+            Section("Providers") {
+                DisclosureGroup(isExpanded: binding(.onDevice)) { onDeviceGroup } label: { Text("On-device (MLX)") }
+                DisclosureGroup(isExpanded: binding(.localServer)) { localServerGroup } label: { Text("Local server (Ollama / LM Studio)") }
+                DisclosureGroup(isExpanded: binding(.openAI)) { cloudGroup(.openAI) } label: { Text("OpenAI") }
+                DisclosureGroup(isExpanded: binding(.anthropic)) { cloudGroup(.anthropic) } label: { Text("Anthropic") }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { openGroups = Set(model.settings.providers.values.map(\.kind)) }
+    }
+
+    private func binding(_ kind: ProviderKind) -> Binding<Bool> {
+        Binding(get: { openGroups.contains(kind) }, set: { if $0 { openGroups.insert(kind) } else { openGroups.remove(kind) } })
+    }
+
+    private func roleRow(_ role: LLMRole) -> some View {
+        let config = model.settings.provider(for: role)
+        return LabeledContent(role.displayName) {
+            HStack(spacing: DS.Space.s) {
+                Picker("Provider", selection: Binding(get: { config.kind }, set: { model.setProvider($0, for: role) })) {
+                    ForEach(ProviderKind.allCases) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden().frame(width: 150)
+                Picker("Model", selection: Binding(get: { config.model }, set: { model.setModel($0, for: role) })) {
+                    ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
+                    if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
+                }
+                .labelsHidden().frame(width: 190)
+                roleStatus(role, config: config)
+            }
+        }
+    }
+
+    @ViewBuilder private func roleStatus(_ role: LLMRole, config: ProviderConfig) -> some View {
+        if model.roleNeedsDownload(role) {
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DS.Colors.warning)
+                Text("Not downloaded").font(DS.Typo.footnote)
+                Button("Download") { model.download(config.model); openGroups.insert(.onDevice) }.buttonStyle(.link).font(DS.Typo.footnote)
+            }
+        } else if config.kind.isCloud {
+            HStack(spacing: DS.Space.xs) {
+                Circle().fill(model.isKeyStored(config.kind) ? DS.Colors.correct : DS.Colors.warning).frame(width: 8, height: 8)
+                Text(model.isKeyStored(config.kind) ? "Key OK" : "No key").font(DS.Typo.footnote)
+            }
+        } else {
+            HStack(spacing: DS.Space.xs) {
+                Circle().fill(DS.Colors.correct).frame(width: 8, height: 8)
+                Text("Ready").font(DS.Typo.footnote)
+            }
+        }
+    }
+
+    private func displayName(_ id: String, kind: ProviderKind) -> String {
+        kind == .onDevice ? (model.catalog.first { $0.id == id }?.displayName ?? id) : id
+    }
+
+    private var onDeviceGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            ForEach(model.catalog) { info in downloadRow(info) }
+            Text("Models live in Storage › Location. \(ByteCountFormatter.string(fromByteCount: model.freeSpace, countStyle: .file)) free.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, DS.Space.xs)
+    }
+
+    private func downloadRow(_ info: OnDeviceModelInfo) -> some View {
+        let state = model.modelState(info.id)
+        return HStack(spacing: DS.Space.m) {
+            Text(info.displayName).frame(width: 200, alignment: .leading).lineLimit(1)
+            Text(ByteCountFormatter.string(fromByteCount: info.sizeBytes, countStyle: .file)).font(DS.Typo.mono).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+            switch state {
+            case .installed:
+                Circle().fill(DS.Colors.correct).frame(width: 8, height: 8)
+                Text("Installed").font(DS.Typo.footnote)
+                Spacer()
+                Button("Remove") { model.remove(info.id) }.controlSize(.small)
+            case .downloading(let p, let rate):
+                Image(systemName: "arrow.down.circle").foregroundStyle(DS.Colors.accent)
+                Text("\(Int(p * 100))%").font(DS.Typo.mono).contentTransition(.numericText()).frame(width: 36)
+                ProgressView(value: p).frame(maxWidth: 120)
+                if let rate { Text("\(ByteCountFormatter.string(fromByteCount: Int64(rate), countStyle: .file))/s").font(DS.Typo.footnote).foregroundStyle(.secondary) }
+                Spacer()
+                Button("Pause") { model.pause(info.id) }.controlSize(.small)
+            case .paused(let p):
+                Image(systemName: "pause.circle").foregroundStyle(.secondary)
+                Text("\(Int(p * 100))%").font(DS.Typo.mono).frame(width: 36)
+                ProgressView(value: p).frame(maxWidth: 120)
+                Spacer()
+                Button("Resume") { model.resume(info.id) }.controlSize(.small)
+            case .failed(let reason):
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(DS.Colors.warning)
+                Text(reason).font(DS.Typo.footnote).lineLimit(1)
+                Spacer()
+                Button("Retry") { model.download(info.id) }.controlSize(.small)
+            case .notInstalled:
+                Spacer()
+                Button("Download") { model.download(info.id) }.controlSize(.small)
+            }
+        }
+        .frame(minHeight: 24)
+    }
+
+    private var localServerGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            LabeledContent("URL") {
+                HStack {
+                    TextField("http://localhost:11434/v1", text: $model.localServerURL).textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
+                    testButton(.localServer)
+                    testStatus(.localServer)
+                }
+            }
+            LabeledContent("Model") {
+                TextField("qwen3:8b", text: $model.localServerModel).textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
+            }
+        }
+        .padding(.vertical, DS.Space.xs)
+    }
+
+    private func cloudGroup(_ kind: ProviderKind) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            LabeledContent("API key") {
+                HStack {
+                    SecureField(model.isKeyStored(kind) ? "••••••••••••••••••••" : "Paste your key", text: Binding(get: { model.keyDraft(kind) }, set: { model.setKeyDraft($0, for: kind) }))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { model.commitKey(kind) }
+                    testButton(kind)
+                    testStatus(kind)
+                }
+            }
+            if model.isKeyStored(kind) {
+                Label("Stored in Keychain", systemImage: "key.fill").font(DS.Typo.footnote).foregroundStyle(.secondary)
+            }
+            LabeledContent("Model") {
+                Picker("Model", selection: Binding(get: { model.settings.providers.values.first { $0.kind == kind }?.model ?? model.defaultModel(for: kind) }, set: { m in
+                    for role in LLMRole.allCases where model.settings.provider(for: role).kind == kind { model.setModel(m, for: role) }
+                })) {
+                    ForEach(model.models(for: kind), id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden().frame(width: 220)
+            }
+        }
+        .padding(.vertical, DS.Space.xs)
+    }
+
+    private func testButton(_ kind: ProviderKind) -> some View {
+        Button("Test") { model.test(kind) }.controlSize(.small).disabled(model.testState(kind) == .testing)
+    }
+
+    @ViewBuilder private func testStatus(_ kind: ProviderKind) -> some View {
+        switch model.testState(kind) {
+        case .idle: EmptyView()
+        case .testing: ProgressView().controlSize(.small)
+        case .ok(let ms, let detail):
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Colors.correct)
+                Text("OK · \(ms) ms\(detail.map { " · \($0)" } ?? "")").font(DS.Typo.footnote).lineLimit(1)
+            }
+        case .failed(let message):
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(DS.Colors.review)
+                Text(message).font(DS.Typo.footnote).lineLimit(1)
+            }
+        }
+    }
+}
+
+// MARK: - Quizzes
+
+struct QuizSettingsView: View {
+    var model: SettingsModel
+    var body: some View {
+        Form {
+            Section("Timing") {
+                Picker("Ask me a question every", selection: Binding(get: { model.settings.quiz.enabled ? model.settings.quiz.intervalMinutes : 0 }, set: { v in model.updateQuiz { $0.enabled = v > 0; if v > 0 { $0.intervalMinutes = v } } })) {
+                    Text("5 min").tag(5.0); Text("10 min").tag(10.0); Text("15 min").tag(15.0); Text("20 min").tag(20.0); Text("Off").tag(0.0)
+                }
+                Picker("Time to answer", selection: Binding(get: { model.preferences.quizTimeToAnswer }, set: { v in model.updatePreferences { $0.quizTimeToAnswer = v } })) {
+                    Text("45 s").tag(45.0); Text("90 s").tag(90.0); Text("2 min").tag(120.0)
+                }
+                Picker("Style", selection: Binding(get: { model.preferences.quizStyle }, set: { v in model.updatePreferences { $0.quizStyle = v } })) {
+                    Text("Card").tag(UIPreferences.QuizStyle.card)
+                    Text("Toolbar badge only").tag(UIPreferences.QuizStyle.badge)
+                }
+                .pickerStyle(.radioGroup)
+            }
+            Section("Questions") {
+                Toggle("Multiple choice", isOn: Binding(get: { model.settings.quiz.allowMultipleChoice }, set: { v in model.updateQuiz { $0.allowMultipleChoice = v } }))
+                Toggle("Short answer", isOn: Binding(get: { model.settings.quiz.allowShortAnswer }, set: { v in model.updateQuiz { $0.allowShortAnswer = v } }))
+                Picker("Difficulty", selection: Binding(get: { model.settings.quiz.difficulty }, set: { v in model.updateQuiz { $0.difficulty = v } })) {
+                    Text("Easier").tag(QuizSettings.Difficulty.gentle)
+                    Text("Balanced").tag(QuizSettings.Difficulty.standard)
+                    Text("Harder").tag(QuizSettings.Difficulty.challenging)
+                }
+                .pickerStyle(.segmented)
+                Toggle("Follow up when I get one wrong", isOn: Binding(get: { model.preferences.followUpWhenWrong }, set: { v in model.updatePreferences { $0.followUpWhenWrong = v } }))
+                Toggle("Show streaks", isOn: Binding(get: { model.preferences.showStreaks }, set: { v in model.updatePreferences { $0.showStreaks = v } }))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Focus
+
+struct FocusSettings: View {
+    var model: SettingsModel
+    var body: some View {
+        Form {
+            Section("Focus panel") {
+                Toggle("Show on every screen (all Spaces)", isOn: Binding(get: { model.preferences.focusPanelAllSpaces }, set: { v in model.updatePreferences { $0.focusPanelAllSpaces = v } }))
+                Toggle("Dim when idle", isOn: Binding(get: { model.preferences.focusPanelDimWhenIdle }, set: { v in model.updatePreferences { $0.focusPanelDimWhenIdle = v } }))
+                LabeledContent("Shortcut") {
+                    HStack(spacing: DS.Space.s) {
+                        Text("⌘⇧F").font(DS.Typo.mono).padding(.horizontal, DS.Space.s).padding(.vertical, DS.Space.xxs).background(.quaternary, in: RoundedRectangle(cornerRadius: DS.Radius.chip))
+                        Text("Works while Lectern is frontmost; a global hotkey arrives in a later version.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("Accessibility") {
+                Toggle("Announce new takeaways with VoiceOver", isOn: Binding(get: { model.preferences.announceNewTakeaways }, set: { v in model.updatePreferences { $0.announceNewTakeaways = v } }))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}

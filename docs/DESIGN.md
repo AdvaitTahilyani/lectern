@@ -794,6 +794,75 @@ Step 1 — Welcome                    Step 2 — Microphone               Step 3
 - Step 4: key fields validate on Test only. Done closes onboarding and opens the main window at the empty Library.
 - Onboarding is re-runnable from Help › "Welcome to Lectern".
 
+### 4.12 "While you were away" (recap card)
+
+Lectern notices when it stops being looked at during a live session: the app resigns active or the main window is occluded/not key for ≥ 90 s (Settings › General › "After being away for": 30 s / 1½ / 3 / 5 min; the feature can be turned off). When the user comes back, a **glass recap card** appears at the top of the Takeaways column, inside the normal scroll content (never a modal, never focus-stealing).
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║ ◷ WHILE YOU WERE AWAY                Away 7 min · 14:02–21:10  × ║   ← caption header, mono range, close
+║ FIRST sets → the LL(1) condition                                 ║   ← headline
+║ • FIRST(α) is what a string derived from α can start with …      ║   ← 2–4 bullets, subheadline secondary
+║ • …                                                              ║
+║ ⚑ The LL(1) condition will be on the midterm                     ║   ← flagged items: yellow flag + 12% yellow chip
+║ <Slides 7–12>                    Show in transcript   Dismiss    ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+- Data: `LectureIntelligence.recap(from:to:)`. While loading, the card shows a redacted 3-line placeholder with a shimmer (static under Reduce Motion); it is cancelled and removed if the user leaves again before it finishes. Failure shows one line of copy and the close button — never a retry loop.
+- Entry `.move(edge: .top) + opacity`, `DS.Motion.float`. "Show in transcript" seeks the transcript to the start of the window; slide chips highlight the slides. Dismiss is explicit; the card never auto-hides while the user is present.
+- Debug › "Simulate Being Away (3 min)" exercises it in demo mode.
+
+### 4.13 Import a recording
+
+**Entry points:** Library toolbar `New Lecture ▾ › Import Recording…` (`⌘⇧I`), File menu, or dropping an audio/video file on the Library. A 560-pt sheet:
+
+```
+Import Recording
+┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+│   ♒ Drop an audio or video file                     │
+│   Choose… · From MediaSpace…                        │
+└ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+   after a source is found:
+│ ▶ Found: CS 421 · Lecture 8 — Parsing II   [Change] │
+│ (●) Use MediaSpace captions (faster)                │
+│ ( ) Transcribe on-device (more accurate)            │
+┌ Course [CS 421 ▾]  Title [Parsing II]  Slides [Choose Slide Deck…] Optional ┐
+                                     [Cancel] [Import ●prominent]
+```
+
+- "From MediaSpace…" opens an 860×620 sheet with the embedded browser (`MediaSpaceBrowserView`); the user signs in and opens a lecture; the sheet closes itself with "Found: <title>".
+- Importing sessions appear in the Library immediately as an **ImportProgressCard**: thumbnail slot with the source glyph, title, "Importing", a thin accent progress bar, a staged row `✓ Downloading → ◌ Transcribing → ○ Summarizing` with the current stage's percentage in `mono`, and a `Cancel` link. Failure: `⚠` + first line of the error + Dismiss. When finished the card becomes a normal lecture card and the lecture opens in Review.
+- Contracts: `RecordingImporting` / `ImportStage`; the session carries `source` (`.audioFile` / `.mediaSpace(usedCaptions:)`).
+
+### 4.14 Course-wide Ask
+
+A course knows all of its lectures. **Where:** sidebar course context menu "Ask CS 421…", the Library toolbar `sparkle.magnifyingglass`, `⌘⌥K`, and a **scope toggle** at the top of the session Ask tab: `This lecture · Whole course`.
+
+- In the Library it is a 340-pt inspector: header "Ask CS 421" + lecture count, thread, glass composer, footnote "Answers cite lectures, slides and timestamps across the course". Three suggested prompts when empty ("What did he say about FIRST sets last week?", "What's most likely on the midterm?", "Catch me up on the last two lectures").
+- Citations are `CourseCitation`s rendered inline as accent links **"Lecture 8 · Slide 12"** / **"Lecture 9 · 14:32"** and repeated as a chip row; hovering a chip shows the lecture title. Clicking opens that lecture in Review at the slide (highlighted in the Slides column) or at the timestamp (transcript scrolled + flashed).
+- History persists per course (`store.loadCourseChat/saveCourseChat`); a trash button clears it. Uses `CourseAssisting`.
+
+### 4.15 Speakers in the transcript
+
+Diarization labels (`TranscriptionEvent.speakers`) arrive a few seconds after the text and are applied in place (`TranscriptSegment.speaker`); the paragraph builder also breaks paragraphs on speaker change, so a question is never merged into the lecturer's sentence.
+
+- **Lecturer** text stays exactly as before (no label).
+- **Audience** turns render as an indented bubble: `accent @ 7%` fill, `Radius.card`, 12 pt inset, with a small `person.fill` "Student" caption. The lecturer's paragraph that immediately follows an audience turn gets a `person.wave.2.fill` "Lecturer" caption, so a Q&A exchange reads as a pair. VoiceOver reads "…, student: …".
+- Labels are forwarded to `brain.applySpeakers` so summaries can weight student questions differently.
+
+### 4.16 PowerPoint / Keynote decks
+
+The Setup drop zone and chooser accept `.pptx` and `.key` in addition to PDF when a `PresentationConverting` is available (copy: "PDF, PowerPoint or Keynote · or Choose…"). Dropping one shows a **"Converting with Keynote…"** state (glyph `doc.badge.gearshape`, small spinner, the original file name) before the normal indexing bar; the deck keeps its original name and presenter notes land in `SlidePage.notes`. If macOS Automation permission is missing the drop zone shows the converter's message ("Lectern needs permission to control Keynote. Allow it in System Settings › Privacy & Security › Automation, then try again.") with "Try another file · Choose…" — never a modal.
+
+### 4.17 Interrupted sessions
+
+On launch, any session still marked `.live`/`.paused`/`.importing` with no active model is *interrupted*. The Library shows a one-line glass banner ("A lecture was interrupted — resume it or finish it below.") and each such card gets a footer row: `⚠ Interrupted at 42:18   [Resume] [Finish]` (imports: `[Finish]` only). Resume picks recording back up in the same session (the clock continues from the last transcript time); Finish closes it and writes the summary, opening Review. The context menu adds "Discard…". Nothing happens automatically.
+
+### 4.18 Slide following never moves backwards
+
+Automatic slide detection only ever advances. When the brain believes the lecture went *back* (`BrainUpdate.backtrackSuggestion(n)`), the Slides column shows a calm glass pill at its bottom — `[▒] Back on slide 5? · Jump  ×` — with a 32×18 thumbnail. It never takes focus, never auto-accepts, and `nil` withdraws it. `Jump` (or `⌘[`) calls `brain.setCurrentSlide(n)` and moves the ring; any manual choice (thumbnail click, ←/→) also calls `setCurrentSlide`. As a belt-and-braces rule the app ignores any `.currentSlide(n)` with `n` lower than the current slide; only the user's own choices and accepted suggestions move backwards.
+
 ---
 
 ## 5. Component inventory
