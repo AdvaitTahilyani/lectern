@@ -45,6 +45,15 @@ public protocol SessionStoring: Sendable {
     func folder(for sessionID: UUID) async throws -> URL
     /// Copies a PDF into the session folder, returns the stored file name.
     func importSlides(from url: URL, into sessionID: UUID) async throws -> String
+
+    /// Course-wide Ask history (oldest first).
+    func loadCourseChat(courseID: UUID) async throws -> [CourseAnswer]
+    func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws
+}
+
+public extension SessionStoring {
+    func loadCourseChat(courseID: UUID) async throws -> [CourseAnswer] { [] }
+    func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws {}
 }
 
 // MARK: - Settings

@@ -40,6 +40,8 @@ targets:
         product: LecternStore
       - package: LecternKit
         product: LecternIntelligence
+      - package: LecternKit
+        product: LecternImport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.advait.Lectern

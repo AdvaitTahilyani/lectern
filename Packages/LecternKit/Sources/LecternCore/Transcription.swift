@@ -46,6 +46,9 @@ public enum TranscriptionEvent: Sendable, Hashable {
     case level(Float)
     /// Non-fatal problem worth surfacing subtly (e.g. "Input device disconnected").
     case warning(String)
+    /// Speaker labels for already-emitted final segments (diarization lags the text by a few
+    /// seconds). Keyed by `TranscriptSegment.id`; later labels for the same id win.
+    case speakers([UUID: SpeakerRole])
 }
 
 public struct TranscriptionOptions: Sendable, Hashable {
@@ -55,11 +58,14 @@ public struct TranscriptionOptions: Sendable, Hashable {
     public var vocabulary: [String]
     /// Session time offset to add to emitted timestamps (used when resuming after a pause).
     public var timeOffset: TimeInterval
+    /// Run speaker diarization and emit `.speakers` labels.
+    public var diarize: Bool
 
-    public init(inputDeviceID: String? = nil, vocabulary: [String] = [], timeOffset: TimeInterval = 0) {
+    public init(inputDeviceID: String? = nil, vocabulary: [String] = [], timeOffset: TimeInterval = 0, diarize: Bool = true) {
         self.inputDeviceID = inputDeviceID
         self.vocabulary = vocabulary
         self.timeOffset = timeOffset
+        self.diarize = diarize
     }
 }
 

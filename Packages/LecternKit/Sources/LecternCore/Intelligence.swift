@@ -82,4 +82,53 @@ public protocol LectureIntelligence: Actor {
 
     /// Session clock ticks from the app (seconds of recording), used for the quiz timer.
     func tick(sessionTime: TimeInterval)
+
+    /// "While you were away": what happened between two session times.
+    func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap
+
+    /// Waits until all scheduled summary work is done (import / batch mode).
+    func waitUntilIdle() async
+
+    /// Speaker labels arrived for earlier segments (lecturer vs. audience); used to weight
+    /// student questions differently in summaries.
+    func applySpeakers(_ labels: [UUID: SpeakerRole])
+}
+
+// MARK: - "While you were away"
+
+/// Catch-up summary of a stretch of lecture the user missed (e.g. while Lectern was in the
+/// background). Produced on demand by `LectureIntelligence.recap(from:to:)`.
+public struct Recap: Codable, Sendable, Hashable {
+    public var from: TimeInterval
+    public var to: TimeInterval
+    /// One-sentence headline, e.g. "Moved from 3-address code to genExpr for expression trees."
+    public var headline: String
+    /// 2–4 short bullets of what was covered, most important first.
+    public var bullets: [String]
+    /// Anything the lecturer flagged as important/administrative in that window
+    /// ("this will be on the exam", "MP2 due Friday").
+    public var flagged: [String]
+    public var slides: [Int]
+
+    public init(from: TimeInterval, to: TimeInterval, headline: String, bullets: [String], flagged: [String] = [], slides: [Int] = []) {
+        self.from = from
+        self.to = to
+        self.headline = headline
+        self.bullets = bullets
+        self.flagged = flagged
+        self.slides = slides
+    }
+}
+
+public extension LectureIntelligence {
+    /// Default so conformers compile before implementing it.
+    func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap {
+        throw LLMError.invalidResponse("Recap is not supported by this intelligence implementation.")
+    }
+
+    /// Waits until every scheduled summary pass has finished (used when importing a recording,
+    /// where the transcript is fed far faster than real time). Default: returns immediately.
+    func waitUntilIdle() async {}
+
+    func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
 }

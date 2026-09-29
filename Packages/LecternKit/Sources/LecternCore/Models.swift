@@ -21,11 +21,22 @@ public struct Course: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+public enum SessionSource: Codable, Sendable, Hashable {
+    case live
+    /// Imported from a local audio/video file.
+    case audioFile(originalFileName: String)
+    /// Imported from Illinois MediaSpace (Kaltura). `usedCaptions` = transcript came from the
+    /// caption track instead of on-device transcription.
+    case mediaSpace(entryID: String, pageURL: URL?, usedCaptions: Bool)
+}
+
 public enum SessionStatus: String, Codable, Sendable, Hashable {
     case draft      // set up, not started
     case live       // recording right now
     case paused
     case finished
+    /// Being built from an imported recording (transcribing / summarizing).
+    case importing
 }
 
 /// One lecture. Persisted as a single JSON document by `LecternStore`.
@@ -53,6 +64,8 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
     public var currentSlide: Int?
     /// Custom vocabulary (jargon) for this session, merged with the global list.
     public var vocabulary: [String]
+    /// How the session was created. `nil` means recorded live.
+    public var source: SessionSource?
 
     public init(
         id: UUID = UUID(),
@@ -69,7 +82,8 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
         quiz: [QuizRecord] = [],
         chat: [ChatMessage] = [],
         currentSlide: Int? = nil,
-        vocabulary: [String] = []
+        vocabulary: [String] = [],
+        source: SessionSource? = nil
     ) {
         self.id = id
         self.courseID = courseID
@@ -86,6 +100,7 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
         self.chat = chat
         self.currentSlide = currentSlide
         self.vocabulary = vocabulary
+        self.source = source
     }
 
     /// Plain transcript text, one paragraph per segment.
@@ -104,14 +119,27 @@ public struct TranscriptSegment: Codable, Sendable, Identifiable, Hashable {
     public var end: TimeInterval
     /// `false` while the recognizer may still revise this text (a "volatile" hypothesis).
     public var isFinal: Bool
+    /// Who is talking, from speaker diarization. `nil` until diarization has labeled the segment.
+    public var speaker: SpeakerRole?
 
-    public init(id: UUID = UUID(), text: String, start: TimeInterval, end: TimeInterval, isFinal: Bool) {
+    public init(id: UUID = UUID(), text: String, start: TimeInterval, end: TimeInterval, isFinal: Bool, speaker: SpeakerRole? = nil) {
         self.id = id
         self.text = text
         self.start = start
         self.end = end
         self.isFinal = isFinal
+        self.speaker = speaker
     }
+}
+
+/// Diarization result, collapsed to what matters in a lecture: the lecturer vs. everyone else.
+/// The lecturer is the dominant speaker; other voices are audience (student questions/answers).
+public enum SpeakerRole: Codable, Sendable, Hashable {
+    case lecturer
+    /// A non-lecturer voice; `index` distinguishes different audience speakers (1, 2, …).
+    case audience(index: Int)
+
+    public var isLecturer: Bool { self == .lecturer }
 }
 
 // MARK: - Slides
@@ -143,13 +171,16 @@ public struct SlidePage: Codable, Sendable, Identifiable, Hashable {
     public var title: String?
     /// All extracted text on the page (PDFKit text, or Vision OCR when the page is an image).
     public var text: String
+    /// Presenter notes, when the deck came from a PPTX/Keynote file that had them.
+    public var notes: String?
 
     public var id: Int { number }
 
-    public init(number: Int, title: String?, text: String) {
+    public init(number: Int, title: String?, text: String, notes: String? = nil) {
         self.number = number
         self.title = title
         self.text = text
+        self.notes = notes
     }
 }
 
