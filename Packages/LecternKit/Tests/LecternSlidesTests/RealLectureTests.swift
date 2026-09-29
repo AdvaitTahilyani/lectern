@@ -44,6 +44,9 @@ struct RealLectureTests {
         let index = SlideIndex(deck: deck, useSemanticSimilarity: useSemantic)
         let trajectory = try RealLecture.replay(through: index)
         print("TRAJECTORY (semantic=\(useSemantic)): " + trajectory.changes.map { "\(TimeFormat.clock($0.time))=\($0.slide)" }.joined(separator: " "))
+        print("BACKTRACK SUGGESTIONS (semantic=\(useSemantic)): " + (trajectory.suggestions.isEmpty ? "none" : trajectory.suggestions.map { "\(TimeFormat.clock($0.from))-\(TimeFormat.clock($0.to)) back to \($0.page) (from \($0.current))" }.joined(separator: "; ")))
+
+        #expect(zip(trajectory.changes, trajectory.changes.dropFirst()).allSatisfy { $0.slide <= $1.slide }, "tracking moved backwards")
 
         let checkpoints: [(time: TimeInterval, slides: ClosedRange<Int>, why: String)] = [
             (60, 1...4, "quiz chatter and corrections: still on the opening slides"),
@@ -60,9 +63,10 @@ struct RealLectureTests {
             let slide = trajectory.slide(at: checkpoint.time)
             #expect(checkpoint.slides.contains(slide), "at \(TimeFormat.clock(checkpoint.time)) (\(checkpoint.why)) tracker showed \(slide), wanted \(checkpoint.slides)")
         }
-        // Flicker: how often the tracker returns to the slide it just left.
-        #expect(trajectory.returns <= 8, "tracker went back to the previous slide \(trajectory.returns) times")
         #expect(trajectory.changes.count <= 30, "tracker changed slide \(trajectory.changes.count) times")
+        // Suggestions are rare and brief.
+        #expect(trajectory.suggestions.count <= 2, "\(trajectory.suggestions.count) backtrack suggestions")
+        #expect(trajectory.suggestions.allSatisfy { $0.to - $0.from <= 120 }, "a backtrack suggestion lasted too long")
     }
 }
 
@@ -99,33 +103,50 @@ enum RealLecture {
         }
     }
 
+    struct Suggestion {
+        var from: TimeInterval
+        var to: TimeInterval
+        var current: Int
+        var page: Int
+    }
+
     struct Trajectory {
         var changes: [(time: TimeInterval, slide: Int)]
-        /// Number of times the tracker moved back to the slide it had just left.
-        var returns: Int {
-            changes.indices.dropFirst(2).filter { changes[$0].slide == changes[$0 - 2].slide }.count
-        }
+        var suggestions: [Suggestion]
 
         func slide(at time: TimeInterval) -> Int {
             changes.last { $0.time <= time }?.slide ?? 1
         }
     }
 
-    /// Runs `index.likelySlide` every 20 s over the trailing 60 s of captions.
+    /// Runs `likelySlide` and `backtrackCandidate` every 20 s over the trailing 60 s of captions,
+    /// starting on slide 1, with the replay time as the evidence clock.
     static func replay(through index: SlideIndex) throws -> Trajectory {
         let segments = try transcript()
         let end = segments.map(\.end).max() ?? 0
         var current = 1
         var changes: [(TimeInterval, Int)] = [(0, 1)]
+        var suggestions: [Suggestion] = []
+        var open: Suggestion?
         var time = 60.0
         while time <= end + 20 {
-            let window = segments.filter { $0.end > time - 60 && $0.end <= time }
-            if let slide = index.likelySlide(forTranscript: window.map(\.text).joined(separator: " "), near: current), slide != current {
+            let text = segments.filter { $0.end > time - 60 && $0.end <= time }.map(\.text).joined(separator: " ")
+            if let slide = index.likelySlide(forTranscript: text, near: current, at: time), slide != current {
                 current = slide
                 changes.append((time, slide))
             }
+            if let page = index.backtrackCandidate(forTranscript: text, current: current, at: time) {
+                if open?.page == page && open?.current == current { open?.to = time } else {
+                    if let finished = open { suggestions.append(finished) }
+                    open = Suggestion(from: time, to: time, current: current, page: page)
+                }
+            } else if let finished = open {
+                suggestions.append(finished)
+                open = nil
+            }
             time += 20
         }
-        return Trajectory(changes: changes.map { (time: $0.0, slide: $0.1) })
+        if let finished = open { suggestions.append(finished) }
+        return Trajectory(changes: changes.map { (time: $0.0, slide: $0.1) }, suggestions: suggestions)
     }
 }

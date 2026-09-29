@@ -120,12 +120,33 @@ import Testing
         #expect(index.likelySlide(forTranscript: "um uh the a of", near: nil) == nil)
     }
 
-    @Test func aStrongTopicChangeOverridesTheForwardPrior() async throws {
+    @Test func aStrongTopicChangeAheadOverridesTheForwardPrior() async throws {
         let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
-        // The lecturer jumps ahead (or the student scrubbed back) with unmistakable content.
         let speech = Self.lecture[7].speech
-        #expect(index.likelySlide(forTranscript: speech, near: 3) == 8)
-        #expect(index.likelySlide(forTranscript: Self.lecture[1].speech, near: 9) == 2)
+        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 0) == nil, "a leap of five slides waits for confirmation")
+        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 30) == nil)
+        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 60) == 8)
+        // Any interruption restarts the confirmation.
+        #expect(index.likelySlide(forTranscript: "okay any questions", near: 3, at: 110) == nil)
+        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 120) == nil)
+    }
+
+    @Test func aShortStepAheadNeedsNoConfirmation() async throws {
+        let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+        #expect(index.likelySlide(forTranscript: Self.lecture[4].speech, near: 3, at: 0) == 5)
+    }
+
+    @Test func neverReturnsAnEarlierSlideThanNear() async throws {
+        let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+        for near in 1...10 {
+            for (speech, _) in Self.lecture {
+                if let slide = index.likelySlide(forTranscript: speech, near: near) {
+                    #expect(slide >= near, "near \(near) moved back to \(slide)")
+                }
+            }
+        }
+        // Talking about slide 2 while on slide 9: no automatic move.
+        #expect(index.likelySlide(forTranscript: Self.lecture[1].speech, near: 9) == nil)
     }
 
     @Test func usesOnlyTheLastSixtySecondsOfSegments() async throws {
@@ -142,5 +163,72 @@ import Testing
     @Test func unknownNearSlideIsIgnored() async throws {
         let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
         #expect(index.likelySlide(forTranscript: Self.lecture[7].speech, near: 99) == 8)
+    }
+}
+
+@Suite struct BacktrackCandidateTests {
+    private func index() async throws -> SlideIndex {
+        SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+    }
+
+    /// About a minute of FIRST-set lecture: enough distinct terms for a confident single-slide match.
+    static let firstSetsMinute = """
+    So FIRST sets. The FIRST set of a symbol is the set of terminals that can begin the strings derived from it. \
+    If X is a terminal, FIRST of X is just X. If X can derive epsilon, we add epsilon to FIRST of X. \
+    For a production X goes to Y1 Y2, we add FIRST of Y1 minus epsilon to FIRST of X. \
+    Remember FIRST of X is the set of terminals that can begin strings derived from X.
+    """
+
+    /// Feeds `speech` every 20 s from `start` for `seconds`, returning what was suggested when.
+    private func feed(_ index: SlideIndex, _ speech: String, current: Int, from start: TimeInterval, for seconds: TimeInterval) -> [(time: TimeInterval, page: Int?)] {
+        stride(from: start, through: start + seconds, by: 20).map { t in
+            (t, index.backtrackCandidate(forTranscript: speech, current: current, at: t))
+        }
+    }
+
+    @Test func aSustainedReturnIsSuggestedOnlyAfterAMinute() async throws {
+        let index = try await index()
+        let outcome = feed(index, Self.firstSetsMinute, current: 8, from: 1_000, for: 120)
+        #expect(outcome.prefix(3).allSatisfy { $0.page == nil }, "t+0, +20, +40 s are still too early")
+        #expect(outcome.dropFirst(3).allSatisfy { $0.page == 4 })
+    }
+
+    @Test func aBriefDigressionNeverProducesASuggestion() async throws {
+        let index = try await index()
+        var outcome = feed(index, Self.firstSetsMinute, current: 8, from: 0, for: 40)      // 40 s about FIRST sets
+        outcome += feed(index, LikelySlideTests.lecture[7].speech, current: 8, from: 60, for: 100)       // back on topic
+        #expect(outcome.allSatisfy { $0.page == nil })
+        // The interruption also resets the clock: another 40 s of digression is still not enough.
+        #expect(feed(index, Self.firstSetsMinute, current: 8, from: 200, for: 40).allSatisfy { $0.page == nil })
+    }
+
+    @Test func theSuggestionEndsWhenTheEvidenceDoes() async throws {
+        let index = try await index()
+        #expect(feed(index, Self.firstSetsMinute, current: 8, from: 0, for: 100).last?.page == 4)
+        #expect(index.backtrackCandidate(forTranscript: "okay any questions before we move on", current: 8, at: 120) == nil)
+        // and it has to build up again from scratch
+        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 8, at: 140) == nil)
+    }
+
+    @Test func changingTheCurrentSlideRestartsTheEvidence() async throws {
+        let index = try await index()
+        #expect(feed(index, Self.firstSetsMinute, current: 8, from: 0, for: 100).last?.page == 4)
+        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 9, at: 120) == nil)
+    }
+
+    @Test func staysQuietWhenTheCurrentSlideIsTheOneBeingDiscussed() async throws {
+        let index = try await index()
+        // On slide 4 while talking about slide 4, or about something ahead: nothing to go back to.
+        #expect(feed(index, Self.firstSetsMinute, current: 4, from: 0, for: 200).allSatisfy { $0.page == nil })
+        #expect(feed(index, LikelySlideTests.lecture[7].speech, current: 4, from: 300, for: 200).allSatisfy { $0.page == nil })
+        // Slide 1 has nothing before it.
+        #expect(feed(index, LikelySlideTests.lecture[0].speech, current: 1, from: 600, for: 200).allSatisfy { $0.page == nil })
+    }
+
+    @Test func aTopicSpreadOverSeveralSlidesIsNotASingleSlide() async throws {
+        let index = try await index()
+        // FIRST and FOLLOW together describe slides 4 to 7 alike: no confident single target.
+        let speech = "so to build the parse table we need both FIRST sets and FOLLOW sets, the FIRST of the right hand side and the FOLLOW of the nonterminal"
+        #expect(feed(index, speech, current: 10, from: 0, for: 200).allSatisfy { $0.page == nil })
     }
 }
