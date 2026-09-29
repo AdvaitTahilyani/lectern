@@ -53,6 +53,7 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.education
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Lectern listens to your lecture to write a live transcript. Audio never leaves your Mac."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Lectern uses on-device speech recognition to transcribe your lecture."
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: "Lectern asks Keynote or PowerPoint to convert your slides to PDF. Nothing else is controlled."
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
