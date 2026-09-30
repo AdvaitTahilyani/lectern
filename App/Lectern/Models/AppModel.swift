@@ -37,7 +37,9 @@ final class AppModel {
     private(set) var isLibraryLoaded = false
     var libraryError: String?
     /// Session files that could not be read at launch (kept on disk untouched); shown as a notice.
-    var skippedLectureCount = 0
+    /// Damaged session files seen since launch. A file is repaired on its first load, so a later
+    /// reload reports nothing: issues accumulate until the user dismisses the notice.
+    var libraryIssues: [LibraryIssue] = []
 
     // MARK: Navigation
     var sidebarSelection: SidebarItem? = .all
@@ -47,8 +49,9 @@ final class AppModel {
     var searchScope: LibrarySearchScope = .all
     private(set) var searchResults: [LibrarySearchHit] = []
     private(set) var isSearching = false
-    /// Set when opening a lecture at a specific timestamp (from search).
-    var pendingSeek: (sessionID: UUID, time: TimeInterval)?
+    /// Where the lecture being opened should land (search hits, course citations); the session
+    /// view takes it with `takePendingNavigation(for:)`.
+    private(set) var pendingNavigation: PendingNavigation?
 
     // MARK: Sessions
     /// The one live session, if recording.
@@ -74,8 +77,6 @@ final class AppModel {
     var showCourseAsk = false
     /// Selected Settings tab (raw name), so commands and deep links can open a specific pane.
     var settingsTab = "general"
-    /// Slide to reveal once a session opened from a course citation has loaded.
-    var pendingSlide: (sessionID: UUID, page: Int)?
 
     // MARK: Models
     private(set) var modelStates: [String: OnDeviceModelState] = [:]
@@ -143,7 +144,9 @@ final class AppModel {
             courses = try await c
             let library = try await l
             sessions = library.sessions
-            skippedLectureCount = library.skipped
+            for issue in library.issues where !libraryIssues.contains(where: { $0.file == issue.file }) {
+                libraryIssues.append(issue)
+            }
             isLibraryLoaded = true
             libraryError = nil
             if setup.courseID == nil { setup.courseID = defaultCourseID() }
@@ -377,9 +380,10 @@ final class AppModel {
         setup.loadDeck(url: url)
     }
 
-    /// Opens a finished lecture in review, or resumes the live one.
-    func openSession(_ id: UUID, at time: TimeInterval? = nil) {
-        if let time { pendingSeek = (id, time) }
+    /// Opens a finished lecture in review, or resumes the live one, landing on `time` and/or
+    /// `slide` when given (also when the lecture is already on screen).
+    func openSession(_ id: UUID, at time: TimeInterval? = nil, slide: Int? = nil) {
+        if time != nil || slide != nil { pendingNavigation = PendingNavigation(sessionID: id, time: time, slide: slide) }
         if openSessions[id] == nil, let stored = sessions.first(where: { $0.id == id }) {
             let model = LiveSessionModel(session: stored, course: course(id: stored.courseID), mode: .review, services: services, settings: settings, preferences: preferences)
             model.onSessionChanged = { [weak self] s in self?.libraryDidUpdate(s) }
@@ -390,6 +394,13 @@ final class AppModel {
     }
 
     func session(for id: UUID) -> LiveSessionModel? { openSessions[id] }
+
+    /// Hands the pending navigation to the session view showing `id` (once).
+    func takePendingNavigation(for id: UUID) -> PendingNavigation? {
+        guard let nav = pendingNavigation, nav.sessionID == id else { return nil }
+        pendingNavigation = nil
+        return nav
+    }
 
     /// Starts recording with the current Setup draft; the detail column swaps to the live view.
     func startLecture() {
@@ -498,7 +509,15 @@ final class AppModel {
 
     func showImport() {
         if importDraft.courseID == nil { importDraft.courseID = defaultCourseID() }
+        refreshImportDeckSuggestions()
         showImportSheet = true
+    }
+
+    /// Re-scans the import's course slides folder so the sheet can offer its decks (QA Q3-5).
+    func refreshImportDeckSuggestions() {
+        let course = course(id: importDraft.courseID ?? courses.first?.id)
+        let used = Set(sessions.filter { $0.courseID != nil && $0.courseID == course?.id }.compactMap { $0.deck?.originalFileName })
+        importDraft.refreshDeckSuggestions(folder: course?.slidesFolder, usedFileNames: used, services: services)
     }
 
     /// The MediaSpace browser is a sibling sheet of the import sheet (never nested inside it):
@@ -606,10 +625,7 @@ final class AppModel {
     func open(courseCitation c: CourseCitation) {
         switch c.citation {
         case .time(let t): openSession(c.sessionID, at: t)
-        case .slide(let n):
-            pendingSlide = (c.sessionID, n)
-            openSession(c.sessionID)
-            openSessions[c.sessionID]?.showSlide(n)
+        case .slide(let n): openSession(c.sessionID, slide: n)
         }
     }
 

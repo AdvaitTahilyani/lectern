@@ -1,0 +1,21 @@
+2026-09-30T10:36:10.624Z
+Window: "Welcome to Lectern", App: Lectern.
+0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise
+	1 container
+		2 image Description: Microphone, ID: mic.fill
+		3 text Lectern needs your microphone. Audio is processed on this Mac and is not stored unless you choose to.
+		4 unknown Description: Input level, Details: 48 percent
+		5 button Continue
+	6 close button
+	7 zoom button (disabled)
+	8 minimize button
+9 menu bar
+	10 Lectern
+	11 File
+	12 Edit
+	13 View
+	14 Lecture
+	15 Window
+	16 Help
+
+The focused UI element is 0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise

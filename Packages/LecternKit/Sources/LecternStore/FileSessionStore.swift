@@ -105,10 +105,10 @@ public actor FileSessionStore: SessionStoring {
             do {
                 let loaded = try readSession(at: file, id: id)
                 sessions.append(loaded.value)
-                if let warning = loaded.warning { issues.append(LoadIssue(url: file, message: warning)) }
+                if let warning = loaded.warning { issues.append(LoadIssue(url: file, kind: loaded.warningKind, message: warning)) }
             } catch {
                 Self.logger.error("Skipping \(file.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                issues.append(LoadIssue(url: file, message: error.localizedDescription))
+                issues.append(LoadIssue(url: file, kind: .skipped, message: error.localizedDescription))
             }
         }
         sessions.sort(by: Self.newestFirst)
@@ -178,6 +178,7 @@ public actor FileSessionStore: SessionStoring {
     private struct Loaded<T> {
         var value: T
         var warning: String?
+        var warningKind: LoadIssue.Kind = .restored
     }
 
     private func readSession(at url: URL, id: UUID) throws -> Loaded<LectureSession> {
@@ -189,7 +190,7 @@ public actor FileSessionStore: SessionStoring {
             decoder.userInfo[TolerantSessionFile.fallbackDateKey] = nil
         }
         let loaded = try read(TolerantSessionFile.self, from: url, version: \.schemaVersion)
-        return Loaded(value: loaded.value.session, warning: loaded.warning)
+        return Loaded(value: loaded.value.session, warning: loaded.warning, warningKind: loaded.warningKind)
     }
 
     /// Reads `url`; when it is empty or damaged and `<url>.bak` reads fine, restores the file from
@@ -238,7 +239,8 @@ public actor FileSessionStore: SessionStoring {
         preserveUnreadable(url)
         return Loaded(
             value: value,
-            warning: "\"\(url.lastPathComponent)\" had \(tally.count) damaged part(s) that could not be read and were dropped; a copy of the original was kept as \"\(url.lastPathComponent).unreadable\"."
+            warning: "\"\(url.lastPathComponent)\" had \(tally.count) damaged part(s) that could not be read and were dropped; a copy of the original was kept as \"\(url.lastPathComponent).unreadable\".",
+            warningKind: .partiallyRecovered
         )
     }
 

@@ -1,0 +1,128 @@
+2026-09-30T11:16:42.653Z
+Window: "Parsing II: LL(1) & Predictive Parsing", App: Lectern.
+0 standard window Parsing II: LL(1) & Predictive Parsing – CS 421 · Thu Sep 24, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Lectures
+					6 row (selectable) Courses
+					7 row (selectable) Description: CS 421, Value: 4
+					8 row (selectable) Description: CS 374, Value: 2
+					9 row (selectable) Description: MATH 415, Value: 2
+					10 row (selectable) New Course…
+			11 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		12 splitter (disabled, settable, float) 240
+		13 split group
+			14 container
+				15 text SLIDES
+				16 button Description: Slide 1, Help: Open full size
+				17 text 1 of 18
+				18 scroll area Secondary Actions: Scroll Up, Scroll Down
+					19 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						20 button Slide 1, current
+						21 button Slide 2
+						22 button Slide 3
+						23 button Slide 4
+						24 button Slide 5
+						25 button Slide 6
+						26 button Slide 7
+						27 button Slide 8
+						28 button Slide 9
+						29 button Slide 10
+						30 button Slide 11
+						31 button Slide 12
+						32 button Slide 13
+						33 button Slide 14
+						34 button Slide 15
+						35 button Slide 16
+						36 button Slide 17
+						37 button Slide 18
+					38 scroll bar (settable, float) 0
+						39 value indicator (settable, float) 0
+						40 increment arrow button
+						41 decrement arrow button
+						42 increment page button
+						43 decrement page button
+				44 scroll area
+					45 text 2 OF 2 · LEFT FACTORING FIRST sets: what a string can start with FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point. • FIRST(a) = {a} for any terminal a. • For A → X1…Xn, add FIRST(X1); keep going to X2 only if ε ∈ FIRST(X1). • Iterate over all productions until no FIRST set changes. • Example: FIRST(E′) = {+, ε}; FIRST(T) = FIRST(F) = {(, id}.
+					46 button Slide 7
+					47 button Slide 8
+					48 button Slide 15
+					49 text Try again Left factor S → if E then S else S | if E then S. What does S′ become?
+					50 button Option 1: else S | ε
+					51 button Option 2: if E then S
+					52 button Option 3: S else S
+					53 button Option 4: ε
+				54 button Exit
+				55 button Skip
+				56 button Next
+			57 splitter (disabled, settable, float) 1171.5
+			58 container
+				59 container Inspector tab
+					60 button (selected) Transcript
+					61 button Ask
+					62 button Quiz
+				63 button Description: Search, Help: Find in transcript (⌘F)
+				64 scroll area Secondary Actions: Scroll Up, Scroll Down
+					65 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						66 container
+							67 button Description: 12 minutes 26 seconds, Help: Shows related slide
+							68 unknown 12 minutes 26 seconds: With FIRST and FOLLOW we can build the parse table. Rows are nonterminals, columns are terminals plus the end marker. For each production A goes to alpha, put alpha in cell M of A comma a, for every terminal a in FIRST of alpha. If epsilon is in FIRST of alpha, also put alpha in M of A comma b, for every b in FOLLOW of A.
+						69 container
+							70 button Description: 12 minutes 54 seconds, Help: Shows related slide
+							71 unknown 12 minutes 54 seconds: Okay so here's the key definition, this is important, this will be on the midterm: a grammar is LL(1) if and only if no cell ends up with two productions. Equivalently, for any two alternatives A goes to alpha or beta, their FIRST sets must be disjoint, and if beta can be empty, FIRST of alpha must not overlap FOLLOW of A.
+						72 container
+							73 button Description: 14 minutes 49 seconds, Help: Shows related slide
+							74 unknown 14 minutes 49 seconds: Once you have the table, the parser itself is trivial. You keep a stack that starts with the start symbol and the end marker. If the top of the stack is a terminal, it must match the lookahead: pop it and advance the input. If the top is a nonterminal A, look up M of A comma lookahead, pop A, and push the right-hand side in reverse.
+						75 container
+							76 button Description: 15 minutes 17 seconds, Help: Shows related slide
+							77 unknown 15 minutes 17 seconds: If the cell is empty, that's a syntax error. If the stack and the input are both at dollar, you accept. Everybody with me? Okay. Let's trace id plus id times id. Stack starts E dollar; lookahead is id, so we replace E with T E prime, then T with F T prime, then F with id, match, and keep going.
+						78 container
+							79 button Description: 17 minutes 12 seconds, Help: Shows related slide
+							80 unknown 17 minutes 12 seconds: Okay, one more transformation you'll need, uh, left factoring. Suppose A goes to alpha beta one, or alpha beta two, with the same prefix alpha. One token of lookahead can't tell those apart, so we factor the prefix: A goes to alpha A prime, and A prime goes to beta one or beta two.
+						81 container
+							82 button Description: 17 minutes 34 seconds, Help: Shows related slide
+							83 unknown 17 minutes 34 seconds: The classic example is if then else. Both productions start with if expr then stmt, so we factor that out and decide about the else later.
+						84 container
+							85 button Description: 17 minutes 45 seconds, Help: Shows related slide
+							86 text Student
+							87 unknown 17 minutes 45 seconds, student: So for the dangling else, does the factoring actually fix the ambiguity?
+						88 container
+							89 button Description: 17 minutes 50 seconds, Help: Shows related slide
+							90 text Lecturer
+							91 unknown 17 minutes 50 seconds: No, and that's exactly the point. Factoring only delays the decision. The dangling else is genuinely ambiguous, and no amount of factoring makes it LL(1), so most compilers resolve it by always matching the nearest if. That's a general lesson. LL(1) is simple and fast, but some languages aren't LL(k) for any k, which is why we'll look at bottom-up parsing next.
+						92 container
+							93 button Description: 19 minutes 45 seconds, Help: Shows related slide
+							94 unknown 19 minutes 45 seconds: Last thing, and then we're done: what happens when the table cell is empty and you hit an error. You don't want to stop at the first mistake, right. The simplest strategy is panic mode: discard input tokens until you reach a synchronizing token, then pop the nonterminal and continue.
+						95 container
+							96 button Description: 20 minutes 6 seconds, Help: Shows related slide
+							97 unknown 20 minutes 6 seconds: A good choice of synchronizing set for A is FOLLOW of A, because after skipping to something in FOLLOW of A you can pretend A was parsed and move on. Report the error once, don't cascade, and keep parsing so the user sees more than one problem per compile. Next time we'll do bottom-up parsing, shift-reduce, and LR tables. Read Dragon Book sections four point four and four point five.
+					98 scroll bar (settable, float) 1
+						99 value indicator (settable, float) 1
+						100 increment arrow button
+						101 decrement arrow button
+						102 increment page button
+						103 decrement page button
+	104 toolbar
+		105 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		106 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		107 text 22:05, ·, 9 takeaways, ·, 2/4 ✓
+		108 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		109 menu button Export, Help: Export (⌘E), ID: square.and.arrow.up
+		110 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		111 menu button More, ID: ellipsis.circle
+	112 close button
+	113 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	114 minimize button
+	115 text Parsing II: LL(1) & Predictive Parsing CS 421 · Thu Sep 24
+116 menu bar
+	117 Lectern
+	118 File
+	119 Edit
+	120 View
+	121 Lecture
+	122 Window
+	123 Help
+
+The focused UI element is 0 standard window Parsing II: LL(1) & Predictive Parsing – CS 421 · Thu Sep 24, ID: main-AppWindow-2, Secondary Actions: Raise

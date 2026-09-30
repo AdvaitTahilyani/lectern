@@ -1,0 +1,29 @@
+{
+  "answers": [
+    {
+      "citations": [],
+      "createdAt": "2026-09-30T10:50:51.570Z",
+      "id": "8D4318B4-9DE9-43EC-857D-2115190D3AFE",
+      "question": "What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?",
+      "text": "Based on the provided material, there is no direct connection described between SSA phi functions and the AST-to-three-address-code conversion; they are discussed as separate topics within Lecture 1 [L1 T0:12\u20133:17; L1 T6:46\u20139:59]. The lecture covers SSA node convergence regarding where to place phi functions [L1 T0:12\u20133:17] and the strategy for converting AST expressions into three-address code by using virtual registers [L1 T6:46\u20139:59]."
+    },
+    {
+      "citations": [
+        {
+          "citation": {
+            "time": {
+              "_0": 553
+            }
+          },
+          "ordinal": 1,
+          "sessionID": "68636255-D990-4AA7-9DF2-C86C58F58791"
+        }
+      ],
+      "createdAt": "2026-09-30T10:51:11.824Z",
+      "id": "B08F3395-EE7B-4AFC-82C9-59F691998B03",
+      "question": "What did the lecturer say about virtual registers, and where in the lecture can I find it?",
+      "text": "In Lecture 1, the lecturer states that virtual registers are assumed to be infinite, meaning you can create a new register for every new value [L1 T9:13]. This allows you to not worry about whether there are enough registers available [L1 T9:13]."
+    }
+  ],
+  "schemaVersion": 1
+}

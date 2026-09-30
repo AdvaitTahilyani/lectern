@@ -1,0 +1,965 @@
+{
+  "chat": [
+    {
+      "citations": [],
+      "createdAt": "2026-09-30T10:45:55.217Z",
+      "id": "25072F7D-3DC0-48BB-806A-6B3D354273BB",
+      "role": "user",
+      "text": "What correction d"
+    },
+    {
+      "citations": [
+        {
+          "time": {
+            "_0": 473
+          }
+        }
+      ],
+      "createdAt": "2026-09-30T10:46:07.596Z",
+      "id": "7EDF8C59-B600-4BA9-B24B-E7C716DE76A9",
+      "role": "assistant",
+      "text": "The lecturer made a correction to the slides regarding a specific node in a diagram, stating that the node should be labeled $B'$ instead of $Z$ [T7:53]."
+    },
+    {
+      "citations": [],
+      "createdAt": "2026-09-30T10:46:31.633Z",
+      "id": "355E3CED-272B-447E-8D4B-8C0A04BC8F16",
+      "role": "user",
+      "text": "How does the lecturer convert an addition AST expression into three-address code? Give slide and timestamp citations."
+    },
+    {
+      "citations": [
+        {
+          "time": {
+            "_0": 553
+          }
+        },
+        {
+          "time": {
+            "_0": 576
+          }
+        },
+        {
+          "time": {
+            "_0": 590
+          }
+        }
+      ],
+      "createdAt": "2026-09-30T10:46:39.648Z",
+      "id": "C41BCEE4-AA20-4A1A-8395-ACD1C39793C8",
+      "role": "assistant",
+      "text": "To convert an addition AST expression into three-address code, the lecturer uses the following strategy:\n*   Compute the left sub-expression $E1$ and store the result in temporary register $T1$ [T9:13].\n*   Compute the right sub-expression $E2$ and store its result in temporary register $T2$ [T9:13].\n*   Perform the addition of the values in $T1$ and $T2$ and store the final result in a new temporary register [T9:36].\n\nSince these are virtual registers, you can assume there are infinitely many available [T9:50]."
+    }
+  ],
+  "courseID": "90DD6993-9F8A-41B2-B446-F7278EB834F9",
+  "createdAt": "2026-09-30T10:41:39.674Z",
+  "deck": {
+    "fileName": "slides.pdf",
+    "originalFileName": "lec9-ir-gen.pdf",
+    "pages": [
+      {
+        "number": 1,
+        "text": "CS 426\nCompiler\nConstruction\nhttps://charithm.web.illinois.edu/cs426/fa2026/\nConditionals\nif (test)\ncmp <do the test\u203a => %reg\ntrue_body\ncond_br greg, label_true\nelse\njmp\nlabel_false\nfalse_body\nlabel_true:\n<true_body>\njmp label_end\nlabel_false:\n<false_body>\nlabel_end:",
+        "title": "Compiler Construction"
+      },
+      {
+        "number": 2,
+        "text": "Today: Continuing Intermediate\nRepresentations\n(Slides are based on previous CS 426 materials by Vikram Adve and 6.035 from MIT by\nAmarasinghe, Rinard, Sarkar)\nHousekeeping before we start:\n\u2022 MP2 released\n\u2022 MP1 final grades will be released at the beginning of next week\n\u2022 Some students may be asked for a short meeting with the TA and the instructor\n\u2022 Quick Debrief",
+        "title": "Today: Continuing Intermediate Representations"
+      },
+      {
+        "number": 3,
+        "text": "[Reminder]\nCompilation Strategies and IR Design\nHigh-level Model\n\u2022 Retain high-level data types: Structs, Arrays, Pointers, Classes\n\u2022 Retain high-level control constructs\n\u2022 AST OR 3-address code\n\u2022 Generally, operate directly on program variables (i.e., no registers)\nMid-level Model\n\u2022 Retain some high-level data types: Structs, Arrays, Pointers\n\u2022 Linear 3-address code + CFG\n\u2022 Distinguish virtual registers from memory\n\u2022 No low-level architectural details",
+        "title": "[Reminder] Compilation Strategies and IR Design"
+      },
+      {
+        "number": 4,
+        "text": "[Reminder]\nCompilation Strategies and IR Design\nLow-level Model\n\u2022 Linear memory model (no high-level data types)\n\u2022 Distinguish virtual registers from memory\n\u2022 Low-level 3-address code + CFG\n\u2022 Explicit addressing arithmetic\n\u2022 Expose all low-level architectural details:\nAddressing modes, stack frame, calling conventions, data layout",
+        "title": "[Reminder] Compilation Strategies and IR Design"
+      },
+      {
+        "number": 5,
+        "text": "Intermediate Code Generation\nGoal: Translate AST to low-level machine-independent IR\nBasic Strategy: Separation of Concerns\n\u2022 Generate efficient code sequences for individual operations\n\u2022 Keep it fast and simple: leave most optimizations to later phases\n\u2022 Provide clean, easy-to-optimize code\n\u2022 IR forms the basis for code optimization and target code\ngeneration",
+        "title": "Intermediate Code Generation"
+      },
+      {
+        "number": 6,
+        "text": "Intermediate Code Generation\nGoal: Translate AST to low-level machine-independent IR\nMid-level vs. Low-level Model of Compilation\nBoth models can use a machine-independent IR:\n\u2022 AST \u2192 machine-specific code sequences \u2192 target code\n\u2022 AST \u2192 machine-independent code sequences\n\u2192 machine-level IR \u2192 target code\nKey difference: where does \u201ctarget instruction selection\u201d happen",
+        "title": "Intermediate Code Generation"
+      },
+      {
+        "number": 7,
+        "text": "Intermediate Code Generation\nGoal: Translate AST to low-level (mostly) machine-independent\n3-address IR\nAssumptions:\n\u2022 Intermediate language: RISC-like 3-address code (see next slide)\n\u2022 Intermediate Code Generation (ICG) is independent of target ISA\n\u2022 Storage layout has been pre-determined\n\u2022 Infinite number of registers + Frame Pointer (FP)\nQ. What values can live in registers?",
+        "title": "Intermediate Code Generation"
+      },
+      {
+        "number": 8,
+        "text": "3-address code for Lectures (Excerpt)\nILOC: Cooper and Torczon Book, Appendix A",
+        "title": "3-address code for Lectures (Excerpt)"
+      },
+      {
+        "number": 9,
+        "text": "Why 3-address code?\nEasy to show on the slides \u263a\nConversion between our 3-address code and CFG is simple:\n\u2022 Nodes are the sequences of non-jump instructions\n\u2022 The first statement of each note is annotated with a label\n\u2022 Edges are conditional or unconditional jumps to the labels\nrepresenting the start of the destination nodes",
+        "title": "Why 3-address code?"
+      },
+      {
+        "number": 10,
+        "text": "Code Generation Strategy\n1. Simple bottom-up tree-walk on AST\n2. Translation uses only local info: current AST node + children\n3. Good (local) code is important!\n\u21d0 Later passes have less semantic information\n\u21d0 E.g., array indexing, boolean expressions, case statements\n4. We will discuss important special cases",
+        "title": "Code Generation Strategy"
+      },
+      {
+        "number": 11,
+        "text": "Code Generation for Expression Trees\nIllustrates the tree-walk scheme\n\u2022 assign a virtual register to each operator\n\u2022 emit code in postorder traversal of expression tree\nAssumptions:\n\u2022 assume tree reflects precedence, associativity\n\u2022 assume all operands are integers\n\u2022 base() and offset() may emit code; base() handles lexical scoping\nSupport routines\n\u2022 base( str ) \u2014 looks up str in the symbol table and stores the base address for str\nin a virtual register; emits the corresponding load.\n\u2022 offset( str ) \u2014 looks up str in the symbol table and stores the offset of str from\nits base register in a virtual register; emits the corresponding load\n\u2022 new_reg_name() \u2014 returns a new virtual register name",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 12,
+        "text": "Simplified Program Model\nfunction main () {\n// only local variables\nlet x : int, y : int, z : int in ...\n// code...\n}\nIndex Val\n0 0xff ; x\n1 0x2c ; y\n2 0x0d ; z\n...\nLocal Store\n\u2022 at runtime\n\u2022 we will later turn it\ninto a stack frame\nName Type LocIdx\n\u201cx\u201d Int 0\n\u201cy\u201d Int 1\n\u201cz\u201d Int 2\n...\nSymbol Table:\n\u2022 at compile time\n\u2022 for each variable\ncontains its index\nin the local store\nWe will cover in more detail later",
+        "title": "Simplified Program Model"
+      },
+      {
+        "number": 13,
+        "text": "Code Generation for Expression Trees\nAttack strategy:\n\u2022 If expression is a constant \u201cn\u201d, load the value in a virtual register\n\u2022 If expression is a variable \u201cx\u201d, load its value into a virtual register\nfrom memory\n\u2022 If expression is \u201ce1 + e2\u201d,\n\u2022 Compute the left subexpression e1, store its result in a register \u201ct1\u201d\n\u2022 Compute the right subexpression e2, store its result in a register \u201ct2\u201d\n\u2022 Compute the result as \u201cres = t1 + t2",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 14,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_name();\nemit( loadI, node.val, =>, res );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_name();\nemit( loadAO, t1, t2, =>, res );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, res );\nbreak;\n}\nreturn result;\n}\nRegisterHandle is a simple integer, we\ncan refer to the register by this identifier\nWe define some temporary variables to\nstore register handles.\nWe next do an operation for the\nappropriate type of expression AST node\n(number, variable, addition)",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 15,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_name();\nemit( loadAO, t1, t2, =>, res );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, res );\nbreak;\n}\nreturn result;\n}\nEmits (prints) a simple load instruction.\nHow do we implement new_Reg_name()?",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 16,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_reg_name();\nemit( loadAO, t1, t2, =>, result );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, res );\nbreak;\n}\nreturn result;\n}\nHere base() (and offset()) emit a load\ninstruction:\nloadi BASE_x_\nwhere BASE_x_ is a constant\ncomputed from the symbol table for\nthe storage of \u2019x\u2019\n\u2022 BASE_x_ is LocIdx from the symbol\ntable, as index to the location store\nOffset matters for arrays and structs\nthat we will discuss later",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 17,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_reg_name();\nemit( loadAO, t1, t2, =>, result );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, result );\nbreak;\n}\nreturn result;\n}",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 18,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_reg_name();\nemit( loadAO, t1, t2, =>, result );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, result );\nbreak;\n}\nreturn result;\n}\n4 + a + 2\nloadI 4 => %0\nloadI BASE_a_ => %1\nloadI OFFSET_a_ => %2\nloadAO %1, %2 => %3\nadd %0, %3, => %4\nloadI 2 => %5\nadd %4, %5 => %6",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 19,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_reg_name();\nemit( loadAO, t1, t2, =>, result );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, result );\nbreak;\n}\nreturn result;\n}\n4 + a + 2\nloadI 4 => %0\nloadI BASE_a_ => %1\nloadI 0 => %2 ;; for int\nloadAO %1, %2 => %3\nadd %0, %3, => %4\nloadI 2 => %5\nadd %4, %5 => %6",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 20,
+        "text": "Code Generation for Expression Trees\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\ncase NUM: result = new_reg_name();\nemit( loadI, node.val, =>, result );\nbreak;\ncase ID: t1 = base( node.val );\nt2 = offset( node.val );\nresult = new_reg_name();\nemit( loadAO, t1, t2, =>, result );\nbreak;\ncase PLUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( add, t1, t2, =>, result );\nbreak;\n}\nreturn result;\n}\n4 + a + 2\nloadI 4 => %0\nloadI BASE_a_ => %1\nloadI 0 => %2\nload %1 => %3\nadd %0, %3, => %4\nloadI 2 => %5\nadd %4, %5 => %6\nOptimizations usually happen after the\nentire code generation is completed!",
+        "title": "Code Generation for Expression Trees"
+      },
+      {
+        "number": 21,
+        "text": "Let\u2019s Add Other Operations\nRegisterHandle genExpr( node ) {\nRegisterHandle result, t1, t2;\nswitch( type of node ) {\n//...\ncase TIMES: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( mult, t1, t2, =>, result );\nbreak;\ncase MINUS: t1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( sub, t1, t2, =>, result );\nbreak;\n}\nreturn result;\n}\nAnything special about div?\ncase DIV:\nt1 = genExpr( node.left_child );\nt2 = genExpr( node.right_child );\nresult = new_reg_name();\nemit( div, t1, t2, =>, result );\nbreak;",
+        "title": "Let\u2019s Add Other Operations"
+      },
+      {
+        "number": 22,
+        "text": "Your Turn: x + 4 * y\nloadI BASE_x_ => %0\nloadI OFFSET_x_ => %1\nloadAO %0, %1 => %2 ; %2 \u2190 x\nloadI 4 => %3 ; constant\nloadI BASE_y_ => %4\nloadI OFFSET_y_ => %5\nloadAO %4, %5 => %6 ; %6 \u2190 y\nmult %3, %6 => %7\nadd %2, %7 => %8",
+        "title": "Your Turn: x + 4 * y"
+      },
+      {
+        "number": 23,
+        "text": "Your Turn (we can simplify it for scalars)\nloadI BASE_x_ => %0\nload %0 => %2 ; %2 \u2190 x\nloadI 4 => %3 ; constant\nloadI BASE_y_ => %4\nload %4=> %6 ; %6 \u2190 y\nmult %3, %6 => %7\nadd %2, %7 => %8",
+        "title": "Your Turn (we can simplify it for scalars)"
+      },
+      {
+        "number": 24,
+        "text": "Mixed Type Expressions\nExample: x + 4 * 2.3e0\n\u2022 expression must have a clearly defined meaning\n\u2022 some languages, e.g., Ocaml forbid mixing; instead: float_of_int(x) +. 4.0 *. 2.3e0\n\u2022 typically convert to more general type\n\u2022 complicated, machine dependent code\nTypical rule: use conversion table\nE.g., x + 4, where Type(x) != Type(4):\n1. Type(result) \u2190 Tbl (+, Type(x), Type(4))\n2. Convert x to Type(result)\n3. Convert 4 to Type(result)\n4. Add converted values:\nyields Type(result)",
+        "title": "Mixed Type Expressions"
+      },
+      {
+        "number": 25,
+        "text": "Let Us Do Something With Expressions...\n(this is not a complete picture yet)\nlet x : Int = Expr in ...\nWe break it down:\n1. Declaration of x\n2. Evaluating the expression\n3. Using the value in the follow up code",
+        "title": "Let Us Do Something With Expressions..."
+      },
+      {
+        "number": 26,
+        "text": "Let Us Do Something With Expressions...\nlet x : int = Expr in ...\n1. Declaration of x\nalloc int, \u2018x\u2019 ;; our own extension to ILOC (similar to llvm)\n\u2022 Indicates the new variable, should be added to the symbol table + local store\n2. Evaluating expression Expr, as before\n\u2022 Generate expression code with genExpr, obtain %result\n\u2022 Expr cannot not contain this x\n\u2022 Store the value to x:\nloadI BASE_x_ => %rbase\nloadI OFFSET_x_ => %roffset\nstoreAO %result => %rbase, %roffset\n3. Use later within the body, e.g., Expr2 ::= 3 + x\n\u2022 Obtain base(\u2018x\u2019) and offset(\u2018x\u2019) from symbol table; emit instructions to load x\nIndex Val\n... ...\nk-1 ...\nk 0x0000 ; x\nLocal Store (run time)\nName Type LocIdx\n... ... ...\n... ... k-1\n\u201cx\u201d Int k\n...\nSymbol Table (Compile time)",
+        "title": "Let Us Do Something With Expressions..."
+      },
+      {
+        "number": 27,
+        "text": "Let Us Do Something With Expressions...\nlet x : int = Expr in ...\n1. Declaration of x\nalloc int, \u2018x\u2019 ;; our own extension to ILOC (similar to llvm)\n\u2022 Indicate the new variable, should be added to the symbol table + local store\n2. Evaluating expression Expr, as before\n\u2022 Generate expression code with genExpr, obtain %result\n\u2022 Expr cannot not contain this x\n\u2022 Store the value to x:\nloadI BASE_x_ => %rbase\nstore %result => %rbase\n3. Use the stored value later within the body, e.g., Expr2 ::= 3 + x\n\u2022 Obtain base(\u2018x\u2019) and offset(\u2018x\u2019) from symbol table; emit instructions to load x\nIndex Val\nk-1 --\nk Result (123) ; x\n...\nLocal Store (run time)",
+        "title": "Let Us Do Something With Expressions..."
+      },
+      {
+        "number": 28,
+        "text": "Let Us Do Something With Expressions...\nlet x : int = Expr in\nlet x : int = Expr\u2019 in ...\nThe previous scheme could have worked with a single symbol table / store\nIf we have variable name redefinition, then we need a hierarchy of symbol\ntables \u2013 recall the IR lectures!\nFor the moment let\u2019s assume there is no variable name redefinition\n(we will get back to this question in full generality later!)...",
+        "title": "Let Us Do Something With Expressions..."
+      },
+      {
+        "number": 29,
+        "text": "Boolean and Relational Expressions\nWe can define the translation the same way for\n\u2022 Boolean operators (and, or, xor,...) and\n\u2022 Relational operators (cmp_LT, cmp_Eq, cmp_GE, ...)\nSimple traversal and code generation.\nExample: b > 10 and c < 1",
+        "title": "Boolean and Relational Expressions"
+      },
+      {
+        "number": 30,
+        "text": "Numerical Representation of Booleans\n\u2022 Assign a value to true, such as 1 (0x00000001) or -1 (0xFFFFFFFF)\n\u2022 Assign a value to false, such as 0\n\u2022 Use hardware instructions \u2014 and, or, not, xor\n\u2022 Select values that work with the hardware (0&1 are good, 1&3 are not)\nAny optimization possible for languages like C or Java?\n\u2022 Hint: &&, ||\n\u2022 Will get back to them later!",
+        "title": "Numerical Representation of Booleans"
+      },
+      {
+        "number": 31,
+        "text": "Conditionals\nif (test)\ntrue_body\nelse\nfalse_body\ncmp <do the test> => %reg\ncond_br %reg, label_true\njmp label_false\nlabel_true:\n<true_body>\njmp label_end\nlabel_false:\n<false_body>\nlabel_end:",
+        "title": "Conditionals"
+      },
+      {
+        "number": 32,
+        "text": "Conditionals (Balanced)\nif (test)\ntrue_body\nelse\nfalse_body\ncmp <do the test> => %reg\ncond_br %reg, label_true\nlabel_false:\n<false_body>\njmp label_end\nlabel_true:\n<true_body>\nlabel_end:",
+        "title": "Conditionals (Balanced)"
+      },
+      {
+        "number": 33,
+        "text": "Short Circuiting Condition\nTerms of a Boolean expression can be evaluated until its value is established. Then, any remaining\nterms should not be evaluated.\nExamples:\n\u2022 if (a && foo(b)) ... call to foo() should not be made if a is false.\n\u2022 if (k > 5 || a[i+1, j, k-1] < 20) ... computing the indices not necessary if k>5\nBasic Rules: once value established, stop evaluating\n\u2022 true or \u3008expr\u3009 is true\n\u2022 false and \u3008expr\u3009 is false\norder of evaluation must be observed\nNote: If order of evaluation is unspecified, short-circuiting can be used as an optimization:\nreorder by cost and short-circuit",
+        "title": "Short Circuiting Condition"
+      },
+      {
+        "number": 34,
+        "text": "Conditionals (Balanced; Shortcircuited)\nif (test1 && test2 )\ntrue_body\nelse\nfalse_body\nif ( test1 )\nif ( test2 )\ntrue_body\nelse\nfalse_body\ncmp <do the test1> => %reg1\ncond_br %reg1, label_true1\nlabel_false1:\n<false_body>\njmp label_end\nlabel_true1:\ncmp <do the test2> => %reg2\ncond_br %reg2, label_true2\njmp label_false1\nlabel_true2:\n<true_body>\nlabel_end:",
+        "title": "Conditionals (Balanced; Shortcircuited)"
+      }
+    ],
+    "title": "Compiler Construction"
+  },
+  "duration": 600,
+  "endedAt": "2026-09-30T10:43:56.846Z",
+  "id": "68636255-D990-4AA7-9DF2-C86C58F58791",
+  "quiz": [],
+  "source": {
+    "audioFile": {
+      "originalFileName": "cs426-first10min.wav"
+    }
+  },
+  "startedAt": "2026-09-30T10:41:39.674Z",
+  "status": "finished",
+  "summary": {
+    "flagged": [
+      "The quiz format is similar to the previous one.",
+      "In quiz questions, the word 'can' implies finding at least one instance is sufficient.",
+      "New symbols should be assumed to be not equivalent."
+    ],
+    "generatedAt": "2026-09-30T10:44:33.227Z",
+    "keyConcepts": [
+      {
+        "definition": "A special function used in SSA form to handle variable versions at join points.",
+        "term": "phi function"
+      },
+      {
+        "definition": "The condition that determines the location for placing a phi function on a path.",
+        "term": "convergence condition"
+      },
+      {
+        "definition": "An intermediate representation where each instruction involves at most three operands.",
+        "term": "three-address code"
+      },
+      {
+        "definition": "An Abstract Syntax Tree representing the abstract syntactic structure of source code.",
+        "term": "AST"
+      },
+      {
+        "definition": "An abstraction of a CPU register allowing for an infinite number of storage locations.",
+        "term": "virtual register"
+      }
+    ],
+    "overview": "SSA node convergence requires placing a phi function at the first node on a path from V to B' that satisfies the convergence condition. If convergence occurs at a node earlier than B', the phi function must be placed at that earlier node. To convert an AST to three-address code, constants and variables are loaded into virtual registers. Expressions are then processed recursively, such as computing E1 and E2 into temporary registers before performing the final operation.",
+    "reviewThese": [],
+    "slides": []
+  },
+  "takeaways": [
+    {
+      "detail": {
+        "bullets": [
+          "The first node on the path from V to B prime that satisfies the convergence condition is B prime.",
+          "If convergence occurs at a node earlier than B prime, the phi function must be placed at that earlier node.",
+          "The phi function should not be placed at node Z if convergence happens sooner on the path.",
+          "Announcement: Corrected slides will be posted on the website."
+        ],
+        "generatedAt": "2026-09-30T10:44:06.825Z",
+        "keyTerms": [
+          {
+            "definition": "A special function used in SSA form to handle variable versions at join points.",
+            "term": "phi function"
+          },
+          {
+            "definition": "The condition that determines the location for placing a phi function on a path.",
+            "term": "convergence condition"
+          }
+        ]
+      },
+      "end": 197.04,
+      "id": "1704DD03-2B21-4E6A-B1F8-81C33558E199",
+      "isLive": false,
+      "slidePages": [],
+      "start": 12.72,
+      "summary": "The first node on the path from V to B' that satisfies the convergence condition is B'. If convergence occurs earlier, the phi function must be placed at that earlier node.",
+      "title": "SSA node convergence",
+      "updatedAt": "2026-09-30T10:43:41.085Z"
+    },
+    {
+      "detail": {
+        "bullets": [
+          "Announcement: The quiz format is similar to the previous one.",
+          "In quiz questions, the word 'can' implies that finding at least one instance is sufficient.",
+          "New symbols should be assumed to be not equivalent."
+        ],
+        "generatedAt": "2026-09-30T10:44:10.823Z",
+        "keyTerms": [
+          {
+            "definition": "In quiz wording, implies finding at least one instance is sufficient.",
+            "term": "can"
+          }
+        ]
+      },
+      "end": 406.16,
+      "id": "7990F85B-EDEF-4908-AE65-E2FBF6A63A83",
+      "isLive": false,
+      "slidePages": [],
+      "start": 197.04,
+      "summary": "The quiz is similar to the previous one. The word 'can' in questions implies that finding at least one instance is sufficient.",
+      "title": "Announcements: Quiz format and wording",
+      "updatedAt": "2026-09-30T10:43:49.897Z"
+    },
+    {
+      "detail": {
+        "bullets": [
+          "AST expressions are converted to three-address code IR by following the structure of the expression.",
+          "For a constant n, the value is loaded into a virtual register.",
+          "For a variable x, its value is loaded into a virtual register.",
+          "For an expression E1 + E2, E1 is computed and stored in register T1, E2 is computed and stored in register T2, and the sum is stored in a new register.",
+          "Virtual registers are assumed to be infinite, so a new register is created for every new value."
+        ],
+        "example": "To convert E1 + E2, compute E1 and store it in T1, compute E2 and store it in T2, then compute T1 + T2 and store the result in a new register.",
+        "generatedAt": "2026-09-30T10:44:20.622Z",
+        "keyTerms": [
+          {
+            "definition": "An intermediate representation (IR) where each instruction involves at most three operands.",
+            "term": "three-address code"
+          },
+          {
+            "definition": "Abstract Syntax Tree, a tree representation of the abstract syntactic structure of source code.",
+            "term": "AST"
+          },
+          {
+            "definition": "An abstraction of a CPU register that allows for an infinite number of available storage locations.",
+            "term": "virtual register"
+          }
+        ]
+      },
+      "end": 599.6,
+      "id": "ED1594B1-1E9D-4063-8BC0-8E8E3589AB68",
+      "isLive": false,
+      "slidePages": [],
+      "start": 406.16,
+      "summary": "AST expressions are converted to three-address code by loading constants or variables into virtual registers and recursively computing operations like addition using temporary registers.",
+      "title": "AST to three-address code conversion",
+      "updatedAt": "2026-09-30T10:43:56.845Z"
+    }
+  ],
+  "title": "CS426 QA3 \u2014 SSA recap and IR",
+  "transcript": [
+    {
+      "end": 7.92,
+      "id": "A97FC085-C7A9-4354-BD3E-5CC66D1B3EC7",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 7.84,
+      "text": "So"
+    },
+    {
+      "end": 11.6,
+      "id": "5C16385B-D307-41FB-8896-3D7ED8E24731",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 8.96,
+      "text": "I want to correct something wrong in the slides."
+    },
+    {
+      "end": 24.24,
+      "id": "75CE900D-6086-4C08-BD5D-886F6447DBE0",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 12.72,
+      "text": "I'll post the corrected slides. So here it should be B prime. B prime is the first node on the path from V to B prime that satisfies 0.2 node Z"
+    },
+    {
+      "end": 29.04,
+      "id": "3044000B-8325-4337-9741-430ECC4BA6B1",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 28.080000000000002,
+      "text": "should be E"
+    },
+    {
+      "end": 33.04,
+      "id": "3043EE00-AC1E-4CCC-A730-630C2DC6CE8D",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 32,
+      "text": "what that means is like"
+    },
+    {
+      "end": 39.36,
+      "id": "08A06AE4-F5C1-4C4C-AEB0-5166233E68DA",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 34.96,
+      "text": "there is no earlier node in which it converges right at"
+    },
+    {
+      "end": 43.12,
+      "id": "68531B41-06DA-439B-A9DC-D19E8A4E9A4F",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 41.36,
+      "text": "the path that goes from B to B"
+    },
+    {
+      "end": 51.6,
+      "id": "144AD852-332B-4E76-A032-7FD802BE1926",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 44.72,
+      "text": "so if there exists another node at which it converges then you need to put the fee function at that node not on B prime"
+    },
+    {
+      "end": 54.8,
+      "id": "742821BA-0698-4B35-B638-4CAE61A6DAE9",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 52.56,
+      "text": "so it should not be Z here it should be B prime"
+    },
+    {
+      "end": 62.8,
+      "id": "A8EE6D40-904D-45D4-99B2-DE255D30F98C",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 56.32,
+      "text": "that was a small mistake on the side so so I'll put the corrected slides on the website"
+    },
+    {
+      "end": 74.96,
+      "id": "AD50563C-6BC0-4C52-A84E-EAA651FACFB9",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 68.56,
+      "text": "okay so now is a good time since we didn't do many quiz last time around so maybe we can do a start with one"
+    },
+    {
+      "end": 85.36,
+      "id": "57735C6A-8095-4C95-AC72-B9443811144B",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 83.52,
+      "text": "should increase five I think yeah"
+    },
+    {
+      "end": 185.28000000000003,
+      "id": "DE6231FC-92C3-43DB-ACB4-D5D6A2C6F418",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 181.68,
+      "text": "but uh it actually starts when you click on it so"
+    },
+    {
+      "end": 203.60000000000002,
+      "id": "3B5FF836-94C5-4978-BBB7-0634108E5D90",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 197.04,
+      "text": "I think this is the same as the last quiz right right so so whenever I have new symbols like assume they are uh uh not equivalent"
+    },
+    {
+      "end": 217.20000000000002,
+      "id": "3AB7467B-8427-4F04-854A-B2D2F48A6CAB",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 215.52,
+      "text": "and also like in this uh"
+    },
+    {
+      "end": 221.36,
+      "id": "752D3C01-644C-46FA-9DA5-44AE0B2B5970",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 218.96,
+      "text": "see the wording it can it says can right"
+    },
+    {
+      "end": 222.4,
+      "id": "CCE7D1C0-F4ED-4E19-B9A1-E80427DCFFDE",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 222.32,
+      "text": "so"
+    },
+    {
+      "end": 224.00000000000003,
+      "id": "98532D60-08D1-42B5-9127-E8F947161A1F",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 223.6,
+      "text": "there may be"
+    },
+    {
+      "end": 225.44000000000003,
+      "id": "95AAACD4-C006-4B85-AEBC-B8DF4365B525",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 225.28,
+      "text": "instances"
+    },
+    {
+      "end": 228.4,
+      "id": "A4D76CBC-549A-4D64-B635-F6F8BD627A01",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 227.44,
+      "text": "this may be wrong but"
+    },
+    {
+      "end": 231.76000000000002,
+      "id": "0E58D36F-DC0A-4120-B68A-F7F8F6A5C38F",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 229.84,
+      "text": "can means like you need to find one"
+    },
+    {
+      "end": 252.4,
+      "id": "AA949EE3-1CFB-402C-A920-60B7F2972294",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 251.76000000000002,
+      "text": "increase all"
+    },
+    {
+      "end": 253.68,
+      "id": "5CAE8FF9-522C-4220-A6B6-6F332BE93FE8",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 253.20000000000002,
+      "text": "you might want to"
+    },
+    {
+      "end": 277.12,
+      "id": "CEDBC7C5-A707-48D4-9404-41364E0B2998",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 276.16,
+      "text": "the following is not true"
+    },
+    {
+      "end": 280.15999999999997,
+      "id": "77B41C3D-77F2-4743-823A-F9507398AE3F",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 278.56,
+      "text": "oh oh yeah so you did"
+    },
+    {
+      "end": 290.08,
+      "id": "6B9DDFBA-6866-44EC-BAF9-18A1509C8B34",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 287.52,
+      "text": "the mini quiz so you might want to do it"
+    },
+    {
+      "end": 323.92,
+      "id": "916F8978-64AD-45F1-88C6-EB17FB8F7DFA",
+      "isFinal": true,
+      "speaker": {
+        "audience": {
+          "index": 1
+        }
+      },
+      "start": 321.6,
+      "text": "then we could start to deflect"
+    },
+    {
+      "end": 389.68,
+      "id": "4F138650-3D02-4302-BF8F-A1ABB77213FB",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 388.88,
+      "text": "I think this is a good place"
+    },
+    {
+      "end": 392.08,
+      "id": "9BF3E740-DA5E-41D6-80C7-201E010AB88D",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 390.8,
+      "text": "anybody still doing it"
+    },
+    {
+      "end": 394.32,
+      "id": "694B7156-6930-474F-87F7-06DBC447CCCE",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 394.16,
+      "text": "okay"
+    },
+    {
+      "end": 397.59999999999997,
+      "id": "397D0FFC-FA1C-4A2A-877C-B10F05538699",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 396.48,
+      "text": "any questions on the quiz"
+    },
+    {
+      "end": 400.64,
+      "id": "A2F52E56-0E82-4B94-BD87-7743A262F233",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 400,
+      "text": "any any doubts"
+    },
+    {
+      "end": 404.8,
+      "id": "9C33857D-7FF1-4F64-9610-299709723810",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 404.72,
+      "text": "so"
+    },
+    {
+      "end": 407.76,
+      "id": "82A79C9E-161F-4BEC-9B7C-CAB7B79DF26C",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 406.16,
+      "text": "so here you can easily construct"
+    },
+    {
+      "end": 416.32,
+      "id": "219F8C60-9A7B-4F5D-B766-46F6CD69A539",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 409.28000000000003,
+      "text": "a basic block structure where you have A goes to C, C goes to B, and then all of this will be true, right?"
+    },
+    {
+      "end": 420,
+      "id": "A0675CAC-5C80-482D-BB46-55B937DF055D",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 417.6,
+      "text": "And the second one is not true because"
+    },
+    {
+      "end": 421.84,
+      "id": "14C51B92-D333-44AD-A4AC-30BE61A9732F",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 421.12,
+      "text": "if they are, if"
+    },
+    {
+      "end": 431.2,
+      "id": "E85518B6-583C-4379-BDB0-07DE29B2C1DF",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 423.28000000000003,
+      "text": "the original, if you had a diamond structure, I think I drew that in one of the classes, you don't necessarily need a phenode, right?"
+    },
+    {
+      "end": 434.88,
+      "id": "58010B89-C34C-4E9C-AB7F-FD6F642CD8F0",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 433.44,
+      "text": "There may be multiple values entering"
+    },
+    {
+      "end": 437.76,
+      "id": "047C7DFC-E5D7-4699-98B6-ACEDD1CCD12E",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 435.76,
+      "text": "the particular basic block from multiple predecessors"
+    },
+    {
+      "end": 447.59999999999997,
+      "id": "09D337E0-9B15-470E-B51D-85245418F387",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 438.72,
+      "text": "or DL. Okay, but you don't need a phenode. So we had a mini quiz, so you might want to do it. But"
+    },
+    {
+      "end": 453.36,
+      "id": "36050E37-8901-4F78-A5F5-CF6925161F40",
+      "isFinal": true,
+      "speaker": {
+        "audience": {
+          "index": 1
+        }
+      },
+      "start": 451.6,
+      "text": "yeah, so if there are any other questions,"
+    },
+    {
+      "end": 473.2,
+      "id": "291E7A95-DC11-4588-B3F8-D17F99EB065D",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 453.76,
+      "text": "I'll talk about it towards the end of the class. Okay, so another small correction I made in the slides. So this particular thing was Zast time around. So this should be B prime, right?"
+    },
+    {
+      "end": 475.36,
+      "id": "E1534AF9-51C7-4135-B1E6-D3EC2CF41072",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 473.92,
+      "text": "That is a correction I made."
+    },
+    {
+      "end": 481.36,
+      "id": "73271FEA-1A5B-4A64-9127-6559F49F2637",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 480.64,
+      "text": "Corrected slides"
+    },
+    {
+      "end": 483.76,
+      "id": "417714FE-4211-473F-835B-965C5E02E591",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 482.88,
+      "text": "hopefully today."
+    },
+    {
+      "end": 495.2,
+      "id": "D426C19E-C39C-40D1-B95A-0114A408902A",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 484.56,
+      "text": "Okay, any questions before I start today's lecture. Okay, so the goal, if you can remember,"
+    },
+    {
+      "end": 497.2,
+      "id": "4D6359B0-4D31-41EC-A69B-33892CD5F871",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 496,
+      "text": "we stopped the last lecture"
+    },
+    {
+      "end": 500.24,
+      "id": "684ADB82-101E-4600-9CB0-17BDA2538E84",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 498.64,
+      "text": "trying to convert AST expressions"
+    },
+    {
+      "end": 512.48,
+      "id": "73D5C554-A467-4812-9DDB-41CF82DCF429",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 501.2,
+      "text": "into three-address code IR, right? So essentially, given a ST expression, can we convert that into three address code form with the instructions that I have shown you here?"
+    },
+    {
+      "end": 532.5600000000001,
+      "id": "170D03FA-9AFF-41F8-94EA-7E60AE26C912",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 521.2,
+      "text": "So the strategy for doing that is like we need to look at the structure of the expression. If the expression is just a constant n, then we just load the value into a virtual register."
+    },
+    {
+      "end": 538.24,
+      "id": "4279C14E-C654-40DF-AFEC-8BB165933F9B",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 532.88,
+      "text": "That's pretty easy. If the expression is a variable x, then we load its values"
+    },
+    {
+      "end": 546.24,
+      "id": "45191F37-051C-4B6D-B12D-B3FB4FE21477",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 539.2,
+      "text": "into a virtual. So in the first case, you load the constant value, and in the second case, you load the value of the variable."
+    },
+    {
+      "end": 552.32,
+      "id": "E5AA4946-A0BA-43EC-A708-255B13B10483",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 548.8000000000001,
+      "text": "And if the expression is of the form E1, some operation"
+    },
+    {
+      "end": 574.8000000000001,
+      "id": "775D880F-DB50-445A-B7F1-B0ABB52ECF9B",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 553.76,
+      "text": "and E2, and in this case, we only allow plus. So, if it's of the form E1 plus E2, you compute the left sub-expression E1, store the result in register T1, and compute the right sub expression E2 and store its result in register T2, and then the final value would be just the addition of the"
+    },
+    {
+      "end": 585.2,
+      "id": "0B6A46D0-3A8B-4AF4-AE96-BBF8A40E8E2C",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 576.16,
+      "text": "values in T1 and T2, and you need to create another register rest to do to store it. So, at this point in virtual register"
+    },
+    {
+      "end": 589.84,
+      "id": "5CB24A6A-218D-4E6E-A759-1B336E354736",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 586.08,
+      "text": "in virtual registers, you won't need to care about whether there exist enough"
+    },
+    {
+      "end": 596.8000000000001,
+      "id": "E6EEBFF7-C0FD-41A9-AAB4-461A22659091",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 590,
+      "text": "registers because these registers are virtual. So, you can assume there are infinitely many registers. So, whenever you have a new"
+    },
+    {
+      "end": 599.6,
+      "id": "6FDD8596-3C5B-43B4-8203-9A59D61256BA",
+      "isFinal": true,
+      "speaker": {
+        "lecturer": {}
+      },
+      "start": 597.6800000000001,
+      "text": "value to store, you create a new one."
+    }
+  ],
+  "vocabulary": []
+}

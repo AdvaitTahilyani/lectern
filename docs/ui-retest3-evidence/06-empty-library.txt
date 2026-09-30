@@ -1,0 +1,42 @@
+2026-09-30T10:36:46.972Z
+Window: "Lectern", App: Lectern.
+0 standard window Lectern, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Lectures
+					6 row (selectable) Courses
+					7 row (selectable) New Course…
+			8 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		9 splitter (disabled, settable, float) 240
+		10 split group
+			11 container
+				12 text No lectures yet Start a lecture, or drop a slide deck here to set one up.
+				13 button New Lecture
+			14 splitter (disabled, settable, float) 1512
+	15 toolbar
+		16 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		17 button (disabled) Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		18 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			19 button New Lecture
+			20 menu button
+		21 search text field (settable) Search lectures, transcripts…
+			22 button Search
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+	26 text Lectern
+27 menu bar
+	28 Lectern
+	29 File
+	30 Edit
+	31 View
+	32 Lecture
+	33 Window
+	34 Help
+
+Selected:
+	5 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

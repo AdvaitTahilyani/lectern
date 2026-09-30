@@ -75,6 +75,8 @@ struct LiveSessionView: View {
                 Task { @MainActor in await Task.yield(); rootFocused = true }
                 Task { try? await Task.sleep(for: .seconds(1)); hasAppeared = true }
             }
+            // A search hit or citation into the lecture already on screen (QA Q3-8).
+            .onChange(of: app.pendingNavigation) { _, _ in applyPendingNavigation() }
             // Session-wide keys need the root focused again once a text field lets go (QA F2).
             .onChange(of: session.isTypingInAsk) { _, typing in
                 if !typing { Task { @MainActor in try? await Task.sleep(for: .milliseconds(80)); rootFocused = true } }
@@ -83,6 +85,8 @@ struct LiveSessionView: View {
                 Task { @MainActor in try? await Task.sleep(for: .milliseconds(80)); rootFocused = true }
             }
             .onChange(of: tier) { _, t in session.layoutTier = t }
+            // The title editor lives in the Takeaways header; bring that pane up in the compact tier.
+            .onChange(of: session.isEditingTitle) { _, editing in if editing, tier == .single { session.pane = .takeaways } }
             .onReceive(NotificationCenter.default.publisher(for: .lecternExport)) { _ in
                 guard !session.isLive else { return }
                 ExportCoordinator.exportMarkdown(session: session.session, course: session.course)
@@ -110,12 +114,18 @@ struct LiveSessionView: View {
         }
     }
 
-    @ViewBuilder private var singlePane: some View {
-        switch session.pane {
-        case .takeaways: TakeawaysColumn(session: session, tier: tier)
-        case .transcript: TranscriptView(session: session)
-        case .slides: SlidesColumn(session: session)
-        case .ask: AskView(session: session)
+    /// Ask stays mounted behind the other panes so ⌘K can focus its composer in the same update
+    /// (a pane created on demand dropped the first keystrokes, QA F1).
+    private var singlePane: some View {
+        ZStack {
+            switch session.pane {
+            case .takeaways: TakeawaysColumn(session: session, tier: tier)
+            case .transcript: TranscriptView(session: session)
+            case .slides: SlidesColumn(session: session)
+            case .ask: Color.clear
+            }
+            AskView(session: session, isActive: session.pane == .ask)
+                .paneVisible(session.pane == .ask)
         }
     }
 
@@ -143,14 +153,7 @@ struct LiveSessionView: View {
     }
 
     private func applyPendingNavigation() {
-        if let seek = app.pendingSeek, seek.sessionID == session.id {
-            app.pendingSeek = nil
-            session.seekTranscript(to: seek.time)
-        }
-        if let slide = app.pendingSlide, slide.sessionID == session.id {
-            app.pendingSlide = nil
-            session.showSlide(slide.page)
-        }
+        if let nav = app.takePendingNavigation(for: session.id) { session.navigate(to: nav) }
     }
 }
 
@@ -168,10 +171,7 @@ struct SessionToolbar: ToolbarContent {
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if !session.isLive, session.isEditingTitle {
-            ToolbarItem(placement: .principal) { TitleEditor(session: session) }
-        }
-        if tier == .single, !session.isEditingTitle {
+        if tier == .single {
             ToolbarItem(placement: .principal) {
                 Picker("Pane", selection: $session.pane) {
                     ForEach(SessionPane.allCases) { Text($0.label).tag($0) }
@@ -297,10 +297,15 @@ struct InspectorView: View {
             .padding(.horizontal, DS.Space.m)
             .padding(.vertical, DS.Space.s)
             Divider()
-            switch session.inspectorTab {
-            case .transcript: TranscriptView(session: session, showSearch: $showSearch)
-            case .ask: AskView(session: session)
-            case .quiz: QuizTabView(session: session)
+            // Transcript and Ask stay mounted (hidden, not removed) so ⌘F / ⌘K can focus their
+            // fields in the same update the tab switches; a tab created on demand could only focus
+            // on a later turn and dropped the first keystrokes (QA F1).
+            ZStack {
+                TranscriptView(session: session, showSearch: $showSearch)
+                    .paneVisible(session.inspectorTab == .transcript)
+                AskView(session: session, isActive: session.inspectorTab == .ask)
+                    .paneVisible(session.inspectorTab == .ask)
+                if session.inspectorTab == .quiz { QuizTabView(session: session) }
             }
         }
         .onChange(of: session.inspectorTab) { _, tab in if tab != .transcript { showSearch = false } }
@@ -309,6 +314,16 @@ struct InspectorView: View {
             showSearch = true
         }
         .onChange(of: session.isLive) { _, live in if live, session.inspectorTab == .quiz { session.inspectorTab = .transcript } }
+    }
+}
+
+extension View {
+    /// Shows or hides a pane that stays in the hierarchy: invisible, untouchable and out of the
+    /// accessibility tree while hidden (never `.hidden()`, which AppKit refuses focus into).
+    func paneVisible(_ shown: Bool) -> some View {
+        opacity(shown ? 1 : 0)
+            .allowsHitTesting(shown)
+            .accessibilityHidden(!shown)
     }
 }
 
@@ -340,21 +355,43 @@ struct SegmentedTabs: View {
     }
 }
 
-/// Inline title editor shown in the toolbar's principal slot (⌘⇧T in review).
+/// Inline title editor in the Takeaways header (⌘⇧T in review). It is always mounted; `isActive`
+/// shows it and moves focus into it synchronously. Return saves, Escape cancels, and focus leaving
+/// the field saves too.
 struct TitleEditor: View {
     var session: LiveSessionModel
+    var isActive: Bool
     @State private var draft = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         TextField("Lecture title", text: $draft)
             .textFieldStyle(.roundedBorder)
-            .frame(width: 320, height: 22)
+            .frame(width: 340, height: 22)
             .focused($focused)
-            .onSubmit { session.setTitle(draft); session.isEditingTitle = false }
+            .onSubmit { commit() }
             .onKeyPress(.escape) { session.isEditingTitle = false; return .handled }
-            .onAppear { draft = session.title }
-            .task { try? await Task.sleep(for: .milliseconds(120)); focused = true }
+            .onChange(of: isActive) { _, active in
+                if active {
+                    draft = session.title
+                    focused = true
+                } else {
+                    focused = false
+                }
+            }
+            .onChange(of: focused) { _, f in if !f, isActive { commit() } }
+            // Created already active (⌘⇧T brought the Takeaways pane up in the compact tier): the
+            // field exists on the next turn.
+            .onAppear {
+                guard isActive else { return }
+                draft = session.title
+                Task { @MainActor in await Task.yield(); focused = true }
+            }
             .accessibilityLabel("Lecture title")
+    }
+
+    private func commit() {
+        session.setTitle(draft)
+        session.isEditingTitle = false
     }
 }

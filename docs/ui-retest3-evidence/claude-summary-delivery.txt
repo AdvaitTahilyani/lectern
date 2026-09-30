@@ -1,0 +1,6 @@
+Destination: Claude desktop — Lecture assistant with transcription and quizzing
+URL: claude.ai/epitaxy/local_13966795-cbbc-496f-a209-459a503993c1
+Action: populated verified Prompt, then Return only
+Observed: heading You said: Third Lectern QA pass is complete.
+Observed: Prompt empty; Stop button; Waiting for Claude
+Send now: never invoked

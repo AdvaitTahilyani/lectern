@@ -79,6 +79,7 @@ actor FakeBrain: LectureIntelligence {
     func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap { throw LLMError.invalidResponse("unused") }
     func lectureSummary() async throws -> LectureSummary { throw LLMError.invalidResponse("unused") }
     func setCurrentSlide(_ page: Int) {}
+    func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async {}
 }
 
 final class Box<Value>: @unchecked Sendable {

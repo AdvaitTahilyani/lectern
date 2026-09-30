@@ -125,6 +125,8 @@ enum Prompts {
         var unshownSlides: String? = nil
         /// When the lecturer closed the class (later lines are after-class conversation).
         var classEndedAt: TimeInterval? = nil
+        /// The live card is an announcements/Q&A card written by the brain.
+        var liveIsAside = false
     }
 
     static func segmentation(_ input: SegmentationInput) -> [LLMMessage] {
@@ -159,6 +161,14 @@ enum Prompts {
             task = """
             The lecture has ended. Reply "continue" with the final title and summary for "\(title)".
             """
+        case (let title?, _, let isFinal) where input.liveIsAside:
+            task = """
+            The current card, "\(title)", holds announcements or Q&A. Lines that still belong to it \
+            (going over the quiz, answering questions about it, logistics) continue it: reply \
+            "continue" with new_lines_kind "admin_or_chat". Reply "new_topic" only where the lecturer \
+            starts teaching new material, with boundary_quote copied from exactly that point, and \
+            title and summary for the new topic.
+            """ + (isFinal ? " The lecture ends after these lines." : "")
         case (let title?, _, let isFinal):
             task = """
             Do the new lines start explaining a different concept or step than "\(title)"? If so, \
@@ -215,7 +225,8 @@ enum Prompts {
         student needs even though they are not a lecture topic. Write one card for them.
         - title: "\(questions ? "Q&A: " : "Announcements: ")" followed by 2-6 words.
         - summary: 1-2 sentences, at most 220 characters, with the concrete facts: dates, deadlines, \
-        exam or assignment format, grading rules, or the question and the lecturer's answer. Leave out \
+        exam or assignment format, grading rules, the answers when the lecturer goes over a quiz, or the \
+        question and the lecturer's answer. Leave out \
         small talk and anything students say among themselves.
         If the lines are only small talk (the class ending, students chatting, no facts a student \
         needs), reply {"title": "", "summary": ""}.

@@ -20,13 +20,14 @@ public actor LectureBrain: LectureIntelligence {
     let continuation: AsyncStream<BrainUpdate>.Continuation
 
     let providers: RoleProviders
-    let slideSearch: (any SlideSearching)?
-    let excerpts: SlideExcerpts
-    let slideSupport: SlideSupport
-    let openingStretch: OpeningStretch
+    var slideSearch: (any SlideSearching)?
+    var excerpts: SlideExcerpts
+    var slideSupport: SlideSupport
+    var openingStretch: OpeningStretch
     let lecture: Prompts.Lecture
-    /// Rendered once: part of every role's byte-stable prompt prefix.
-    let digest: String
+    /// Rendered once (again only if a deck is attached later): part of every role's byte-stable
+    /// prompt prefix.
+    var digest: String
     let tuning: BrainTuning
 
     var quizSettings: QuizSettings
@@ -244,6 +245,24 @@ public actor LectureBrain: LectureIntelligence {
     static let sameCitationSeconds: TimeInterval = 10
 
     // MARK: - Slide tracking
+
+    public func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async {
+        slideSearch = slides
+        excerpts = SlideExcerpts(deck: deck, search: slides)
+        slideSupport = SlideSupport(deck: deck)
+        openingStretch = OpeningStretch(deck: deck)
+        // The system prefix changes once here; every later prompt shares the new one.
+        digest = DeckDigest.render(deck)
+        // Nothing is known about which slides the lecture showed before the deck arrived, so
+        // nothing is restricted until live tracking (from the next ingested segment) places a
+        // slide; a lecture in review is never restricted.
+        slideHistory = []
+        recordedProgress = []
+        deckProgressUnknown = true
+        currentSlide = nil
+        lastSlideCheck = -.infinity
+        suggestBacktrack(nil)
+    }
 
     public func setCurrentSlide(_ page: Int) {
         currentSlide = page

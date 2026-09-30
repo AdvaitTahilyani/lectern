@@ -1,0 +1,56 @@
+2026-09-30T11:17:04.511Z
+Window: "Models", App: Lectern.
+0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 heading Roles
+		3 container
+			4 text Summaries
+			5 pop up button Description: Summaries provider, Summaries provider, Value: On-device (MLX)
+			6 pop up button Description: Summaries model, Summaries model, Help: Gemma 4 26B-A4B (QAT 4-bit)
+			7 text Ready Quizzes
+			8 pop up button Description: Quizzes provider, Quizzes provider, Value: On-device (MLX)
+			9 pop up button Description: Quizzes model, Quizzes model, Help: Gemma 4 26B-A4B (QAT 4-bit)
+			10 text Ready Ask
+			11 pop up button Description: Ask provider, Ask provider, Value: On-device (MLX)
+			12 pop up button Description: Ask model, Ask model, Help: Gemma 4 26B-A4B (QAT 4-bit)
+			13 text Ready Each role can use a different provider. On-device keeps everything private.
+		14 heading Providers
+		15 container
+			16 disclosure triangle Description: On-device (MLX), Value: on
+			17 text Parakeet TDT 0.6B 600 MB Installed
+			18 button Remove
+			19 text Gemma 4 26B-A4B (QAT 4-bit) 15.6 GB Installed
+			20 button Remove
+			21 text Gemma 4 12B (4-bit) 6.8 GB Installed
+			22 button Remove
+			23 text Qwen3.5 9B (4-bit) 6 GB
+			24 button Download
+			25 text Models live in Storage › Location. 8.2 GB free.
+			26 disclosure triangle Description: Local server (Ollama / LM Studio), Value: off
+			27 disclosure triangle Description: OpenAI, Value: off
+			28 disclosure triangle Description: Anthropic, Value: off
+		29 scroll bar (settable, float) 0
+			30 value indicator (settable, float) 0
+			31 increment arrow button
+			32 decrement arrow button
+			33 increment page button
+			34 decrement page button
+	35 toolbar
+		36 button General, Secondary Actions: Move next, Remove from toolbar
+		37 button Transcription, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Models, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Quizzes, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Focus, Secondary Actions: Move previous, Remove from toolbar
+	41 close button
+	42 zoom button (disabled)
+	43 text Models
+44 menu bar
+	45 Lectern
+	46 File
+	47 Edit
+	48 View
+	49 Lecture
+	50 Window
+	51 Help
+
+The focused UI element is 0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise

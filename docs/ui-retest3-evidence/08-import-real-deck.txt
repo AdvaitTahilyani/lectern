@@ -1,0 +1,23 @@
+2026-09-30T10:39:13.083Z
+Window: "", App: Lectern.
+0 sheet Secondary Actions: Raise
+	1 container
+		2 text Import Recording
+		3 image Description: Audio Waveform, ID: waveform
+		4 text Found: cs426-first10min.wav
+		5 button Change
+		6 pop up button Course, Value: CS 426 — Compiler Construction
+		7 text field (settable) Title, Value: cs426 first10min
+		8 text Slides Importing runs in the background; the lecture appears in the library while it's processed.
+		9 button Cancel
+		10 button Import
+11 menu bar
+	12 Lectern
+	13 File
+	14 Edit
+	15 View
+	16 Lecture
+	17 Window
+	18 Help
+
+The focused UI element is 0 sheet Secondary Actions: Raise

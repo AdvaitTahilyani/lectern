@@ -37,6 +37,8 @@ final class CourseAskModel {
         var takeaways: Int
         var transcriptSegments: Int
         var hasSummary: Bool
+        /// A deck added in Review must reach the course assistant too.
+        var deckFile: String?
 
         init(_ session: LectureSession) {
             id = session.id
@@ -44,6 +46,7 @@ final class CourseAskModel {
             takeaways = session.takeaways.count
             transcriptSegments = session.transcript.count
             hasSummary = session.summary != nil
+            deckFile = session.deck?.fileName
         }
     }
 

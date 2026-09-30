@@ -162,6 +162,9 @@ actor DemoBrain: LectureIntelligence {
         Task { await self.userChoseSlide(page) }
     }
 
+    /// The demo script already follows its own deck; a deck added mid-demo changes nothing.
+    func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async {}
+
     private func userChoseSlide(_ page: Int) {
         userSlide = page
         if backtrackOffered { continuation.yield(.backtrackSuggestion(nil)) }

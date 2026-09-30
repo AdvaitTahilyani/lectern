@@ -1,0 +1,179 @@
+2026-09-30T11:41:54.221Z
+Window: "Lectern", App: Lectern.
+0 standard window Lectern, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 scroll area Secondary Actions: Scroll Up, Scroll Down
+				5 list
+					6 row (selectable) Description: 0 minutes 12 seconds
+Slide 2, Value: Graph Search: BFS & DFS
+Breadth-first search — Explores by layers using a queue; Finds shortest paths in unweighted graphs; O(V + E).
+CS 374
+Takeaway
+					7 row (selectable) Description: 3 minutes 24 seconds
+Slide 3, Value: Graph Search: BFS & DFS
+Depth-first search — Explores as deep as possible using a stack or recursion; Pre/post numbers classify edges; Back edge ⇔ cycle.
+CS 374
+Takeaway
+					8 row (selectable) Description: 0 minutes 12 seconds, Value: Graph Search: BFS & DFS
+Okay, next up is breadth-first search. Explores by layers using a queue
+CS 374
+Transcript
+					9 row (selectable) Description: 3 minutes 24 seconds, Value: Graph Search: BFS & DFS
+Now, the important idea here is depth-first search. Explores as deep as possible using a stack or recursion
+CS 374
+Transcript
+					10 row (selectable) Description: 6 minutes 36 seconds
+Slide 4, Value: Lambda Calculus
+Evaluation order — Call-by-value reduces arguments first; Call-by-name substitutes unevaluated; Church–Rosser: normal forms are unique.
+CS 421
+Takeaway
+					11 row (selectable) Description: 6 minutes 36 seconds, Value: Lambda Calculus
+Alright, moving on to evaluation order. Call-by-value reduces arguments first
+CS 421
+Transcript
+					12 row (selectable) Description: 7 minutes 6 seconds
+Slide 7, Value: Parsing II: LL(1) & Predictive Parsing
+FIRST sets: what a string can start with — FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point.
+CS 421
+Takeaway
+					13 row (selectable) Description: 12 minutes 26 seconds
+Slide 11, Value: Parsing II: LL(1) & Predictive Parsing
+The LL(1) table and the LL(1) condition — M[A, a] = α for a ∈ FIRST(α), and for b ∈ FOLLOW(A) when ε ∈ FIRST(α); the grammar is LL(1) iff no cell holds two productions.
+CS 421
+Takeaway
+					14 row (selectable) Description: 7 minutes 6 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+Now the two sets that make prediction possible. FIRST of alpha is the set of terminals that can begin some string derived from alpha.
+CS 421
+Transcript
+					15 row (selectable) Description: 7 minutes 16 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+If alpha can derive the empty string, we also put epsilon into FIRST of alpha.
+CS 421
+Transcript
+					16 row (selectable) Description: 7 minutes 23 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+For a terminal, FIRST is just the terminal itself. For a production A goes to X one through X n, you add FIRST of X one, and if that contains epsilon, you continue with X two, and so on.
+CS 421
+Transcript
+					17 row (selectable) Description: 7 minutes 50 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+For our grammar, FIRST of E prime is plus and epsilon, and FIRST of T is the same as FIRST of F, which is open paren and id.
+CS 421
+Transcript
+					18 row (selectable) Description: 9 minutes 31 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+FIRST tells us what a nonterminal can start with. FOLLOW tells us what can come immediately after it.
+CS 421
+Transcript
+					19 row (selectable) Description: 10 minutes 2 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+Sorry, quick question. Is FOLLOW of A just the FIRST set of whatever comes after A?
+CS 421
+Transcript
+					20 row (selectable) Description: 10 minutes 8 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+Good question. Almost. It's the union of FIRST of everything that can come after A in any production, minus epsilon, and if that can be empty you also pull in FOLLOW of the left-hand side. So it's bigger than any single FIRST set.
+CS 421
+Transcript
+					21 row (selectable) Description: 10 minutes 26 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+The rules: for B goes to alpha A beta, add FIRST of beta minus epsilon to FOLLOW of A. And if beta can be empty, or is empty, add FOLLOW of B to FOLLOW of A.
+CS 421
+Transcript
+					22 row (selectable) Description: 12 minutes 26 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+With FIRST and FOLLOW we can build the parse table. Rows are nonterminals, columns are terminals plus the end marker.
+CS 421
+Transcript
+					23 row (selectable) Description: 12 minutes 34 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+For each production A goes to alpha, put alpha in cell M of A comma a, for every terminal a in FIRST of alpha.
+CS 421
+Transcript
+					24 row (selectable) Description: 12 minutes 44 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+If epsilon is in FIRST of alpha, also put alpha in M of A comma b, for every b in FOLLOW of A.
+CS 421
+Transcript
+					25 row (selectable) Description: 13 minutes 6 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+Equivalently, for any two alternatives A goes to alpha or beta, their FIRST sets must be disjoint, and if beta can be empty, FIRST of alpha must not overlap FOLLOW of A.
+CS 421
+Transcript
+					26 row (selectable) Description: 19 minutes 45 seconds, Value: Parsing II: LL(1) & Predictive Parsing
+Last thing, and then we're done: what happens when the table cell is empty and you hit an error. You don't want to stop at the first mistake, right.
+CS 421
+Transcript
+					27 row (selectable) Description: 0 minutes 12 seconds
+Slide 2, Value: Dynamic Programming I
+Recursion with memoization — Identify overlapping subproblems; Store answers in a table keyed by the subproblem; Order the table so dependencies come first.
+CS 374
+Takeaway
+					28 row (selectable) Description: 9 minutes 48 seconds
+Slide 5, Value: Dynamic Programming I
+Design recipe — Write the recursion first; Then memoize; Then figure out the evaluation order.
+CS 374
+Takeaway
+					29 row (selectable) Description: 0 minutes 41 seconds, Value: Dynamic Programming I
+Order the table so dependencies come first. Is this clear? Okay, so, uh, let's keep going.
+CS 374
+Transcript
+					30 row (selectable) Description: 9 minutes 48 seconds, Value: Dynamic Programming I
+So this brings us to design recipe. Write the recursion first
+CS 374
+Transcript
+					31 row (selectable) Description: 0 minutes 53 seconds
+Slide 7, Value: QA3 demo regression
+FIRST sets: what a string can start with — FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point.
+CS 374
+Takeaway
+					32 row (selectable) Description: 0 minutes 53 seconds, Value: QA3 demo regression
+Now the two sets that make prediction possible. FIRST of alpha is the set of terminals that can begin some string derived from alpha.
+CS 374
+Transcript
+					33 row (selectable) Description: 0 minutes 56 seconds, Value: QA3 demo regression
+If alpha can derive the empty string, we also put epsilon into FIRST of alpha.
+CS 374
+Transcript
+					34 row (selectable) Description: 0 minutes 59 seconds, Value: QA3 demo regression
+For a terminal, FIRST is just the terminal itself. For a production A goes to X one through X n, you add FIRST of X one, and if that contains epsilon, you continue with X two, and so on.
+CS 374
+Transcript
+					35 row (selectable) Description: 1 minutes 8 seconds, Value: QA3 demo regression
+For our grammar, FIRST of E prime is plus and epsilon, and FIRST of T is the same as FIRST of F, which is open paren and id.
+CS 374
+Transcript
+					36 row (selectable) Description: 1 minutes 12 seconds, Value: QA3 demo regression
+FIRST tells us what a nonterminal can start with. FOLLOW tells us what can come immediately after it.
+CS 374
+Transcript
+					37 row (selectable) Description: 1 minutes 23 seconds, Value: QA3 demo regression
+Sorry, quick question. Is FOLLOW of A just the FIRST set of whatever comes after A?
+CS 374
+Transcript
+				38 scroll bar (settable, float) 0
+					39 value indicator (settable, float) 0
+					40 increment arrow button
+					41 decrement arrow button
+					42 increment page button
+					43 decrement page button
+			44 splitter (disabled, settable, float) 1512
+	45 toolbar
+		46 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		47 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		48 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			49 button New Lecture
+			50 menu button
+		51 search text field (settable) Value: FIRST, Placeholder: Search lectures, transcripts…
+			52 button Search
+			53 button cancel
+	54 container
+		55 button (selected) Search, All
+		56 button Search, Titles
+		57 button Search, Transcripts
+		58 button Search, Takeaways
+	59 close button
+	60 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	61 minimize button
+	62 text Lectern
+63 menu bar
+	64 Lectern
+	65 File
+	66 Edit
+	67 View
+	68 Lecture
+	69 Window
+	70 Help
+
+The focused UI element is 51 search text field (settable) Value: FIRST, Placeholder: Search lectures, transcripts…

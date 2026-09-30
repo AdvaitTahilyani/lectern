@@ -72,13 +72,19 @@ struct TranscriptionSettings: View {
     @Bindable var model: SettingsModel
     @Environment(AppModel.self) private var app
 
+    /// The speech model's size from the one catalog Models also shows (QA Q3-6).
+    private var speechModelSize: String {
+        let bytes = model.catalog.first { $0.id == TranscriptionEngineID.parakeet.rawValue }?.sizeBytes ?? 0
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
     var body: some View {
         Form {
             Section("Engine") {
                 Picker("Engine", selection: Binding(get: { model.settings.transcriptionEngine }, set: { model.setEngine($0) })) {
                     VStack(alignment: .leading) {
                         Text("Parakeet — on-device, Neural Engine")
-                        Text("Best accuracy and custom vocabulary. 600 MB download.").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                        Text("Best accuracy and custom vocabulary. \(speechModelSize) download.").font(DS.Typo.footnote).foregroundStyle(.secondary)
                     }.tag(TranscriptionEngineID.parakeet)
                     VStack(alignment: .leading) {
                         Text("Apple Speech — on-device fallback")
@@ -92,7 +98,7 @@ struct TranscriptionSettings: View {
                         let state = model.modelState(TranscriptionEngineID.parakeet.rawValue)
                         if model.settings.transcriptionEngine == .apple || state.isInstalled {
                             Circle().fill(DS.Colors.correct).frame(width: 8, height: 8)
-                            Text(model.settings.transcriptionEngine == .apple ? "Ready · system model" : "Ready · 600 MB")
+                            Text(model.settings.transcriptionEngine == .apple ? "Ready · system model" : "Ready · \(speechModelSize)")
                         } else if let p = state.progress {
                             ProgressView(value: p).frame(width: 80)
                             Text("Downloading \(Int(p * 100))%").contentTransition(.numericText())
@@ -243,20 +249,21 @@ struct ModelsSettings: View {
         let config = model.settings.provider(for: role)
         // A plain row (not LabeledContent, which combines its children into one text node for
         // accessibility): each popup stays an individual labeled control with its value (QA AX).
+        // The pickers' titles are their accessibility labels; an extra `.accessibilityLabel`
+        // read the name twice (QA Q3-6).
         return HStack(spacing: DS.Space.s) {
             Text(role.displayName).frame(width: 84, alignment: .leading)
             Picker("\(role.displayName) provider", selection: Binding(get: { config.kind }, set: { model.setProvider($0, for: role) })) {
                 ForEach(ProviderKind.allCases) { Text($0.displayName).tag($0) }
             }
             .labelsHidden().frame(width: 150)
-            .accessibilityLabel("\(role.displayName) provider")
             Picker("\(role.displayName) model", selection: Binding(get: { config.model }, set: { model.setModel($0, for: role) })) {
                 ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
                 if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
             }
             .labelsHidden().frame(width: 240)
             .help(displayName(config.model, kind: config.kind))
-            .accessibilityLabel("\(role.displayName) model")
+            .accessibilityValue(displayName(config.model, kind: config.kind))
             roleStatus(role, config: config)
         }
         .accessibilityElement(children: .contain)

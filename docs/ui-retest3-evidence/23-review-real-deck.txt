@@ -1,0 +1,164 @@
+2026-09-30T10:45:37.083Z
+Window: "CS426 QA3 — SSA recap and IR", App: Lectern.
+0 standard window CS426 QA3 — SSA recap and IR – CS 426 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Lectures
+					6 row (selectable) Courses
+					7 row (selected) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 container
+				13 text SLIDES TAKEAWAYS 3
+				14 button Description: Slide 1, Help: Open full size
+				15 text 1 of 34
+				16 scroll area Secondary Actions: Scroll Up, Scroll Down
+					17 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						18 button Slide 1, current
+						19 button Slide 2
+						20 button Slide 3
+						21 button Slide 4
+						22 button Slide 5
+						23 button Slide 6
+						24 button Slide 7
+						25 button Slide 8
+						26 button Slide 9
+						27 button Slide 10
+						28 button Slide 11
+						29 button Slide 12
+						30 button Slide 13
+						31 button Slide 14
+						32 button Slide 15
+						33 button Slide 16
+						34 button Slide 17
+						35 button Slide 18
+						36 button Slide 19
+						37 button Slide 20
+						38 button Slide 21
+						39 button Slide 22
+						40 button Slide 23
+					41 scroll bar (settable, float) 0
+						42 value indicator (settable, float) 0
+						43 increment arrow button
+						44 decrement arrow button
+						45 increment page button
+						46 decrement page button
+				47 scroll area
+					48 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						49 image Description: Sparkle, ID: sparkles
+						50 text Lecture summary
+						51 button Description: Copy, Help: Copy summary (⌘⇧C)
+						52 text SSA node convergence requires placing a phi function at the first node on a path from V to B' that satisfies the convergence condition. If convergence occurs at a node earlier than B', the phi function must be placed at that earlier node. To convert an AST to three-address code, constants and variables are loaded into virtual registers. Expressions are then processed recursively, such as computing E1 and E2 into temporary registers before performing the final operation. Key terms
+						53 button phi function. A special function used in SSA form to handle variable versions at join points.
+						54 button convergence condition. The condition that determines the location for placing a phi function on a path.
+						55 button three-address code. An intermediate representation where each instruction involves at most three operands.
+						56 button AST. An Abstract Syntax Tree representing the abstract syntactic structure of source code.
+						57 button virtual register. An abstraction of a CPU register allowing for an infinite number of storage locations.
+						58 text Flagged in the lecture: The quiz format is similar to the previous one.. In quiz questions, the word 'can' implies finding at least one instance is sufficient.. New symbols should be assumed to be not equivalent.
+						59 container Help: Double-tap to collapse, Secondary Actions: Copy, Ask about this, Show in transcript, Description: SSA node convergence, 0:12 to 3:17, Summary: The first node on the path from V to B' that satisfies the convergence condition is B'. If convergence occurs earlier, the phi function must be placed at that earlier node.
+							60 text SSA node convergence
+							61 button Description: 0 minutes 12 seconds, Help: Shows related slide
+							62 text The first node on the path from V to B' that satisfies the convergence condition is B'. If convergence occurs earlier, the phi function must be placed at that earlier node. • The first node on the path from V to B prime that satisfies the convergence condition is B prime. • If convergence occurs at a node earlier than B prime, the phi function must be placed at that earlier node. • The phi function should not be placed at node Z if convergence happens sooner on the path. • Announcement: Corrected slides will be posted on the website. Key terms
+							63 button phi function. A special function used in SSA form to handle variable versions at join points.
+							64 button convergence condition. The condition that determines the location for placing a phi function on a path.
+							65 button Description: 0 minutes 12 seconds, Help: Shows related slide
+							66 button Ask about this
+							67 button Copy
+						68 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 3 minutes 17 seconds, Description: Announcements: Quiz format and wording, 3:17 to 6:46, Summary: The quiz is similar to the previous one. The word 'can' in questions implies that finding at least one instance is sufficient.
+						69 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 6 minutes 46 seconds, Description: AST to three-address code conversion, 6:46 to 9:59, Summary: AST expressions are converted to three-address code by loading constants or variables into virtual registers and recursively computing operations like addition using temporary registers.
+			70 splitter (disabled, settable, float) 1171.5
+			71 container
+				72 container Inspector tab
+					73 button (selected) Transcript
+					74 button Ask
+					75 button Quiz
+				76 button Description: Search, Help: Find in transcript (⌘F)
+				77 scroll area Secondary Actions: Scroll Up, Scroll Down
+					78 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						79 container
+							80 button Description: 4 minutes 36 seconds, Help: Shows related slide
+							81 unknown 4 minutes 36 seconds: the following is not true oh oh yeah so you did
+						82 container
+							83 button Description: 4 minutes 47 seconds, Help: Shows related slide
+							84 unknown 4 minutes 47 seconds: the mini quiz so you might want to do it
+						85 container
+							86 button Description: 5 minutes 21 seconds, Help: Shows related slide
+							87 text Student
+							88 unknown 5 minutes 21 seconds, student: then we could start to deflect
+						89 container
+							90 button Description: 6 minutes 28 seconds, Help: Shows related slide
+							91 text Lecturer
+							92 unknown 6 minutes 28 seconds: I think this is a good place anybody still doing it
+						93 container
+							94 button Description: 6 minutes 34 seconds, Help: Shows related slide
+							95 unknown 6 minutes 34 seconds: okay
+						96 container
+							97 button Description: 6 minutes 36 seconds, Help: Shows related slide
+							98 unknown 6 minutes 36 seconds: any questions on the quiz
+						99 container
+							100 button Description: 6 minutes 40 seconds, Help: Shows related slide
+							101 unknown 6 minutes 40 seconds: any any doubts
+						102 container
+							103 button Description: 6 minutes 44 seconds, Help: Shows related slide
+							104 unknown 6 minutes 44 seconds: so so here you can easily construct
+						105 container
+							106 button Description: 6 minutes 49 seconds, Help: Shows related slide
+							107 unknown 6 minutes 49 seconds: a basic block structure where you have A goes to C, C goes to B, and then all of this will be true, right? And the second one is not true because if they are, if the original, if you had a diamond structure, I think I drew that in one of the classes, you don't necessarily need a phenode, right?
+						108 container
+							109 button Description: 7 minutes 13 seconds, Help: Shows related slide
+							110 unknown 7 minutes 13 seconds: There may be multiple values entering the particular basic block from multiple predecessors or DL. Okay, but you don't need a phenode. So we had a mini quiz, so you might want to do it. But
+						111 container
+							112 button Description: 7 minutes 31 seconds, Help: Shows related slide
+							113 text Student
+							114 unknown 7 minutes 31 seconds, student: yeah, so if there are any other questions,
+						115 container
+							116 button Description: 7 minutes 33 seconds, Help: Shows related slide
+							117 text Lecturer
+							118 unknown 7 minutes 33 seconds: I'll talk about it towards the end of the class. Okay, so another small correction I made in the slides. So this particular thing was Zast time around. So this should be B prime, right? That is a correction I made.
+						119 container
+							120 button Description: 8 minutes 0 seconds, Help: Shows related slide
+							121 unknown 8 minutes 0 seconds: Corrected slides
+						122 container
+							123 button Description: 8 minutes 2 seconds, Help: Shows related slide
+							124 unknown 8 minutes 2 seconds: hopefully today. Okay, any questions before I start today's lecture. Okay, so the goal, if you can remember, we stopped the last lecture trying to convert AST expressions into three-address code IR, right? So essentially, given a ST expression, can we convert that into three address code form with the instructions that I have shown you here?
+						125 container
+							126 button Description: 8 minutes 41 seconds, Help: Shows related slide
+							127 unknown 8 minutes 41 seconds: So the strategy for doing that is like we need to look at the structure of the expression. If the expression is just a constant n, then we just load the value into a virtual register. That's pretty easy. If the expression is a variable x, then we load its values into a virtual. So in the first case, you load the constant value, and in the second case, you load the value of the variable.
+						128 container
+							129 button Description: 9 minutes 8 seconds, Help: Shows related slide
+							130 unknown 9 minutes 8 seconds: And if the expression is of the form E1, some operation and E2, and in this case, we only allow plus. So, if it's of the form E1 plus E2, you compute the left sub-expression E1, store the result in register T1, and compute the right sub expression E2 and store its result in register T2, and then the final value would be just the addition of the
+						131 container
+							132 button Description: 9 minutes 36 seconds, Help: Shows related slide
+							133 unknown 9 minutes 36 seconds: values in T1 and T2, and you need to create another register rest to do to store it. So, at this point in virtual register in virtual registers, you won't need to care about whether there exist enough registers because these registers are virtual. So, you can assume there are infinitely many registers. So, whenever you have a new value to store, you create a new one.
+					134 scroll bar (settable, float) 1
+						135 value indicator (settable, float) 1
+						136 increment arrow button
+						137 decrement arrow button
+						138 increment page button
+						139 decrement page button
+	140 toolbar
+		141 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		142 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		143 text 10:00, ·, 3 takeaways
+		144 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		145 menu button Export, Help: Export (⌘E), ID: square.and.arrow.up
+		146 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		147 menu button More, ID: ellipsis.circle
+	148 close button
+	149 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	150 minimize button
+	151 text CS426 QA3 — SSA recap and IR CS 426 · Today
+152 menu bar
+	153 Lectern
+	154 File
+	155 Edit
+	156 View
+	157 Lecture
+	158 Window
+	159 Help
+
+The focused UI element is 15 text 1 of 34

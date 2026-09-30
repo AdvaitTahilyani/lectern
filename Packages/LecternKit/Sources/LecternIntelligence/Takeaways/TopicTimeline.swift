@@ -96,7 +96,20 @@ struct TopicTimeline: Sendable {
 
         // Lecture content after an announcements/Q&A card always starts a new card: the aside card
         // keeps its own text, however short it is.
-        let resumesAfterAside = asideCards.contains(current.id) && reply.newLinesKind != .admin && !title.isEmpty && !summary.isEmpty
+        let isAside = asideCards.contains(current.id)
+        // Past a card's length a "same concept" reply is taken as the lecture having resumed, so a
+        // model that never says new_topic cannot swallow the lecture into the aside card.
+        let resumesAfterAside = isAside && reply.newLinesKind != .admin
+            && (reply.action == .newTopic || reply.newLinesKind == .newConcept || latestEnd - current.start >= AsideStretch.maxCardSeconds)
+            && !title.isEmpty && !summary.isEmpty
+        // Otherwise lines after an aside card still belong to it (going over the quiz): it grows
+        // and keeps its own text (the brain rewrites it when it closes).
+        if isAside, !resumesAfterAside {
+            current.end = max(current.end, latestEnd)
+            current.updatedAt = now
+            replaceLive(current)
+            return .refined
+        }
         let isSameTitle = !resumesAfterAside && (title.caseInsensitiveCompare(current.title) == .orderedSame
             || Self.isNearDuplicate(title: title, summary: summary, of: current))
         if !resumesAfterAside, reply.action == .continueTopic || isSameTitle || reply.newLinesKind == .admin {
@@ -116,7 +129,22 @@ struct TopicTimeline: Sendable {
         let boundaryTime = match?.time ?? chunk.segments[chunkStart].start
         guard resumesAfterAside || boundaryTime - current.start >= minTopicSeconds else {
             // The live topic has barely started; splitting now would leave a sliver of a card (small
-            // models over-split). Keep one card, described by the newer title and summary.
+            // models over-split). When the model quoted where the new topic starts and the sliver
+            // reads like the card before it (going over a quiz after a correction), the sliver goes
+            // back to that card and the new topic starts at the quote, instead of the new topic's
+            // title being stretched back over lines that are not about it.
+            if let match, let i = takeaways.lastIndex(where: { $0.id == current.id }), i > 0,
+               !takeaways[i - 1].isLive, !asideCards.contains(takeaways[i - 1].id),
+               Self.leansToPrevious(sliver: reply.closedSummary.isEmpty ? current.title + " " + current.summary : current.title + " " + reply.closedSummary,
+                                    previous: takeaways[i - 1], next: title + " " + summary) {
+                takeaways[i - 1].end = boundaryTime
+                takeaways[i - 1].detail = nil
+                takeaways[i - 1].updatedAt = now
+                current.start = boundaryTime
+                current.slidePages = []
+                refine(&current, title: title, summary: summary, slides: slides, end: latestEnd, now: now)
+                return .split(boundary: match.segmentIndex)
+            }
             refine(&current, title: title, summary: summary, slides: slides, end: latestEnd, now: now)
             return .refined
         }
@@ -280,6 +308,12 @@ struct TopicTimeline: Sendable {
     }
 
     /// Jaccard similarity of `terms`.
+    /// Whether a short card's text shares more with the card before it than with the topic after it.
+    static func leansToPrevious(sliver: String, previous: Takeaway, next: String) -> Bool {
+        let before = similarity(sliver, previous.title + " " + previous.summary)
+        return before > 0 && before > similarity(sliver, next)
+    }
+
     private static func similarity(_ a: String, _ b: String) -> Double {
         let x = terms(a), y = terms(b)
         guard !x.isEmpty, !y.isEmpty else { return 0 }

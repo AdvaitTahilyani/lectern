@@ -1,0 +1,120 @@
+2026-09-30T11:40:25.811Z
+Window: "QA3 demo regression", App: Lectern.
+0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: off
+				7 text TAKEAWAYS 4
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Paused
+				10 button Description: Slide 10, Help: Open full size
+				11 text 10 of 18
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10, current
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+					32 scroll bar (settable, float) 0.5107296137339056
+						33 value indicator (settable, float) 0.5107296137339056
+						34 increment arrow button
+						35 decrement arrow button
+						36 increment page button
+						37 decrement page button
+				38 scroll area
+					39 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						40 button Description: Tight on space? The Focus panel (⌘⇧F) floats the current takeaway over any app., Open, Secondary Actions: Open
+						41 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:18, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+						42 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 18 seconds, Slides 3–4, Description: Predictive parsing chooses productions by lookahead, 0:18 to 0:33, slides 3 to 4, Summary: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.
+						43 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 33 seconds, Slides 5–6, Description: Eliminate left recursion before parsing top-down, 0:33 to 0:53, slides 5 to 6, Summary: A → Aα | β loops forever in recursive descent; rewrite it as A → βA′, A′ → αA′ | ε, e.g. E → T E′, E′ → + T E′ | ε.
+						44 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 53 seconds, Slides 7–8, Description: FIRST sets: what a string can start with, 0:53 to 1:12, slides 7 to 8, Summary: FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point.
+				45 button Resume following
+				46 text Current topic: FOLLOW sets and ε. FOLLOW(A) matters when A can derive ε; $ is in FOLLOW of the start symbol.
+			47 splitter (disabled, settable, float) 1171.5
+			48 container
+				49 container Inspector tab
+					50 button (selected) Transcript
+					51 button Ask
+				52 button Description: Search, Help: Find in transcript (⌘F)
+				53 button Jump to live
+				54 scroll area Secondary Actions: Scroll Up, Scroll Down
+					55 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						56 container
+							57 button Description: 0 minutes 0 seconds, Help: Shows related slide
+							58 unknown 0 minutes 0 seconds: Okay, uh, let's get started. Before I begin, a small correction to last week's slides: on slide fourteen the identifier token should be id, not ident, so I'll post the corrected slides on the website tonight. So last week we finished the lexer, right, so we can turn a stream of characters into a stream of tokens.
+						59 container
+							60 button Description: 0 minutes 8 seconds, Help: Shows related slide
+							61 unknown 0 minutes 8 seconds: Today we start on the parser, which takes those tokens and builds a syntax tree according to a context-free grammar. Remember a grammar has four parts: nonterminals, terminals, productions, and a start symbol. Any questions on that before I start today's lecture? Okay. The specific technique we'll cover today is called predictive parsing, and by the end you'll be able to build an LL(1) parse table by hand.
+						62 container
+							63 button Description: 0 minutes 18 seconds, Help: Shows related slide
+							64 unknown 0 minutes 18 seconds: Top-down parsing starts at the start symbol and repeatedly expands the leftmost nonterminal until the whole input is matched. The simplest implementation is recursive descent: you write one function per nonterminal, and each function tries to match one of its productions. The hard part is the choice. When a nonterminal has, like, several productions, which one do you expand? Anybody?
+						65 container
+							66 button Description: 0 minutes 26 seconds, Help: Shows related slide
+							67 unknown 0 minutes 26 seconds: Predictive parsers answer that by peeking at the next input token, which we call the lookahead. If one token of lookahead is always enough to decide, the grammar is LL(1): left to right scan, leftmost derivation, one token of lookahead. Is this clear? Okay. Before we can do any of this, we have to deal with left recursion.
+						68 container
+							69 button Description: 0 minutes 35 seconds, Help: Shows related slide
+							70 unknown 0 minutes 35 seconds: Take E goes to E plus T, or T. So a recursive descent function for E would immediately call itself on E, without consuming any input, and it just loops forever, right. So we rewrite. The general rule is: if A goes to A alpha or beta, replace it with A goes to beta A prime, and A prime goes to alpha A prime or epsilon.
+						71 container
+							72 button Description: 0 minutes 44 seconds, Help: Shows related slide
+							73 unknown 0 minutes 44 seconds: For our expression grammar that gives E goes to T E prime, and E prime goes to, uh, plus T E prime, or epsilon. And wait, on the slide it says plus E prime, that should be plus T E prime, small mistake, I'll fix it. Same language, but now every production consumes a token before recursing, so the parser terminates.
+						74 container
+							75 button Description: 0 minutes 53 seconds, Help: Shows related slide
+							76 unknown 0 minutes 53 seconds: Now the two sets that make prediction possible. FIRST of alpha is the set of terminals that can begin some string derived from alpha. If alpha can derive the empty string, we also put epsilon into FIRST of alpha. For a terminal, FIRST is just the terminal itself. For a production A goes to X one through X n, you add FIRST of X one, and if that contains epsilon, you continue with X two, and so on.
+						77 container
+							78 button Description: 1 minutes 4 seconds, Help: Shows related slide
+							79 unknown 1 minutes 4 seconds: You compute this by iterating: apply the rules to every production, and repeat until no set changes. That's a fixed point. Is this clear so far? Any doubts? For our grammar, FIRST of E prime is plus and epsilon, and FIRST of T is the same as FIRST of F, which is open paren and id. FIRST tells us what a nonterminal can start with. FOLLOW tells us what can come immediately after it.
+						80 container
+							81 button Description: 1 minutes 15 seconds, Help: Shows related slide
+							82 unknown 1 minutes 15 seconds: FOLLOW of A is the set of terminals that can appear right after A in some sentential form, and we add the end marker, dollar, to FOLLOW of the start symbol. You need FOLLOW precisely when A can derive epsilon, because then the parser has to know whether it's okay to expand A to nothing.
+						83 container
+							84 button Description: 1 minutes 23 seconds, Help: Shows related slide
+							85 text Student
+							86 unknown 1 minutes 23 seconds, student: Sorry, quick question. Is FOLLOW of A just the FIRST set of whatever comes after A?
+						87 text — Paused at 1:34 — — Paused at 1:35 — — Paused at 1:36 —
+					88 scroll bar (settable, float) 0.2574823943661972
+						89 value indicator (settable, float) 0.2574823943661972
+						90 increment arrow button
+						91 decrement arrow button
+						92 increment page button
+						93 decrement page button
+	94 toolbar
+		95 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		96 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		97 button Description: Paused, Help: Resume recording, Value: 1 minute, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		98 button Description: Resume, Help: Resume (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		99 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		100 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		101 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		102 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		103 menu button More, ID: ellipsis.circle
+	104 close button
+	105 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	106 minimize button
+	107 text QA3 demo regression CS 374 · Today
+108 menu bar
+	109 Lectern
+	110 File
+	111 Edit
+	112 View
+	113 Lecture
+	114 Window
+	115 Help
+
+The focused UI element is 45 button Resume following

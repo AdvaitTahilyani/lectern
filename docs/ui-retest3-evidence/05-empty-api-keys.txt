@@ -1,0 +1,27 @@
+2026-09-30T10:36:24.050Z
+Window: "Welcome to Lectern", App: Lectern.
+0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise
+	1 container
+		2 image Description: Mostly Cloudy, ID: cloud.fill
+		3 text Optional: cloud models for Ask Anthropic
+		4 secure text field (settable) API key
+		5 button Test
+		6 text OpenAI
+		7 secure text field (settable) API key
+		8 button Test
+		9 text You can add these later in Settings.
+		10 link Skip
+		11 button Done
+	12 close button
+	13 zoom button (disabled)
+	14 minimize button
+15 menu bar
+	16 Lectern
+	17 File
+	18 Edit
+	19 View
+	20 Lecture
+	21 Window
+	22 Help
+
+The focused UI element is 0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise

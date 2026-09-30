@@ -1,0 +1,58 @@
+2026-09-30T10:52:14.156Z
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – Compiler Construction, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Lectures
+					6 row (selectable) Courses
+					7 row (selected) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 scroll area
+				13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					14 button CS 426, — Compiler Construction, 1
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 button Description: CS426 QA3 — SSA recap and IR, CS 426 · Today, 10 min · 3 takeaways, Secondary Actions: Select, Open
+			17 splitter (disabled, settable, float) 1211.5
+			18 container
+				19 image Description: Sparkle In A Magnifying Glass, ID: sparkle.magnifyingglass
+				20 text Ask CS 426 1 lecture
+				21 button Description: Trash, Help: Clear history, ID: trash
+				22 scroll area
+					23 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						24 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+							25 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+						26 unknown Based on the provided material, there is no direct connection described between SSA phi functions and the AST-to-three-address-code conversion; they are discussed as separate topics within Lecture 1 [L1 T0:12–3:17; L1 T6:46–9:59]. The lecture covers SSA node convergence regarding where to place phi functions  Lecture 1 0:12–3:17 and the strategy for converting AST expressions into three-address code by using virtual registers  Lecture 1 6:46–9:59.
+						27 text What did the lecturer say about virtual registers, and where in the lecture can I find it?
+							28 text What did the lecturer say about virtual registers, and where in the lecture can I find it?
+						29 unknown In Lecture 1, the lecturer states that virtual registers are assumed to be infinite, meaning you can create a new register for every new value  Lecture 1 9:13. This allows you to not worry about whether there are enough registers available  Lecture 1 9:13.
+						30 button Description: Lecture 1, CS426 QA3 — SSA recap and IR, Help: CS426 QA3 — SSA recap and IR
+				31 text field (settable) Ask about CS 426…
+				32 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				33 text Answers cite lectures, slides and timestamps across the course
+	34 toolbar
+		35 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		36 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		37 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			38 button New Lecture
+			39 menu button
+		40 search text field (settable) Search lectures, transcripts…
+			41 button Search
+	42 close button
+	43 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	44 minimize button
+	45 text CS 426 Compiler Construction
+46 menu bar
+	47 Lectern
+	48 File
+	49 Edit
+	50 View
+	51 Lecture
+	52 Window
+	53 Help
+
+The focused UI element is 31 text field (settable) Ask about CS 426…

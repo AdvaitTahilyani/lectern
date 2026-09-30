@@ -1,0 +1,129 @@
+2026-09-30T11:08:17.216Z
+Window: "QA3 live microphone check", App: Lectern.
+0 standard window QA3 live microphone check – CS 426 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES TAKEAWAYS 2
+				6 image Description: Audio Waveform, ID: waveform
+				7 text Summarizing…
+				8 button Description: Slide 13, Help: Open full size
+				9 text 13 of 34
+				10 scroll area Secondary Actions: Scroll Up, Scroll Down
+					11 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						12 button Slide 1
+						13 button Slide 2
+						14 button Slide 3
+						15 button Slide 4
+						16 button Slide 5
+						17 button Slide 6
+						18 button Slide 7
+						19 button Slide 8
+						20 button Slide 9
+						21 button Slide 10
+						22 button Slide 11
+						23 button Slide 12
+						24 button Slide 13, current
+						25 button Slide 14
+						26 button Slide 15
+						27 button Slide 16
+						28 button Slide 17
+						29 button Slide 18
+						30 button Slide 19
+						31 button Slide 20
+						32 button Slide 21
+						33 button Slide 22
+						34 button Slide 23
+						35 button Slide 24
+						36 button Slide 25
+						37 button Slide 26
+						38 button Slide 27
+						39 button Slide 28
+						40 button Slide 29
+						41 button Slide 30
+					42 scroll bar (settable, float) 0.297962052002811
+						43 value indicator (settable, float) 0.297962052002811
+						44 increment arrow button
+						45 decrement arrow button
+						46 increment page button
+						47 decrement page button
+				48 scroll area
+					49 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						50 image Description: Audio Waveform, ID: waveform
+						51 text Writing summary…
+						52 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 17 seconds, Description: Recap: Phi function placement, 0:17 to 3:00, Summary: The phi function must be placed at the node where paths converge; if a path from B to B' converges with another path at an earlier node, the phi function belongs at that earlier node.
+						53 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 3 minutes 0 seconds, Slide 13, Description: AST to 3-address code conversion, 3:00 to 9:43, slide 13, Summary: To convert AST expressions to 3-address code, constants are loaded into virtual registers using loadI, while variables are loaded from memory using loadAO by retrieving the base address and offset from the symbol table.
+			54 splitter (disabled, settable, float) 1171.5
+			55 container
+				56 container Inspector tab
+					57 button (selected) Transcript
+					58 button Ask
+					59 button Quiz
+				60 button Description: Search, Help: Find in transcript (⌘F)
+				61 scroll area Secondary Actions: Scroll Up, Scroll Down
+					62 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						63 container
+							64 button Description: 6 minutes 56 seconds, Help: Shows related slide
+							65 unknown 6 minutes 56 seconds: Can you use any of them? 1228. So here are subscript means something already. 1232, stored in a register. Yeah, go ahead. 1233. I want to do the features like 1236, things at the bottom, load I, 1238, is that sent for Lod immediate?
+						66 container
+							67 button Description: 7 minutes 15 seconds, Help: Shows related slide
+							68 unknown 7 minutes 15 seconds: I mean, is 1240, this too small? Yeah, it may be small, right? 1243, a little bit, but that's fine, 1245, but is the bottom part of the top section for 1248, load operations load I and load immediate, 1250, MM, 1251. Yeah, so we could use this one, right?
+						69 container
+							70 button Description: 7 minutes 37 seconds, Help: Shows related slide
+							71 unknown 7 minutes 37 seconds: Yeah, the last, 1254, 1. So, what this stands for is load intermediate, 1258, immediate, 1300 hours, right, load an immediate value to a given, 1302, register, so you are going to load C1 and in 1305, this case C1 is equal to N, so you are going 1308, to load n to some register that you create. 1312 it can be any name, like
+						72 container
+							73 button Description: 8 minutes 6 seconds, Help: Shows related slide
+							74 unknown 8 minutes 6 seconds: register 34, 1314, register 39, 1316, 250 or something like that, right, 1318, so that's the code we need to
+						75 container
+							76 button Description: 8 minutes 16 seconds, Help: Shows related slide
+							77 unknown 8 minutes 16 seconds: emit 1321, so this should emit 1323, something like load 9, are anything like 1336, any value you can put like a new register, 1339, so what about y equals xO, 1350, y, 1406, equals x means you have to get the variable that 1410 yeah go ahead I think you use the load operation 1413, which load, 1418, right?
+						78 container
+							79 button Description: 8 minutes 42 seconds, Help: Shows related slide
+							80 unknown 8 minutes 42 seconds: So, do we know where the value the what 1426 do you call the we have some address of 1433 variable x stored already in a register?
+						81 container
+							82 button Description: 8 minutes 52 seconds, Help: Shows related slide
+							83 unknown 8 minutes 52 seconds: No 1443, no, no, it's the variable name right ye 1446, so this is just the ASD at this point, 1449, so this is where you need the 1450 symbol table. Yeah, go ahead, 1451, if we have a zero register, you can add
+						84 container
+							85 button Description: 9 minutes 13 seconds, Help: Shows related slide
+							86 unknown 9 minutes 13 seconds: zero, 1500 hours, into y, oh, zero register, yes, 1502, but you still need to load x, 1507, x is not in a register yet. 1511, so, but if you can remember, 1515, x is in memory somewhere, 1516, so you need to bring it, right? 1520 we were getting close we were saying, 1522, load but we were going to load some 1525 memory location, 1527, pointed by R1. That's not very clear yet.
+						87 container
+							88 button Description: 9 minutes 43 seconds, Help: Shows related slide
+							89 unknown 9 minutes 43 seconds: So, first, 1531, thing is, we need to now look at X ye go ahead, 1539, so we need to get the base address of X, 1543, and then 1544, maybe there is offset, who knows but, 1547, for simple data types the offset is 0, 1549, but you need to get the base plus offset and then, 1552, use an instruction like load a 0 or load at I 1602, so that's the strategy.
+						90 container
+							91 button Description: 10 minutes 14 seconds, Help: Shows related slide
+							92 unknown 10 minutes 14 seconds: So let's look at 1605, the actual code we are going to emit now, 1609. So, whenever you are actually developing a code generation, 1616 strategy, you need the algorithm to do that. 1620, first think about simple examples and what you
+						93 container
+							94 button Description: 10 minutes 34 seconds, Help: Shows related slide
+							95 unknown 10 minutes 34 seconds: would 1624 generate, how you would generate code for that example 1627, by hand, manually, manually what you would do, right? 1630, so then you know for this AST, this is the code that 1634, I'm going to generate.
+						96 container
+							97 button Description: 10 minutes 49 seconds, Help: Shows related slide
+							98 unknown 10 minutes 49 seconds: Now, let me automate, write, 1637, so similarly, like here, we could use load AI 1640, instruction for getting y equals x using 1644, though the value stored in the symbol table, 1646, and now we have a strategy in mind. How to do that, 1650, and next is to convert that, 1652, into code. So let's look at it, 165
+					99 scroll bar (settable, float) 0.9957548421331919
+						100 value indicator (settable, float) 0.9957548421331919
+						101 increment arrow button
+						102 decrement arrow button
+						103 increment page button
+						104 decrement page button
+	105 toolbar
+		106 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		107 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		108 text 12:19, ·, 2 takeaways, ·, 0/1 ✓
+		109 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		110 menu button Export, Help: Export (⌘E), ID: square.and.arrow.up
+		111 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		112 menu button More, ID: ellipsis.circle
+	113 close button
+	114 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	115 minimize button
+	116 text QA3 live microphone check CS 426 · Today
+117 menu bar
+	118 Lectern
+	119 File
+	120 Edit
+	121 View
+	122 Lecture
+	123 Window
+	124 Help
+
+The focused UI element is 0 standard window QA3 live microphone check – CS 426 · Today, ID: main-AppWindow-2, Secondary Actions: Raise

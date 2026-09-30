@@ -182,6 +182,10 @@ nonisolated enum DemoLibrarySeed {
         for (i, beat) in script.beats.enumerated() {
             guard let q = beat.quiz else { continue }
             let askedAt = takeaways[i].end + 5
+            // The script's ranges follow the live demo's clock; this timeline is the seeded one.
+            var question = q.question
+            question.sourceStart = takeaways[i].start
+            question.sourceEnd = takeaways[i].end
             let outcome: QuizOutcome = quiz.count == 1 ? .incorrect : (quiz.count == 3 ? .skipped : .correct)
             var answer: String?
             var grade: QuizGrade?
@@ -194,7 +198,7 @@ nonisolated enum DemoLibrarySeed {
                 grade = QuizGrade(isCorrect: false, feedback: "Not quite. \(beat.summary)", citations: q.question.sourceSlides.map(Citation.slide) + [.time(askedAt - 60)])
             default: break
             }
-            quiz.append(QuizRecord(question: q.question, answer: answer, grade: grade, outcome: outcome, askedAt: askedAt, answeredAt: outcome == .skipped ? nil : startedAt.addingTimeInterval(askedAt + 20)))
+            quiz.append(QuizRecord(question: question, answer: answer, grade: grade, outcome: outcome, askedAt: askedAt, answeredAt: outcome == .skipped ? nil : startedAt.addingTimeInterval(askedAt + 20)))
         }
         let chat = [
             ChatMessage(role: .user, text: "What's the difference between FIRST and FOLLOW?"),

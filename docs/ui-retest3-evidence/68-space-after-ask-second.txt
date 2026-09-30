@@ -1,0 +1,72 @@
+2026-09-30T11:21:07.917Z
+Window: "QA3 demo regression", App: Lectern.
+0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 button Jump to live
+				6 scroll area Secondary Actions: Scroll Up, Scroll Down
+					7 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						8 container
+							9 button Description: 0 minutes 0 seconds, Help: Shows related slide
+							10 unknown 0 minutes 0 seconds: Okay, uh, let's get started. Before I begin, a small correction to last week's slides: on slide fourteen the identifier token should be id, not ident, so I'll post the corrected slides on the website tonight. So last week we finished the lexer, right, so we can turn a stream of characters into a stream of tokens.
+						11 container
+							12 button Description: 0 minutes 8 seconds, Help: Shows related slide
+							13 unknown 0 minutes 8 seconds: Today we start on the parser, which takes those tokens and builds a syntax tree according to a context-free grammar. Remember a grammar has four parts: nonterminals, terminals, productions, and a start symbol. Any questions on that before I start today's lecture? Okay. The specific technique we'll cover today is called predictive parsing, and by the end you'll be able to build an LL(1) parse table by hand.
+						14 container
+							15 button Description: 0 minutes 18 seconds, Help: Shows related slide
+							16 unknown 0 minutes 18 seconds: Top-down parsing starts at the start symbol and repeatedly expands the leftmost nonterminal until the whole input is matched. The simplest implementation is recursive descent: you write one function per nonterminal, and each function tries to match one of its productions. The hard part is the choice. When a nonterminal has, like, several productions, which one do you expand? Anybody?
+						17 container
+							18 button Description: 0 minutes 26 seconds, Help: Shows related slide
+							19 unknown 0 minutes 26 seconds: Predictive parsers answer that by peeking at the next input token, which we call the lookahead. If one token of lookahead is always enough to decide, the grammar is LL(1): left to right scan, leftmost derivation, one token of lookahead. Is this clear? Okay. Before we can do any of this, we have to deal with left recursion.
+						20 container
+							21 button Description: 0 minutes 35 seconds, Help: Shows related slide
+							22 unknown 0 minutes 35 seconds: Take E goes to E plus T, or T. So a recursive descent function for E would immediately call itself on E, without consuming any input, and it just loops forever, right. So we rewrite. The general rule is: if A goes to A alpha or beta, replace it with A goes to beta A prime, and A prime goes to alpha A prime or epsilon.
+						23 container
+							24 button Description: 0 minutes 44 seconds, Help: Shows related slide
+							25 unknown 0 minutes 44 seconds: For our expression grammar that gives E goes to T E prime, and E prime goes to, uh, plus T E prime, or epsilon. And wait, on the slide it says plus E prime, that should be plus T E prime, small mistake, I'll fix it. Same language, but now every production consumes a token before recursing, so the parser terminates.
+						26 container
+							27 button Description: 0 minutes 53 seconds, Help: Shows related slide
+							28 unknown 0 minutes 53 seconds: Now the two sets that make prediction possible. FIRST of alpha is the set of terminals that can begin some string derived from alpha. If alpha can derive the empty string, we also put epsilon into FIRST of alpha. For a terminal, FIRST is just the terminal itself. For a production A goes to X one through X n, you add FIRST of X one, and if that contains epsilon, you continue with X two, and so on.
+						29 container
+							30 button Description: 1 minutes 4 seconds, Help: Shows related slide
+							31 unknown 1 minutes 4 seconds: You compute this by iterating: apply the rules to every production, and repeat until no set changes. That's a fixed point. Is this clear so far? Any doubts? For our grammar, FIRST of E prime is plus and epsilon, and FIRST of T is the same as FIRST of F, which is open paren and id. FIRST tells us what a nonterminal can start with. FOLLOW tells us what can come immediately after it.
+						32 container
+							33 button Description: 1 minutes 15 seconds, Help: Shows related slide
+							34 unknown 1 minutes 15 seconds: FOLLOW of A is the set of terminals that can appear right after A in some sentential form, and we add the end marker, dollar, to FOLLOW of the start symbol. You need FOLLOW precisely when A can derive epsilon, because then the parser has to know whether it's okay to expand A to nothing.
+						35 container
+							36 button Description: 1 minutes 23 seconds, Help: Shows related slide
+							37 text Student
+							38 unknown 1 minutes 23 seconds, student: Sorry, quick question. Is FOLLOW of A just the FIRST set of whatever comes after A?
+						39 text — Paused at 1:34 — — Paused at 1:35 —
+					40 scroll bar (settable, float) 0
+						41 value indicator (settable, float) 0
+						42 increment arrow button
+						43 decrement arrow button
+						44 increment page button
+						45 decrement page button
+			46 splitter (disabled, settable, float) 757
+	47 toolbar
+		48 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		49 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		50 Pane
+			51 radio button Description: Takeaways, Value: 0
+			52 radio button Description: Transcript, Value: 1
+			53 radio button Description: Slides, Value: 0
+			54 radio button Description: Ask, Value: 0
+		55 pop up button more toolbar items
+	56 close button
+	57 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	58 minimize button
+	59 text QA3 demo regression CS 374 · Today
+60 menu bar
+	61 Lectern
+	62 File
+	63 Edit
+	64 View
+	65 Lecture
+	66 Window
+	67 Help
+
+The focused UI element is 5 button Jump to live

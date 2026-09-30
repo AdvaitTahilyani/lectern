@@ -1,0 +1,79 @@
+2026-09-30T11:18:13.509Z
+Window: "QA3 demo regression", App: Lectern.
+0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 1, Help: Open full size
+				11 text 1 of 18
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+					32 scroll bar (settable, float) 0
+						33 value indicator (settable, float) 0
+						34 increment arrow button
+						35 decrement arrow button
+						36 increment page button
+						37 decrement page button
+				38 scroll area
+					39 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				40 unknown Recording
+				41 text Listening…
+				42 unknown Description: Input level, Details: 62 percent
+			43 splitter (disabled, settable, float) 1171.5
+			44 container
+				45 container Inspector tab
+					46 button (selected) Transcript
+					47 button Ask
+				48 button Description: Search, Help: Find in transcript (⌘F)
+				49 scroll area
+					50 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						51 button Description: 0 minutes 0 seconds, Help: Shows related slide
+						52 text  In progress: Okay, uh, let's get started.
+	53 toolbar
+		54 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		55 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		56 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		57 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		58 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		59 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		60 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		61 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		62 menu button More, ID: ellipsis.circle
+	63 close button
+	64 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	65 minimize button
+	66 text QA3 demo regression CS 374 · Today
+67 menu bar
+	68 Lectern
+	69 File
+	70 Edit
+	71 View
+	72 Lecture
+	73 Window
+	74 Help
+
+The focused UI element is 11 text 1 of 18

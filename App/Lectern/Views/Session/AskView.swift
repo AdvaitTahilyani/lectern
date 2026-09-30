@@ -5,6 +5,8 @@ import LecternCore
 /// between this lecture and the whole course (DESIGN.md §4.4, §4.14).
 struct AskView: View {
     @Bindable var session: LiveSessionModel
+    /// False while the view is mounted but hidden behind another pane (see `paneVisible`).
+    var isActive = true
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
@@ -42,17 +44,22 @@ struct AskView: View {
             }
         }
         .onChange(of: composerFocused) { _, f in session.isTypingInAsk = f }
-        .onChange(of: session.focusAskRequest) { _, _ in focusComposerSoon() }
-        .onAppear { if session.focusAskRequest > 0 { focusComposerSoon() } }
+        // The view is already mounted when ⌘K arrives, so focus lands in this same update and
+        // the first keystrokes go into the composer (QA F1).
+        .onChange(of: session.focusAskRequest) { _, _ in if isActive { composerFocused = true } }
+        // A hidden composer must not keep (or take) keyboard focus.
+        .onChange(of: isActive) { _, active in if !active { composerFocused = false } }
+        .onAppear { if isActive, session.focusAskRequest > 0 { focusComposerSoon() } }
         .onDisappear { session.isTypingInAsk = false }
     }
 
-    /// The composer may not be in the hierarchy yet when the tab switches; focus on the next turn.
+    /// Only for a view created while a focus request is already pending (a tier change rebuilt
+    /// the inspector): the field exists on the next turn.
     private func focusComposerSoon() {
         Task { @MainActor in
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(60))
-            composerFocused = true
+            if isActive { composerFocused = true }
         }
     }
 

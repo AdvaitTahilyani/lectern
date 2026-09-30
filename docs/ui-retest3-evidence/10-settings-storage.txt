@@ -1,0 +1,46 @@
+2026-09-30T10:39:34.341Z
+Window: "General", App: Lectern.
+0 standard window General, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 heading Appearance
+		3 container
+			4 Appearance
+				5 radio button Description: System, Value: 1
+				6 radio button Description: Light, Value: 0
+				7 radio button Description: Dark, Value: 0
+			8 switch Show menu bar status while recording, Value: on
+		9 heading Storage
+		10 container
+			11 text Location 553 KB · 1 lecture · 16.57 GB in 2 models
+			12 switch Keep audio recordings, Value: off
+		13 heading While you were away
+		14 container
+			15 switch Catch me up when I come back, Value: on
+			16 pop up button After being away for, Value: 1½ minutes
+		17 heading Privacy
+		18 text With on-device models selected, audio, slides and transcripts never leave this Mac. Cloud providers receive transcript excerpts and slide text for the roles you assign them.
+		19 scroll bar (settable, float) 0
+			20 value indicator (settable, float) 0
+			21 increment arrow button
+			22 decrement arrow button
+			23 increment page button
+			24 decrement page button
+	25 toolbar
+		26 button General, Secondary Actions: Move next, Remove from toolbar
+		27 button Transcription, Secondary Actions: Move previous, Move next, Remove from toolbar
+		28 button Models, Secondary Actions: Move previous, Move next, Remove from toolbar
+		29 button Quizzes, Secondary Actions: Move previous, Move next, Remove from toolbar
+		30 button Focus, Secondary Actions: Move previous, Remove from toolbar
+	31 close button
+	32 zoom button (disabled)
+	33 text General
+34 menu bar
+	35 Lectern
+	36 File
+	37 Edit
+	38 View
+	39 Lecture
+	40 Window
+	41 Help
+
+The focused UI element is 0 standard window General, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise

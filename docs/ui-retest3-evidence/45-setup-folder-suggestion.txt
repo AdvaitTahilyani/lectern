@@ -1,0 +1,47 @@
+2026-09-30T10:55:46.992Z
+Window: "New Lecture", App: Lectern.
+0 standard window New Lecture, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Lectures
+					6 row (selectable) Courses
+					7 row (selectable) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 scroll area
+			12 pop up button Course, Value: CS 426 — Compiler Construction
+			13 text field (settable) Title, Placeholder: Lecture Sep 30
+			14 image Description: Rich Text Document, ID: doc.richtext
+			15 text Drop the slide deck here PDF, PowerPoint or Keynote · or
+			16 link Choose…
+			17 button Description: Use lec8-ir3.pdf, Help: Next deck in “CS 426 Lecture Slides”
+			18 menu button Other decks in the slides folder
+			19 text No deck — slide following and slide citations will be off
+			20 image Description: Microphone, ID: mic.fill
+			21 pop up button Description: Microphone, Value: MacBook Pro Microphone
+			22 unknown Description: Input level, Details: 0 percent
+			23 button Description: On-device · Parakeet ready, Summaries: Gemma 4 26B-A4B, Details, Secondary Actions: Details
+			24 button Description: Not recording, Start Lecture, ⌘↩, Help: Start Lecture (⌘↩)
+	25 toolbar
+		26 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		27 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Remove from toolbar
+	28 close button
+	29 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	30 minimize button
+	31 text New Lecture
+32 menu bar
+	33 Lectern
+	34 File
+	35 Edit
+	36 View
+	37 Lecture
+	38 Window
+	39 Help
+
+Selected:
+	5 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

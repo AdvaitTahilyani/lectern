@@ -1,0 +1,54 @@
+2026-09-30T10:39:43.569Z
+Window: "Transcription", App: Lectern.
+0 standard window Transcription, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 heading Engine
+		3 container
+			4 radio button (selected) Description: Engine, Parakeet — on-device, Neural Engine, Best accuracy and custom vocabulary. 600 MB download., Value: 1
+			5 radio button Value: 0, Description: Engine, Apple Speech — on-device fallback, No download; tuned for lectures and meetings. No custom vocabulary.
+			6 text Status, Value: Ready · 600 MB
+				7 text Ready · 600 MB
+		8 heading Microphone
+		9 container
+			10 text Input
+				11 pop up button Description: Input, Value: MacBook Pro Microphone
+				12 unknown Description: Input level, Details: 13 percent
+			13 switch Voice isolation, Value: on
+		14 heading Slides
+		15 container
+			16 switch Fix course jargon from slides, Value: on
+			17 text When the lecture's deck uses a term, misheard versions of it are corrected, like “gen expression” → genExpr or “L are” → LR. Corrected words are underlined with dots in the transcript; hover to see what was heard.
+		18 heading Custom vocabulary
+		19 container
+			20 scroll area
+				21 list
+			22 text field (settable) Add a term
+			23 button (disabled) Description: Add, ID: plus
+			24 button (disabled) Description: Remove, ID: minus
+			25 button Import from slide decks…
+			26 text Words and names the transcriber should recognize.
+		27 scroll bar (settable, float) 0
+			28 value indicator (settable, float) 0
+			29 increment arrow button
+			30 decrement arrow button
+			31 increment page button
+			32 decrement page button
+	33 toolbar
+		34 button General, Secondary Actions: Move next, Remove from toolbar
+		35 button Transcription, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Models, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Quizzes, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Focus, Secondary Actions: Move previous, Remove from toolbar
+	39 close button
+	40 zoom button (disabled)
+	41 text Transcription
+42 menu bar
+	43 Lectern
+	44 File
+	45 Edit
+	46 View
+	47 Lecture
+	48 Window
+	49 Help
+
+The focused UI element is 0 standard window Transcription, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise

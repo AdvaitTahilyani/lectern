@@ -1,0 +1,41 @@
+2026-09-30T11:19:11.114Z
+Window: "QA3 demo regression", App: Lectern.
+0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text TAKEAWAYS 2
+				6 image Description: Audio Waveform, ID: waveform
+				7 text Listening
+				8 scroll area
+					9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						10 button Description: Tight on space? The Focus panel (⌘⇧F) floats the current takeaway over any app., Open, Secondary Actions: Open
+						11 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:18, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+						12 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 18 seconds, Slides 3–4, Description: Predictive parsing chooses productions by lookahead, 0:18 to 0:33, slides 3 to 4, Summary: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.
+				13 text Current topic: Eliminating left recursion. Rewrite A → Aα | β as A → βA′, A′ → αA′ | ε so every production consumes input before recursing.
+			14 splitter (disabled, settable, float) 757
+	15 toolbar
+		16 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		17 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		18 Pane
+			19 radio button Description: Takeaways, Value: 1
+			20 radio button Description: Transcript, Value: 0
+			21 radio button Description: Slides, Value: 0
+			22 radio button Description: Ask, Value: 0
+		23 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		24 pop up button more toolbar items
+	25 close button
+	26 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	27 minimize button
+	28 text QA3 demo regression CS 374 · Today
+29 menu bar
+	30 Lectern
+	31 File
+	32 Edit
+	33 View
+	34 Lecture
+	35 Window
+	36 Help
+
+The focused UI element is 13 text Current topic: Eliminating left recursion. Rewrite A → Aα | β as A → βA′, A′ → αA′ | ε so every production consumes input before recursing.

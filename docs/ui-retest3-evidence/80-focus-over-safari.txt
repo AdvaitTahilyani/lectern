@@ -1,0 +1,172 @@
+Window: "School — about:blank", App: Safari.
+0 standard window School — about:blank, ID: SafariWindow?IsSecure=false&UUID=B2263272-5254-4133-9442-BDD75CB50A17, Secondary Actions: Raise
+	1 split group
+		2 splitter (disabled, settable, float) -1
+		3 tab group
+			4 scroll area
+				5 HTML content about:blank
+	6 tab group Description: Tab bar, 89 tabs, ID: TabBar?isSeparate=false
+		7 tab (disabled) Description: 433 / CSE 422 Dashboard | Gradescope, Value: off
+		8 tab (disabled) Description: https://cs423-uiuc.github.io/fall26/slides/06.pdf, Value: off
+		9 tab (disabled) Description: https://cs423-uiuc.github.io/fall26/mps/MP1.pdf, Value: off
+		10 tab (disabled) Description: Lec:06.1 — CS 411 | PrairieLearn, Value: off
+		11 tab (disabled) Description: Fall 2026-CS 411-Database Systems-Sections CSP, MC3, MC4, QG, QU, Value: off
+		12 tab (disabled) Description: Campuswire, Value: off
+		13 tab (disabled) Value: off, Description: https://files.campuswire.com/ee174a8f-550f-4849-b068-328c55be2b82/0f60e7c0-6776-4031-bb7f-328145d25632/cs411-q1-cheatsheet.pdf
+		14 tab (disabled) Value: off, Description: https://files.campuswire.com/ee174a8f-550f-4849-b068-328c55be2b82/0f60e7c0-6776-4031-bb7f-328145d25632/cs411-q1-cheatsheet.pdf
+		15 tab (disabled) Description: (6 unread) | Piazza QA, Value: off
+		16 tab (disabled) Description: Career Fair advice from a recruiter : r/UIUC, Value: off
+		17 tab (disabled) Description: (6 unread) | Piazza QA, Value: off
+		18 tab (disabled) Description: us gdp per capita - Google Search, Value: off
+		19 tab (disabled) Description: how many people in india get free ration - Google Search, Value: off
+		20 tab (disabled) Description: Join from Zoom Workplace app - Zoom, Value: off
+		21 tab (disabled) Description: Air France | Air France, United States, Value: off
+		22 tab (disabled) Description: Results : Find & Book Airline Tickets : Delta Air Lines, Value: off
+		23 tab (disabled) Description: British Airways - Step one. Choose the dates and times of your flights., Value: off
+		24 tab (disabled) Description: SFO to BMI flights, Value: off
+		25 tab (disabled) Description: Compare Cheap Flights & Book Airline Tickets to Everywhere | Skyscanner, Value: off
+		26 tab (disabled) Description: Bookings - Select Flights, Value: off
+		27 tab (disabled) Description: Assessments — CS 411 | PrairieLearn, Value: off
+		28 tab (disabled) Description: Home — PrairieTest, Value: off
+		29 tab (disabled) Description: Axis Bank Transfer Partners Guide 2026 - SaveSage® Club, Value: off
+		30 tab (disabled) Description: GA:7.7 — CS 411 | PrairieLearn, Value: off
+		31 tab (disabled) Description: British Airways - Step one. Choose the dates and times of your flights., Value: off
+		32 tab (disabled) Description: Lifemiles, Value: off
+		33 tab (disabled) Description: Select Flight-Redemption Booking, Value: off
+		34 tab (disabled) Description: 1 | Air France, United States, Value: off
+		35 tab (disabled) Description: Book Travel with Points | Award Flight Search & Booking | point.me, Value: off
+		36 tab (disabled) Description: Redeem Membership Rewards® Points | Amex US, Value: off
+		37 tab (disabled) Description: Peoria Charter - Schedules, Value: off
+		38 tab (disabled) Description: British Airways - Step one. Choose the dates and times of your flights., Value: off
+		39 tab (disabled) Description: Cheap domestic flights from Indianapolis, Value: off
+		40 tab (disabled) Description: Quiz-practice1.4 — CS 411 | PrairieLearn, Value: off
+		41 tab (disabled) Description: how to download claude code linux - Google Search, Value: off
+		42 tab (disabled) Description: Sign in - Claude, Value: off
+		43 tab (disabled) Description: Assessments — CS 411 | PrairieLearn, Value: off
+		44 tab (disabled) Description: Assessments — CS 411 | PrairieLearn, Value: off
+		45 tab (disabled) Description: 423 -- Operating System Design (Fall 2026), Value: off
+		46 tab (disabled) Description: https://cs423-uiuc.github.io/fall26/mps/MP1.pdf, Value: off
+		47 tab (disabled) Description: SSH and GPG keys, Value: off
+		48 tab (disabled) Description: 433 / CSE 422 Dashboard | Gradescope, Value: off
+		49 tab (disabled) Description: (10) CS 433 / CSE 422 – Ed Discussion, Value: off
+		50 tab (disabled) Description: how to install claude on linux - Google Search, Value: off
+		51 tab (disabled) Description: Sign in - Claude, Value: off
+		52 tab (disabled) Description: Sign in successful | Claude Platform, Value: off
+		53 tab (disabled) Description: (2 unread) | Piazza QA, Value: off
+		54 tab (57) YouTube, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			55 image FaviconImageView
+		56 tab 426 | Siebel School of Computing and Data Science | Illinois, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			57 image FaviconImageView
+		58 tab Campuswire, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			59 image FaviconImageView
+		60 tab Value: off, Secondary Actions: close tab, https://files.campuswire.com/f0ae538c-e846-4105-80e8-6198693853d9/9d60fe70-c331-41e7-8d89-3077f01e62cb/mp2.pdf, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			61 image FaviconImageView
+		62 tab Login, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			63 image FaviconImageView
+		64 tab Cheap flights from New York to Mumbai on Skyscanner, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			65 image FaviconImageView
+		66 tab Qatar Airways, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			67 image FaviconImageView
+		68 tab Join from Zoom Workplace app - Zoom, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			69 image FaviconImageView
+		70 tab Fall 2026-CS 411-Database Systems-Sections CSP, MC3, MC4, QG, QU, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			71 image FaviconImageView
+		72 tab (11) CS 433 / CSE 422 – Ed Discussion, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			73 image FaviconImageView
+		74 tab 426: Compiler Construction, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			75 image FaviconImageView
+		76 tab 423 -- Operating System Design (Fall 2026), Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			77 image FaviconImageView
+		78 tab Flights | Multi-city | Search Results | 1 of 2 | American Express Travel, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			79 image FaviconImageView
+		80 tab Qatar Airways, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			81 image FaviconImageView
+		82 tab Rent a Car: Browse Car & Vehicle Rentals | American Express Travel, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			83 image FaviconImageView
+		84 tab Search Results | Emirates, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			85 image FaviconImageView
+		86 tab KLM Royal Dutch Airlines, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			87 image FaviconImageView
+		88 tab Confirmation, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			89 image FaviconImageView
+		90 tab 433 / CSE 422 Dashboard | Gradescope, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			91 image FaviconImageView
+		92 tab PT-1.3 — CS 411 | PrairieLearn, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			93 image FaviconImageView
+		94 tab 426 | Siebel School of Computing and Data Science | Illinois, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			95 image FaviconImageView
+		96 tab CITL Generative AI Fluency Certificate, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			97 image FaviconImageView
+		98 tab The Cognitive Impacts of Generative AI, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			99 image FaviconImageView
+		100 tab Files, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			101 image FaviconImageView
+		102 tab Campuswire, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			103 image FaviconImageView
+		104 tab Compiler Construction (CS 426 NG) (CS 426 NU) Fall 2026 - Illinois Media Space, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			105 image FaviconImageView
+		106 tab (11) CS 433 / CSE 422 – Ed Discussion, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			107 image FaviconImageView
+		108 tab Assessments — CS 411 | PrairieLearn, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			109 image FaviconImageView
+		110 tab https://courses.grainger.illinois.edu/cs433/fa2026/docs/slides/class01.pdf, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			111 image FaviconImageView
+		112 tab (11) CS 433 / CSE 422 – Ed Discussion, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			113 image FaviconImageView
+		114 tab Hi Fatty Prime, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			115 image FaviconImageView
+		116 tab Introducing GPT-6.1 Sol | OpenAI, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			117 image FaviconImageView
+		118 tab ChatGPT, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			119 image FaviconImageView
+		120 tab Advait Tahilyani (@advaittahilyani) | ChatGPT, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			121 image FaviconImageView
+		122 tab Sign in to your account, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			123 image FaviconImageView
+		124 tab Cheap flights from Mumbai to San Francisco on Skyscanner, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			125 image FaviconImageView
+		126 tab Passenger Details-Commercial Booking, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			127 image FaviconImageView
+		128 tab Search Results | Emirates, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			129 image FaviconImageView
+		130 tab Calculate Time and Cost | UPS - United States, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			131 image FaviconImageView
+		132 tab Cheap flights from Mumbai to San Francisco on Skyscanner, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			133 image FaviconImageView
+		134 tab SF home setup planner, Value: off, Secondary Actions: close tab, ID: TabBarTab?isNarrow=true&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=false
+			135 image FaviconImageView
+		136 tab about:blank, Help: To interact with the items in this button, press Control-Option-Shift-Down Arrow., Value: on, Secondary Actions: close tab, ID: TabBarTab?isNarrow=false&isExpanded=false&tabCount=&isPinned=false&isCluster=false&clusterID=&isActive=true
+			137 image Description: safari, ID: FaviconImageView
+			138 text Value: about:blank, ID: UnifiedTabBarButton._titleTextField
+	139 toolbar
+		140 button Description: Toggle sidebar, ID: SidebarButton, Secondary Actions: Move previous, Move next, Remove from toolbar
+		141 menu button ID: TabGroupPickerButton?Profile=School&Icon=graduationcap.fill, Secondary Actions: Move next, Remove from toolbar
+		142 container BackForwardSegmentedControl
+			143 button Description: Go back, Help: Show the previous page, ID: BackButton
+			144 button (disabled) Description: Go forward, Help: Show the next page, ID: ForwardButton
+		145 button Description: History, Secondary Actions: Move previous, Move next, Remove from toolbar
+		146 button Description: iCloud Tabs, Secondary Actions: Move previous, Move next, Remove from toolbar
+		147 container Secondary Actions: Move previous, Move next, Remove from toolbar
+			148 button Page Menu, ID: AssistantButton
+			149 button Add page to Reading List, ID: OneStepBookmarkingButton
+			150 text field (settable) Description: smart search field, Value: about:blank, ID: WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD
+			151 button Reload this page, ID: ReloadButton
+		152 button Description: Downloads, ID: DownloadsButton, Secondary Actions: Move previous, Move next, Remove from toolbar
+		153 button Description: Share, ID: ShareButton, Secondary Actions: Move previous, Move next, Remove from toolbar
+		154 button Description: New Tab, ID: NewTabButton, Secondary Actions: Move previous, Move next, Remove from toolbar
+		155 button Description: Tab Overview, ID: TabOverviewButton, Secondary Actions: Move previous, Remove from toolbar
+	156 close button
+	157 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	158 minimize button
+159 menu bar
+	160 Safari
+	161 File
+	162 Edit
+	163 View, ID: SafariViewMenu
+	164 History
+	165 Bookmarks, ID: SafariBookmarksMenu
+	166 Develop
+	167 Window, ID: SafariWindowMenu
+	168 Help, ID: SafariHelpMenu
+
+The focused UI element is 5 HTML content about:blank

@@ -1,0 +1,94 @@
+2026-09-30T11:42:51.530Z
+Window: "QA3 demo regression", App: Lectern.
+0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: off
+				7 text TAKEAWAYS 4
+				8 image Description: Rectangle Inset At The Top-Right Corner Of Filled, Help: Focus panel open, ID: rectangle.inset.topright.filled
+				9 image Description: Audio Waveform, ID: waveform
+				10 text Paused
+				11 button Description: Slide 10, Help: Open full size
+				12 text 10 of 18
+				13 scroll area Secondary Actions: Scroll Up, Scroll Down
+					14 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						15 button Slide 1
+						16 button Slide 2
+						17 button Slide 3
+						18 button Slide 4
+						19 button Slide 5
+						20 button Slide 6
+						21 button Slide 7
+						22 button Slide 8
+						23 button Slide 9
+						24 button Slide 10, current
+						25 button Slide 11
+						26 button Slide 12
+						27 button Slide 13
+						28 button Slide 14
+						29 button Slide 15
+						30 button Slide 16
+						31 button Slide 17
+						32 button Slide 18
+					33 scroll bar (settable, float) 0
+						34 value indicator (settable, float) 0
+						35 increment arrow button
+						36 decrement arrow button
+						37 increment page button
+						38 decrement page button
+				39 scroll area
+					40 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						41 button Description: Tight on space? The Focus panel (⌘⇧F) floats the current takeaway over any app., Open, Secondary Actions: Open
+						42 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:18, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+						43 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 18 seconds, Slides 3–4, Description: Predictive parsing chooses productions by lookahead, 0:18 to 0:33, slides 3 to 4, Summary: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.
+						44 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 33 seconds, Slides 5–6, Description: Eliminate left recursion before parsing top-down, 0:33 to 0:53, slides 5 to 6, Summary: A → Aα | β loops forever in recursive descent; rewrite it as A → βA′, A′ → αA′ | ε, e.g. E → T E′, E′ → + T E′ | ε.
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 53 seconds, Slides 7–8, Description: FIRST sets: what a string can start with, 0:53 to 1:12, slides 7 to 8, Summary: FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point.
+				46 button Resume following
+				47 text Current topic: FOLLOW sets and ε. FOLLOW(A) matters when A can derive ε; $ is in FOLLOW of the start symbol.
+			48 splitter (disabled, settable, float) 1171.5
+			49 container
+				50 container Inspector tab
+					51 button Transcript
+					52 button (selected) Ask
+				53 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				54 Scope
+					55 radio button Description: This lecture, Value: 1
+					56 radio button Description: Whole course, Value: 0
+				57 scroll area
+					58 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						59 text Explain FOLLOW sets and cite slides and lecture timestamps.
+							60 text Explain FOLLOW sets and cite slides and lecture timestamps.
+						61 unknown FOLLOW(A) is the set of terminals that can appear immediately to the right of A in some sentential form  Slide 9. Two rules fill it: for B → αAβ add FIRST(β) − {ε} to FOLLOW(A), and if β can be empty add FOLLOW(B) to FOLLOW(A)  Slide 10. The end marker $ always belongs to FOLLOW of the start symbol. You need it when A can derive ε, because then the parser must know whether expanding A to nothing is legal  0:33.
+						62 button Description: Slide 9, Help: Show slide 9
+						63 button Description: Slide 10, Help: Show slide 10
+						64 button Description: 0 minutes 33 seconds, Help: Shows related slide
+				65 text field (settable) Explain slide 12 simply
+				66 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				67 text On-device · answers cite slides
+	68 toolbar
+		69 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		70 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Paused, Help: Resume recording, Value: 1 minute, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Resume, Help: Resume (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		75 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		76 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		77 menu button More, ID: ellipsis.circle
+	78 close button
+	79 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	80 minimize button
+	81 text QA3 demo regression CS 374 · Today
+82 menu bar
+	83 Lectern
+	84 File
+	85 Edit
+	86 View
+	87 Lecture
+	88 Window
+	89 Help
+
+The focused UI element is 0 standard window QA3 demo regression – CS 374 · Today, ID: main-AppWindow-2, Secondary Actions: Raise

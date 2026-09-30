@@ -18,6 +18,7 @@ struct TakeawaysColumn: View {
     @State private var lastSeenSettled = 0
     @State private var focusedID: UUID?
     @State private var scrollTarget: UUID?
+    @State private var viewportHeight: CGFloat = 0
     @State private var firstMinuteHint = false
     @FocusState private var listFocused: Bool
 
@@ -64,16 +65,24 @@ struct TakeawaysColumn: View {
                 .frame(maxWidth: DS.Layout.readingMaxWidth + 2 * DS.Space.l)
                 .padding(.horizontal, DS.Space.l)
                 .padding(.vertical, DS.Space.m)
-                .frame(maxWidth: .infinity)
+                // Short content sits at the top even with the bottom anchor (QA Q3-9): the stack
+                // is at least as tall as the viewport, which depends only on the window, never
+                // on the content.
+                .frame(maxWidth: .infinity, minHeight: viewportHeight, alignment: .top)
                 .animation(motion.settle, value: session.settledTakeaways.map(\.id))
             }
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(session.isLive ? .bottom : .top)
+            .onScrollGeometryChange(for: CGFloat.self) { g in
+                max(0, g.containerSize.height - g.contentInsets.top - g.contentInsets.bottom)
+            } action: { _, h in
+                if abs(h - viewportHeight) > 0.5 { viewportHeight = h }
+            }
             .onScrollGeometryChange(for: ScrollSnapshot.self) { ScrollSnapshot($0) } action: { old, new in
                 if new.contentHeight == old.contentHeight, new.bottomInset == old.bottomInset {
                     // Offsets caused by our own scrollTo (within the last 0.6 s) are not user intent.
                     if Date.now < programmaticScrollUntil { if new.isAtBottom { newSinceUnpinned = 0 }; return }
-                    // Only the offset moved: the user scrolled.
-                    followLive = new.isAtBottom
+                    // Only the offset moved: the user scrolled (review never follows).
+                    followLive = session.isLive && new.isAtBottom
                     if followLive { newSinceUnpinned = 0 }
                 } else if followLive {
                     scrollToBottomSoon(proxy)
@@ -88,7 +97,12 @@ struct TakeawaysColumn: View {
             // keep the newest card visible when the user was already at the bottom.
             .onChange(of: session.quiz?.question.id) { _, _ in if followLive { scrollToBottomSoon(proxy) } }
             .onChange(of: session.recap == nil) { _, _ in if followLive { scrollToBottomSoon(proxy) } }
-            .onAppear { lastSeenSettled = session.settledCount; scrollToBottomSoon(proxy) }
+            .onAppear {
+                lastSeenSettled = session.settledCount
+                // Review reads top-down from the summary; only a live lecture follows the newest card.
+                followLive = session.isLive
+                if session.isLive { scrollToBottomSoon(proxy) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .lecternJumpToLive)) { _ in jumpToLive(proxy) }
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -124,13 +138,26 @@ struct TakeawaysColumn: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: DS.Space.s) {
-            Text("Takeaways").columnHeaderStyle()
-            if !session.settledTakeaways.isEmpty {
-                Text("\(session.settledTakeaways.count)").font(DS.Typo.caption).foregroundStyle(.secondary)
-                    .padding(.horizontal, DS.Space.xs).background(.quaternary, in: Capsule()).contentTransition(.numericText())
+        let editingTitle = !session.isLive && session.isEditingTitle
+        return HStack(spacing: DS.Space.s) {
+            if !editingTitle {
+                Text("Takeaways").columnHeaderStyle()
+                if !session.settledTakeaways.isEmpty {
+                    Text("\(session.settledTakeaways.count)").font(DS.Typo.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, DS.Space.xs).background(.quaternary, in: Capsule()).contentTransition(.numericText())
+                }
+                if tier == .two, session.pageCount > 0 { CurrentSlideChip(session: session) }
             }
-            if tier == .two, session.pageCount > 0 { CurrentSlideChip(session: session) }
+            // The title editor (⌘⇧T) stays mounted so focus can move into it in the same update
+            // it appears; a field created on demand dropped the first keystrokes (QA F1).
+            if !session.isLive {
+                TitleEditor(session: session, isActive: editingTitle)
+                    .frame(width: editingTitle ? 360 : 0, height: 22, alignment: .leading)
+                    .clipped()
+                    .opacity(editingTitle ? 1 : 0)
+                    .allowsHitTesting(editingTitle)
+                    .accessibilityHidden(!editingTitle)
+            }
             Spacer()
             if session.isFocusPanelOpen {
                 Image(systemName: "rectangle.inset.topright.filled").font(.caption).foregroundStyle(.secondary).help("Focus panel open")

@@ -104,7 +104,12 @@ final class LiveSessionModel {
     private(set) var isAnswering = false
     private(set) var askError: String?
     private(set) var reviewFlow: ReviewFlow?
-    var slideImages: SlideImageStore?
+    var slideImages: SlideImageStore? {
+        didSet { if let nav = navigationAfterImagesLoad, pageCount > 0 { navigationAfterImagesLoad = nil; navigate(to: nav) } }
+    }
+    /// A request with a slide that arrived before the deck's pages were known (review loads the
+    /// images after the view appears); applied whole once they are, so its time still wins.
+    private var navigationAfterImagesLoad: PendingNavigation?
 
     /// "While you were away" recap (DESIGN.md §4.12).
     enum RecapState: Hashable {
@@ -214,7 +219,12 @@ final class LiveSessionModel {
     var liveTakeaway: Takeaway? { takeaways.first { $0.isLive } }
     var summary: LectureSummary? { session.summary }
     var deck: SlideDeck? { session.deck }
-    var pageCount: Int { session.deck?.pages.count ?? slideImages?.pageCount ?? 0 }
+    /// Pages in the deck; a stored deck without page metadata (seeded demo lectures) counts the
+    /// rendered PDF instead, otherwise every slide chip past page 1 was refused (QA Q3-8).
+    var pageCount: Int {
+        if let n = session.deck?.pages.count, n > 0 { return n }
+        return slideImages?.pageCount ?? 0
+    }
     var displayedSlide: Int? { followSlides ? detectedSlide : (manualSlide ?? detectedSlide) }
     var chat: [ChatMessage] { session.chat }
     var quizRecords: [QuizRecord] { session.quiz }
@@ -231,20 +241,9 @@ final class LiveSessionModel {
         }
     }
 
-    /// The takeaway a question is about. `askedAt` is deliberately not used: a ping is offered
-    /// after the *next* topic has started, which mapped every concept to the wrong card (QA N2).
+    /// The takeaway a question is about (see `PracticeMatching`).
     func takeaway(for question: QuizQuestion) -> Takeaway? {
-        let settled = settledTakeaways
-        if let g = question.grounding {
-            if let t = settled.first(where: { $0.title.caseInsensitiveCompare(g.topic) == .orderedSame }) { return t }
-            if !g.slides.isEmpty, let t = settled.max(by: { Set($0.slidePages).intersection(g.slides).count < Set($1.slidePages).intersection(g.slides).count }),
-               !Set(t.slidePages).isDisjoint(with: g.slides) { return t }
-        }
-        if let s = question.sourceStart, let t = settled.first(where: { $0.start <= s && s < $0.end }) { return t }
-        if !question.sourceSlides.isEmpty, let t = settled.max(by: { Set($0.slidePages).intersection(question.sourceSlides).count < Set($1.slidePages).intersection(question.sourceSlides).count }),
-           !Set(t.slidePages).isDisjoint(with: question.sourceSlides) { return t }
-        let concept = question.concept.lowercased()
-        return settled.first { $0.title.lowercased().contains(concept) || $0.summary.lowercased().contains(concept) }
+        PracticeMatching.takeaway(for: question, in: settledTakeaways)
     }
     var subtitle: String {
         "\(courseLabel) · \(Self.relativeDate(startedAt))"
@@ -753,9 +752,15 @@ final class LiveSessionModel {
                 var stored = deck
                 stored.fileName = try await services.store.importSlides(from: url, into: id)
                 self.session.deck = stored
-                self.slideIndex = nil   // rebuilt from the new deck when a brain is next started
                 if self.detectedSlide == nil { self.detectedSlide = 1 }
                 self.markDirty()
+                // Index the new deck (off the main actor) and hand it to a brain that already
+                // exists, so Ask, quizzes and takeaways use it without reopening the lecture. A
+                // brain created later picks up `slideIndex` itself.
+                let index = await services.makeSlideIndex(stored)
+                guard self.session.deck?.fileName == stored.fileName else { return }   // replaced meanwhile
+                self.slideIndex = index
+                await self.brain?.attachDeck(stored, slides: index)
             } catch {
                 self.push(Notice(id: "deck", kind: .warning, symbol: "exclamationmark.triangle", title: error.localizedDescription, placement: .takeaways, actionLabel: nil))
             }
@@ -779,6 +784,18 @@ final class LiveSessionModel {
         case .time(let t): seekTranscript(to: t)
         }
         return true
+    }
+
+    /// Lands on an open-at request from the Library. The slide goes first (in review a chosen
+    /// slide also seeks the transcript to where it was first shown) so an explicit time wins.
+    func navigate(to nav: PendingNavigation) {
+        guard nav.sessionID == id else { return }
+        if nav.slide != nil, pageCount == 0 {
+            navigationAfterImagesLoad = nav
+            return
+        }
+        if let slide = nav.slide { showSlide(slide) }
+        if let time = nav.time { seekTranscript(to: time) }
     }
 
     /// A slide citation is a manual override (DESIGN §4.4): the hero shows the cited slide, Auto

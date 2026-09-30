@@ -1,0 +1,20 @@
+2026-09-30T10:36:17.497Z
+Window: "Welcome to Lectern", App: Lectern.
+0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise
+	1 container
+		2 image Description: Downward Arrow In A Dotted Circle, ID: arrow.down.circle.dotted
+		3 text Download the on-device models Parakeet (speech) done Gemma 4 26B-A4B (summaries, quizzes, Ask) done 16.57 GB · ~1 min on campus Wi-Fi
+		4 button Continue
+	5 close button
+	6 zoom button (disabled)
+	7 minimize button
+8 menu bar
+	9 Lectern
+	10 File
+	11 Edit
+	12 View
+	13 Lecture
+	14 Window
+	15 Help
+
+The focused UI element is 0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise

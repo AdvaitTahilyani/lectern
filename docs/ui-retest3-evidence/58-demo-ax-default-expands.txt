@@ -1,0 +1,163 @@
+2026-09-30T11:16:46.196Z
+Window: "Parsing II: LL(1) & Predictive Parsing", App: Lectern.
+0 standard window Parsing II: LL(1) & Predictive Parsing – CS 421 · Thu Sep 24, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Lectures
+					6 row (selectable) Courses
+					7 row (selectable) Description: CS 421, Value: 4
+					8 row (selectable) Description: CS 374, Value: 2
+					9 row (selectable) Description: MATH 415, Value: 2
+					10 row (selectable) New Course…
+			11 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		12 splitter (disabled, settable, float) 240
+		13 split group
+			14 container
+				15 text SLIDES TAKEAWAYS 9
+				16 button Description: Slide 1, Help: Open full size
+				17 text 1 of 18
+				18 scroll area Secondary Actions: Scroll Up, Scroll Down
+					19 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						20 button Slide 1, current
+						21 button Slide 2
+						22 button Slide 3
+						23 button Slide 4
+						24 button Slide 5
+						25 button Slide 6
+						26 button Slide 7
+						27 button Slide 8
+						28 button Slide 9
+						29 button Slide 10
+						30 button Slide 11
+						31 button Slide 12
+						32 button Slide 13
+						33 button Slide 14
+						34 button Slide 15
+						35 button Slide 16
+						36 button Slide 17
+						37 button Slide 18
+					38 scroll bar (settable, float) 0
+						39 value indicator (settable, float) 0
+						40 increment arrow button
+						41 decrement arrow button
+						42 increment page button
+						43 decrement page button
+				44 scroll area Secondary Actions: Scroll Up, Scroll Down
+					45 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						46 image Description: Sparkle, ID: sparkles
+						47 text Lecture summary
+						48 button Description: Copy, Help: Copy summary (⌘⇧C)
+						49 text Predictive (LL(1)) parsing expands the leftmost nonterminal using one token of lookahead. Left recursion must be eliminated and common prefixes left-factored first. FIRST sets say what a string can start with, FOLLOW sets what can come after a nonterminal; together they fill the LL(1) parse table, and a grammar is LL(1) exactly when no cell has two entries. A stack-driven parser then matches terminals and expands nonterminals from the table, recovering from errors in panic mode using FOLLOW as the synchroni Key terms
+						50 button LL(1). Left-to-right scan, leftmost derivation, one token of lookahead.
+						51 button FIRST set. Terminals that can begin a string derived from a symbol string.
+						52 button FOLLOW set. Terminals that can appear immediately after a nonterminal.
+						53 button left recursion. A → Aα, which must be eliminated before top-down parsing.
+						54 button left factoring. Removing a common prefix so lookahead can decide.
+						55 button panic mode. Skip to a synchronizing token, then resume.
+						56 text Review these
+						57 image Description: Undo, ID: arrow.uturn.backward.circle.fill
+						58 text FIRST sets — FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish.
+						59 link Review missed concepts
+						60 text Flagged in the lecture: Again, iterate to a fixed point. For our grammar, FOLLOW of E is close paren and dollar, and FOLLOW of E prime is, uh, the same. People get this wrong on the exam every year, so please practice it.. The LL(1) condition will be on the midterm. The classic example is if then else. Both productions start with if expr then stmt, so we factor that out and decide about the else later.. Reading: Dragon Book §4.4–4.5 before next lecture Worth revisiting
+						61 button Description: Slide 7, Help: Show slide 7
+						62 button Description: Slide 9, Help: Show slide 9
+						63 button Description: Slides 11–12, Help: Show slide 11
+						64 button (selected) Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 0 minutes 4 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:04 to 2:25, slides 1 to 2, quizzed correctly, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+						65 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 2 minutes 25 seconds, Slides 3–4, Description: Predictive parsing chooses productions by lookahead, 2:25 to 4:39, slides 3 to 4, missed on the quiz, Summary: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.
+						66 button (selected) Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 4 minutes 39 seconds, Slides 5–6, Description: Eliminate left recursion before parsing top-down, 4:39 to 7:06, slides 5 to 6, quizzed correctly, Summary: A → Aα | β loops forever in recursive descent; rewrite it as A → βA′, A′ → αA′ | ε, e.g. E → T E′, E′ → + T E′ | ε.
+						67 container Help: Double-tap to collapse, Secondary Actions: Copy, Ask about this, Show in transcript, Description: FIRST sets: what a string can start with, 7:06 to 9:31, slides 7 to 8, Summary: FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point.
+							68 text FIRST sets: what a string can start with
+							69 button Description: 7 minutes 6 seconds, Help: Shows related slide
+							70 text FIRST(α) holds every terminal that can begin a string derived from α, plus ε if α can vanish; compute it by iterating the rules to a fixed point. • FIRST(a) = {a} for any terminal a. • For A → X1…Xn, add FIRST(X1); keep going to X2 only if ε ∈ FIRST(X1). • Iterate over all productions until no FIRST set changes. • Example: FIRST(E′) = {+, ε}; FIRST(T) = FIRST(F) = {(, id}. Key terms
+							71 button FIRST set. FIRST(α): the terminals that can begin some string derived from α, plus ε if α ⇒* ε.
+							72 button fixed point. A state where reapplying the rules changes nothing; the iteration stops there.
+							73 text Slides
+							74 button Description: Slide 7, Help: Show slide 7
+							75 button Description: Slide 8, Help: Show slide 8
+							76 button Description: 7 minutes 6 seconds, Help: Shows related slide
+							77 button Ask about this
+							78 button Copy
+							79 button Description: Slides 7–8, Help: Show slide 7
+							80 image Description: Skipped, Help: Quiz skipped, ID: minus.circle
+						81 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 9 minutes 31 seconds, Slides 9–10, Description: FOLLOW sets: what can come after a nonterminal, 9:31 to 12:26, slides 9 to 10, Summary: FOLLOW(A) is every terminal that can appear right after A ($ for the start symbol); it decides when expanding A to ε is safe.
+						82 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 12 minutes 26 seconds, Slides 11–12, Description: The LL(1) table and the LL(1) condition, 12:26 to 14:49, slides 11 to 12, Summary: M[A, a] = α for a ∈ FIRST(α), and for b ∈ FOLLOW(A) when ε ∈ FIRST(α); the grammar is LL(1) iff no cell holds two productions.
+						83 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 14 minutes 49 seconds, Slides 13–14, Description: Table-driven LL(1) parsing with a stack, 14:49 to 17:12, slides 13 to 14, Summary: Start the stack with S $; match terminals against the lookahead, replace nonterminals with M[A, lookahead] reversed, accept when both hit $.
+						84 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 17 minutes 12 seconds, Slides 15–16, Description: Left factoring, and where LL(1) runs out, 17:12 to 19:45, slides 15 to 16, Summary: A → αβ1 | αβ2 becomes A → αA′, A′ → β1 | β2 so one token can decide; the dangling else stays ambiguous and some languages aren't LL(k) at all.
+						85 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, Show in transcript, 19 minutes 45 seconds, Slides 17–18, Description: Panic-mode error recovery uses FOLLOW as the sync set, 19:45 to 22:05, slides 17 to 18, Summary: On an empty table cell, skip input until a synchronizing token (FOLLOW(A) works well), pop A, report once and keep parsing; next lecture is bottom-up parsing.
+					86 scroll bar (settable, float) 0.9702247191011236
+						87 value indicator (settable, float) 0.9702247191011236
+						88 increment arrow button
+						89 decrement arrow button
+						90 increment page button
+						91 decrement page button
+			92 splitter (disabled, settable, float) 1171.5
+			93 container
+				94 container Inspector tab
+					95 button (selected) Transcript
+					96 button Ask
+					97 button Quiz
+				98 button Description: Search, Help: Find in transcript (⌘F)
+				99 scroll area Secondary Actions: Scroll Up, Scroll Down
+					100 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						101 container
+							102 button Description: 12 minutes 26 seconds, Help: Shows related slide
+							103 unknown 12 minutes 26 seconds: With FIRST and FOLLOW we can build the parse table. Rows are nonterminals, columns are terminals plus the end marker. For each production A goes to alpha, put alpha in cell M of A comma a, for every terminal a in FIRST of alpha. If epsilon is in FIRST of alpha, also put alpha in M of A comma b, for every b in FOLLOW of A.
+						104 container
+							105 button Description: 12 minutes 54 seconds, Help: Shows related slide
+							106 unknown 12 minutes 54 seconds: Okay so here's the key definition, this is important, this will be on the midterm: a grammar is LL(1) if and only if no cell ends up with two productions. Equivalently, for any two alternatives A goes to alpha or beta, their FIRST sets must be disjoint, and if beta can be empty, FIRST of alpha must not overlap FOLLOW of A.
+						107 container
+							108 button Description: 14 minutes 49 seconds, Help: Shows related slide
+							109 unknown 14 minutes 49 seconds: Once you have the table, the parser itself is trivial. You keep a stack that starts with the start symbol and the end marker. If the top of the stack is a terminal, it must match the lookahead: pop it and advance the input. If the top is a nonterminal A, look up M of A comma lookahead, pop A, and push the right-hand side in reverse.
+						110 container
+							111 button Description: 15 minutes 17 seconds, Help: Shows related slide
+							112 unknown 15 minutes 17 seconds: If the cell is empty, that's a syntax error. If the stack and the input are both at dollar, you accept. Everybody with me? Okay. Let's trace id plus id times id. Stack starts E dollar; lookahead is id, so we replace E with T E prime, then T with F T prime, then F with id, match, and keep going.
+						113 container
+							114 button Description: 17 minutes 12 seconds, Help: Shows related slide
+							115 unknown 17 minutes 12 seconds: Okay, one more transformation you'll need, uh, left factoring. Suppose A goes to alpha beta one, or alpha beta two, with the same prefix alpha. One token of lookahead can't tell those apart, so we factor the prefix: A goes to alpha A prime, and A prime goes to beta one or beta two.
+						116 container
+							117 button Description: 17 minutes 34 seconds, Help: Shows related slide
+							118 unknown 17 minutes 34 seconds: The classic example is if then else. Both productions start with if expr then stmt, so we factor that out and decide about the else later.
+						119 container
+							120 button Description: 17 minutes 45 seconds, Help: Shows related slide
+							121 text Student
+							122 unknown 17 minutes 45 seconds, student: So for the dangling else, does the factoring actually fix the ambiguity?
+						123 container
+							124 button Description: 17 minutes 50 seconds, Help: Shows related slide
+							125 text Lecturer
+							126 unknown 17 minutes 50 seconds: No, and that's exactly the point. Factoring only delays the decision. The dangling else is genuinely ambiguous, and no amount of factoring makes it LL(1), so most compilers resolve it by always matching the nearest if. That's a general lesson. LL(1) is simple and fast, but some languages aren't LL(k) for any k, which is why we'll look at bottom-up parsing next.
+						127 container
+							128 button Description: 19 minutes 45 seconds, Help: Shows related slide
+							129 unknown 19 minutes 45 seconds: Last thing, and then we're done: what happens when the table cell is empty and you hit an error. You don't want to stop at the first mistake, right. The simplest strategy is panic mode: discard input tokens until you reach a synchronizing token, then pop the nonterminal and continue.
+						130 container
+							131 button Description: 20 minutes 6 seconds, Help: Shows related slide
+							132 unknown 20 minutes 6 seconds: A good choice of synchronizing set for A is FOLLOW of A, because after skipping to something in FOLLOW of A you can pretend A was parsed and move on. Report the error once, don't cascade, and keep parsing so the user sees more than one problem per compile. Next time we'll do bottom-up parsing, shift-reduce, and LR tables. Read Dragon Book sections four point four and four point five.
+					133 scroll bar (settable, float) 1
+						134 value indicator (settable, float) 1
+						135 increment arrow button
+						136 decrement arrow button
+						137 increment page button
+						138 decrement page button
+	139 toolbar
+		140 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		141 button Description: Back to Library, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		142 text 22:05, ·, 9 takeaways, ·, 2/4 ✓
+		143 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		144 menu button Export, Help: Export (⌘E), ID: square.and.arrow.up
+		145 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		146 menu button More, ID: ellipsis.circle
+	147 close button
+	148 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	149 minimize button
+	150 text Parsing II: LL(1) & Predictive Parsing CS 421 · Thu Sep 24
+151 menu bar
+	152 Lectern
+	153 File
+	154 Edit
+	155 View
+	156 Lecture
+	157 Window
+	158 Help
+
+The focused UI element is 0 standard window Parsing II: LL(1) & Predictive Parsing – CS 421 · Thu Sep 24, ID: main-AppWindow-2, Secondary Actions: Raise

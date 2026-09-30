@@ -1,0 +1,165 @@
+{
+  "file": "Lectern-2026-09-30-164103.ips",
+  "captureTime": "2026-09-30 16:40:53.5359 +0530",
+  "exception": {
+    "codes": "0x0000000000000000, 0x0000000000000000",
+    "rawCodes": [
+      0,
+      0
+    ],
+    "type": "EXC_CRASH",
+    "signal": "SIGABRT"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 6,
+    "namespace": "SIGNAL",
+    "indicator": "Abort trap: 6",
+    "byProc": "Lectern",
+    "byPid": 77546
+  },
+  "faultingThread": 2,
+  "threads": [
+    {
+      "index": 2,
+      "queue": "com.apple.root.user-initiated-qos.cooperative",
+      "frames": [
+        {
+          "imageOffset": 38480,
+          "symbol": "__pthread_kill",
+          "symbolLocation": 8,
+          "imageIndex": 3
+        },
+        {
+          "imageOffset": 27004,
+          "symbol": "pthread_kill",
+          "symbolLocation": 296,
+          "imageIndex": 10
+        },
+        {
+          "imageOffset": 504920,
+          "symbol": "abort",
+          "symbolLocation": 148,
+          "imageIndex": 11
+        },
+        {
+          "imageOffset": 90884,
+          "symbol": "__abort_message",
+          "symbolLocation": 132,
+          "imageIndex": 12
+        },
+        {
+          "imageOffset": 13944,
+          "symbol": "demangling_terminate_handler()",
+          "symbolLocation": 296,
+          "imageIndex": 12
+        },
+        {
+          "imageOffset": 139568,
+          "symbol": "_objc_terminate()",
+          "symbolLocation": 156,
+          "imageIndex": 13
+        },
+        {
+          "imageOffset": 78512,
+          "symbol": "std::__terminate(void (*)())",
+          "symbolLocation": 16,
+          "imageIndex": 12
+        },
+        {
+          "imageOffset": 87996,
+          "symbol": "__cxxabiv1::failed_throw(__cxxabiv1::__cxa_exception*)",
+          "symbolLocation": 88,
+          "imageIndex": 12
+        },
+        {
+          "imageOffset": 8588,
+          "symbol": "__cxa_throw",
+          "symbolLocation": 92,
+          "imageIndex": 12
+        },
+        {
+          "imageOffset": 100212,
+          "symbol": "objc_exception_throw",
+          "symbolLocation": 448,
+          "imageIndex": 13
+        },
+        {
+          "imageOffset": 989104,
+          "symbol": "+[NSException raise:format:]",
+          "symbolLocation": 128,
+          "imageIndex": 4
+        },
+        {
+          "imageOffset": 769580,
+          "symbol": "AVAudioEngineGraph::InstallTapOnNode(AVAudioNode*, unsigned long, unsigned int, AVAudioFormat*, void (AVAudioPCMBuffer*, AVAudioTime*) block_pointer, NSError**)",
+          "symbolLocation": 600,
+          "imageIndex": 14
+        },
+        {
+          "imageOffset": 816560,
+          "symbol": "-[AVAudioNode installTapOnBus:bufferSize:format:error:block:]",
+          "symbolLocation": 456,
+          "imageIndex": 14
+        },
+        {
+          "symbol": "static AudioCapture.installTap(on:format:processor:)",
+          "inline": true,
+          "imageIndex": 0,
+          "imageOffset": 3080724,
+          "symbolLocation": 24,
+          "sourceLine": 117,
+          "sourceFile": "AudioCapture.swift"
+        },
+        {
+          "imageOffset": 3080724,
+          "sourceLine": 95,
+          "sourceFile": "AudioCapture.swift",
+          "symbol": "AudioCapture.startEngine(deviceUID:continuation:)",
+          "imageIndex": 0,
+          "symbolLocation": 852
+        },
+        {
+          "imageOffset": 3084916,
+          "sourceLine": 165,
+          "sourceFile": "AudioCapture.swift",
+          "symbol": "AudioCapture.handleConfigurationChange(of:)",
+          "imageIndex": 0,
+          "symbolLocation": 380
+        },
+        {
+          "imageOffset": 3079193,
+          "sourceLine": 61,
+          "sourceFile": "AudioCapture.swift",
+          "symbol": "closure #1 in closure #1 in AudioCapture.start(deviceID:)",
+          "imageIndex": 0,
+          "symbolLocation": 1
+        },
+        {
+          "imageOffset": 142665,
+          "symbol": "<deduplicated_symbol>",
+          "symbolLocation": 1,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 563421,
+          "symbol": "<deduplicated_symbol>",
+          "symbolLocation": 1,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 142665,
+          "symbol": "<deduplicated_symbol>",
+          "symbolLocation": 1,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 56641,
+          "symbol": "completeTaskWithClosure(swift::AsyncContext*, swift::SwiftError*)",
+          "symbolLocation": 1,
+          "imageIndex": 15
+        }
+      ]
+    }
+  ]
+}

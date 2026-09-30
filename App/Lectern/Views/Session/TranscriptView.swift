@@ -23,7 +23,14 @@ struct TranscriptView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if searchShown { searchField }
+            // The search bar stays mounted (collapsed to zero height) so ⌘F can focus its field
+            // in the same update it opens; a field created on demand dropped keystrokes (QA F1).
+            if showSearch != nil {
+                searchField
+                    .frame(height: searchShown ? Self.searchBarHeight : 0, alignment: .top)
+                    .clipped()
+                    .paneVisible(searchShown)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: DS.Space.l) {
@@ -102,9 +109,10 @@ struct TranscriptView: View {
         }
         .focusSection()
         .onChange(of: searchShown) { _, shown in
-            if shown { focusSearchSoon() } else { query = ""; hitIndex = 0 }
+            searchFocused = shown
+            if !shown { query = ""; hitIndex = 0 }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in if searchShown { focusSearchSoon() } }
+        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in if searchShown { searchFocused = true } }
         .onKeyPress(.escape) {
             guard searchShown else { return .ignored }
             showSearch?.wrappedValue = false
@@ -135,6 +143,9 @@ struct TranscriptView: View {
 
     private var currentHitID: UUID? { hits.indices.contains(hitIndex) ? hits[hitIndex] : nil }
 
+    /// Field height plus its vertical padding; fixed so showing the bar never depends on content.
+    private static let searchBarHeight: CGFloat = 20 + 2 * DS.Space.s
+
     private var searchField: some View {
         HStack(spacing: DS.Space.s) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -142,7 +153,6 @@ struct TranscriptView: View {
                 .textFieldStyle(.plain)
                 .frame(height: 20)
                 .focused($searchFocused)
-                .task { try? await Task.sleep(for: .milliseconds(80)); searchFocused = true }
                 .onSubmit { step(1) }
                 .onChange(of: query) { _, _ in hitIndex = 0 }
                 .onKeyPress(.upArrow) { step(-1); return .handled }
@@ -152,22 +162,12 @@ struct TranscriptView: View {
             } else if query.count >= 2 {
                 Text("0").font(DS.Typo.mono).foregroundStyle(.tertiary)
             }
-            Button { step(-1) } label: { Image(systemName: "chevron.up") }.keyboardShortcut(.return, modifiers: .shift)
-            Button { step(1) } label: { Image(systemName: "chevron.down") }
+            Button { step(-1) } label: { Image(systemName: "chevron.up") }.keyboardShortcut(.return, modifiers: .shift).disabled(!searchShown)
+            Button { step(1) } label: { Image(systemName: "chevron.down") }.disabled(!searchShown)
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, DS.Space.m).padding(.vertical, DS.Space.s)
         .background(.quaternary.opacity(0.5))
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    /// Focus after the field is in the hierarchy (a same-frame focus request is dropped).
-    private func focusSearchSoon() {
-        Task { @MainActor in
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(60))
-            searchFocused = true
-        }
     }
 
     private func step(_ d: Int) {

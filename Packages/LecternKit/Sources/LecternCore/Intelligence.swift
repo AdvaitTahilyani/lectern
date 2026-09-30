@@ -115,6 +115,10 @@ public protocol LectureIntelligence: Actor {
     /// The user changed the current slide manually (clicked a thumbnail, accepted a backtrack
     /// suggestion). Tracking continues forward from here.
     func setCurrentSlide(_ page: Int)
+
+    /// A deck was added to a lecture that already has a brain (Add Deck during a live lecture or in
+    /// Review). Later prompts, Ask and quizzes use it; slide tracking starts from here.
+    func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async
 }
 
 // MARK: - "While you were away"

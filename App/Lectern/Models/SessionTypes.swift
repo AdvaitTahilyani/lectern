@@ -92,6 +92,17 @@ nonisolated struct TranscriptSeek: Hashable, Sendable {
     var token = UUID()
 }
 
+/// Where to land in a lecture being opened from the Library (a search hit, a course citation): a
+/// transcript time, a slide, or both. The session view applies it whenever it changes, so opening
+/// a hit in a lecture that is already on screen still navigates (QA Q3-8).
+nonisolated struct PendingNavigation: Hashable, Sendable {
+    var sessionID: UUID
+    var time: TimeInterval?
+    var slide: Int?
+    /// Tells two identical requests in a row apart.
+    var token = UUID()
+}
+
 /// Internal navigation URLs used by citation links (DESIGN.md §2.3).
 nonisolated enum LecternURL {
     static func slide(session: UUID, page: Int) -> URL { URL(string: "lectern://session/\(session.uuidString)/slide/\(page)")! }

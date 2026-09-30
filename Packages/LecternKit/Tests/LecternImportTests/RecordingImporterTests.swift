@@ -293,6 +293,7 @@ private actor NeverIdleBrain: LectureIntelligence {
     func lectureSummary() async throws -> LectureSummary { throw CancellationError() }
     func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
     func setCurrentSlide(_ page: Int) {}
+    func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async {}
 }
 
 private final class ProgressLog2: @unchecked Sendable {

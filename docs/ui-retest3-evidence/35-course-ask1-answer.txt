@@ -1,0 +1,54 @@
+2026-09-30T10:51:06.409Z
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – Compiler Construction, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Lectures
+					6 row (selectable) Courses
+					7 row (selected) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 scroll area
+				13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					14 button CS 426, — Compiler Construction, 1
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 button Description: CS426 QA3 — SSA recap and IR, CS 426 · Today, 10 min · 3 takeaways, Secondary Actions: Select, Open
+			17 splitter (disabled, settable, float) 1211.5
+			18 container
+				19 image Description: Sparkle In A Magnifying Glass, ID: sparkle.magnifyingglass
+				20 text Ask CS 426 1 lecture
+				21 button Description: Trash, Help: Clear history, ID: trash
+				22 scroll area
+					23 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						24 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+							25 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+						26 unknown Based on the provided material, there is no direct connection described between SSA phi functions and the AST-to-three-address-code conversion; they are discussed as separate topics within Lecture 1 [L1 T0:12–3:17; L1 T6:46–9:59]. The lecture covers SSA node convergence regarding where to place phi functions  Lecture 1 0:12–3:17 and the strategy for converting AST expressions into three-address code by using virtual registers  Lecture 1 6:46–9:59.
+				27 text field (settable) Ask about CS 426…
+				28 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				29 text Answers cite lectures, slides and timestamps across the course
+	30 toolbar
+		31 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		32 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		33 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			34 button New Lecture
+			35 menu button
+		36 search text field (settable) Search lectures, transcripts…
+			37 button Search
+	38 close button
+	39 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	40 minimize button
+	41 text CS 426 Compiler Construction
+42 menu bar
+	43 Lectern
+	44 File
+	45 Edit
+	46 View
+	47 Lecture
+	48 Window
+	49 Help
+
+The focused UI element is 27 text field (settable) Ask about CS 426…

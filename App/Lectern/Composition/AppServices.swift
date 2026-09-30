@@ -88,10 +88,24 @@ nonisolated struct AppServices: Sendable {
 
 // MARK: - App-side contracts (small, defined here so the lead can implement them in modules)
 
-/// The sessions found on disk, plus how many session files were unreadable and left untouched.
+/// The sessions found on disk, plus the session files that were damaged.
 nonisolated struct LibraryLoad: Sendable {
     var sessions: [LectureSession]
-    var skipped: Int
+    var issues: [LibraryIssue] = []
+}
+
+/// A damaged session file found while loading the library.
+nonisolated struct LibraryIssue: Sendable, Hashable {
+    enum Kind: Sendable, Hashable {
+        /// Left out of the library; the file is untouched.
+        case skipped
+        /// Restored from its last good copy; the latest changes may be missing.
+        case restored
+        /// Loaded without some damaged parts; the original was kept.
+        case partiallyRecovered
+    }
+    var file: URL
+    var kind: Kind
 }
 
 /// Ordered, throttled saving of one session (`LecternStore.SessionAutosaver`).
@@ -105,10 +119,10 @@ nonisolated protocol SessionAutosaving: Sendable {
 }
 
 extension AppServices {
-    /// The library from disk, with the number of skipped session files when the store reports it.
+    /// The library from disk, with the damaged session files when the store reports them.
     func loadLibrary() async throws -> LibraryLoad {
         if let readLibrary { return try await readLibrary() }
-        return LibraryLoad(sessions: try await store.loadSessions(), skipped: 0)
+        return LibraryLoad(sessions: try await store.loadSessions())
     }
 }
 

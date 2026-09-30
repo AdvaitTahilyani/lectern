@@ -1,0 +1,62 @@
+2026-09-30T10:39:53.759Z
+Window: "Models", App: Lectern.
+0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 heading Roles
+		3 container
+			4 text Summaries
+			5 pop up button Description: Summaries provider, Summaries provider, Value: On-device (MLX)
+			6 pop up button Description: Summaries model, Summaries model, Help: Gemma 4 26B-A4B
+			7 text Ready Quizzes
+			8 pop up button Description: Quizzes provider, Quizzes provider, Value: On-device (MLX)
+			9 pop up button Description: Quizzes model, Quizzes model, Help: Gemma 4 26B-A4B
+			10 text Ready Ask
+			11 pop up button Description: Ask provider, Ask provider, Value: On-device (MLX)
+			12 pop up button Description: Ask model, Ask model, Help: Gemma 4 26B-A4B
+			13 text Ready Each role can use a different provider. On-device keeps everything private.
+		14 heading Cloud spending
+		15 container
+			16 text September 2026, Value: $0.00
+				17 text $0.00
+			18 toggle button Monthly cap, Value: off
+			19 text From each provider's list prices per 1M tokens; prompt-cache reads cost a tenth of fresh input (Anthropic cache writes 1.25×). On-device and local-server models are free. At the cap, cloud roles switch to the on-device model if it's downloaded.
+		20 heading Providers
+		21 container
+			22 disclosure triangle Description: On-device (MLX), Value: on
+			23 text Parakeet (speech + speakers) 930 MB Installed
+			24 button Remove
+			25 text Gemma 4 26B-A4B 15.64 GB Installed
+			26 button Remove
+			27 text Qwen3.6 35B-A3B 20.43 GB
+			28 button Download
+			29 text Qwen3.5 9B 5.98 GB
+			30 button Download
+			31 text Models live in Storage › Location. 281.7 GB free.
+			32 disclosure triangle Description: Local server (Ollama / LM Studio), Value: off
+			33 disclosure triangle Description: OpenAI, Value: off
+			34 disclosure triangle Description: Anthropic, Value: off
+		35 scroll bar (settable, float) 0
+			36 value indicator (settable, float) 0
+			37 increment arrow button
+			38 decrement arrow button
+			39 increment page button
+			40 decrement page button
+	41 toolbar
+		42 button General, Secondary Actions: Move next, Remove from toolbar
+		43 button Transcription, Secondary Actions: Move previous, Move next, Remove from toolbar
+		44 button Models, Secondary Actions: Move previous, Move next, Remove from toolbar
+		45 button Quizzes, Secondary Actions: Move previous, Move next, Remove from toolbar
+		46 button Focus, Secondary Actions: Move previous, Remove from toolbar
+	47 close button
+	48 zoom button (disabled)
+	49 text Models
+50 menu bar
+	51 Lectern
+	52 File
+	53 Edit
+	54 View
+	55 Lecture
+	56 Window
+	57 Help
+
+The focused UI element is 0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise

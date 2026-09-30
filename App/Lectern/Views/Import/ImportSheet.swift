@@ -98,34 +98,66 @@ struct ImportSheet: View {
         return "waveform"
     }
 
+    /// Plain rows, not `LabeledContent`: it folds its children into one accessibility node, which
+    /// hid the deck controls from assistive tech (QA Q3-5).
     private var details: some View {
         @Bindable var draft = app.importDraft
-        return VStack(spacing: DS.Space.m) {
-            LabeledContent {
+        return VStack(alignment: .leading, spacing: DS.Space.m) {
+            HStack(spacing: DS.Space.s) {
+                Text("Course").frame(width: 60, alignment: .leading)
                 Picker("Course", selection: Binding(get: { draft.courseID ?? app.courses.first?.id ?? UUID() }, set: { draft.courseID = $0 })) {
                     ForEach(app.courses) { c in Text("\(c.code) — \(c.name)").tag(c.id) }
                 }
                 .labelsHidden()
-            } label: { Text("Course").frame(width: 60, alignment: .leading) }
-            LabeledContent {
+            }
+            HStack(spacing: DS.Space.s) {
+                Text("Title").frame(width: 60, alignment: .leading)
                 TextField("Title", text: $draft.title, prompt: Text(draft.suggestedTitle)).textFieldStyle(.roundedBorder)
-            } label: { Text("Title").frame(width: 60, alignment: .leading) }
-            LabeledContent {
-                HStack(spacing: DS.Space.s) {
-                    if let images = draft.deckImages, let url = draft.deckURL {
-                        SlideImage(image: images.image(page: 1, width: 64), page: 1, radius: DS.Radius.chip).frame(width: 64, height: 36)
-                        Text("\(url.lastPathComponent) · \(images.pageCount) slides").font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1)
-                        Button { draft.setDeck(nil) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.tertiary)
-                    } else {
-                        Button("Choose Slide Deck…") { showDeckChooser = true }.controlSize(.small)
-                        Text("Optional").font(DS.Typo.footnote).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-            } label: { Text("Slides").frame(width: 60, alignment: .leading) }
+            }
+            HStack(alignment: .top, spacing: DS.Space.s) {
+                Text("Slides").frame(width: 60, alignment: .leading)
+                deckControls
+            }
         }
         .padding(DS.Space.l)
         .surfaceCard()
+        .onChange(of: draft.courseID) { _, _ in app.refreshImportDeckSuggestions() }
+    }
+
+    /// The chosen deck, or the chooser plus the decks the course's slides folder suggests.
+    private var deckControls: some View {
+        @Bindable var draft = app.importDraft
+        return VStack(alignment: .leading, spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.s) {
+                if let images = draft.deckImages, let url = draft.deckURL {
+                    SlideImage(image: images.image(page: 1, width: 64), page: 1, radius: DS.Radius.chip).frame(width: 64, height: 36)
+                    Text("\(url.lastPathComponent) · \(images.pageCount) slides").font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    Button { draft.setDeck(nil) } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary)
+                        .accessibilityLabel("Remove slide deck")
+                } else {
+                    Button("Choose Slide Deck…") { showDeckChooser = true }.controlSize(.small)
+                    Text("Optional").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            if draft.deckURL == nil, let first = draft.suggestedDeckURLs.first {
+                HStack(spacing: DS.Space.s) {
+                    Button("Use \(first.lastPathComponent)") { draft.setDeck(first) }.controlSize(.small)
+                    let others = draft.suggestedDeckURLs.dropFirst()
+                    if !others.isEmpty {
+                        Menu("Other Decks") {
+                            ForEach(Array(others), id: \.self) { url in Button(url.lastPathComponent) { draft.setDeck(url) } }
+                        }
+                        .controlSize(.small).fixedSize()
+                    }
+                    Text("From the course's slides folder").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if let error = draft.deckSuggestionsError {
+                Label(error, systemImage: "exclamationmark.triangle").font(DS.Typo.footnote).foregroundStyle(DS.Colors.warning)
+            }
+        }
     }
 }
 

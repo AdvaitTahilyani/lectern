@@ -120,8 +120,41 @@ final class ImportDraft {
     var deckImages: SlideImageStore?
     var isDragTargeted = false
     var showMediaSpace = false
+    /// Decks in the course's slides folder, ranked for this lecture (QA Q3-5).
+    private(set) var deckSuggestions: SuggestedDecks = .none
+    /// Set when the course has a slides folder that couldn't be read.
+    private(set) var deckSuggestionsError: String?
+    private var suggestTask: Task<Void, Never>?
 
     var hasSource: Bool { source != .none }
+
+    /// Every suggested deck, the best first.
+    var suggestedDeckURLs: [URL] { [deckSuggestions.primary].compactMap { $0 } + deckSuggestions.others }
+
+    /// Re-scans `folder` (the course's slides folder, or nil). `usedFileNames` are the decks of
+    /// the course's earlier lectures, which rank after the unused ones.
+    func refreshDeckSuggestions(folder: URL?, usedFileNames: Set<String>, services: AppServices) {
+        suggestTask?.cancel()
+        guard let folder else {
+            deckSuggestions = .none
+            deckSuggestionsError = nil
+            return
+        }
+        suggestTask = Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try services.suggestDecks(folder, usedFileNames, ["pdf"]) }
+            }.value
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .success(let suggestions):
+                deckSuggestions = suggestions
+                deckSuggestionsError = nil
+            case .failure:
+                deckSuggestions = .none
+                deckSuggestionsError = "Couldn't open the slides folder “\(folder.lastPathComponent)”"
+            }
+        }
+    }
 
     var sourceLabel: String? {
         switch source {
@@ -168,5 +201,8 @@ final class ImportDraft {
         deckURL = nil
         deckImages = nil
         preferCaptions = true
+        suggestTask?.cancel()
+        deckSuggestions = .none
+        deckSuggestionsError = nil
     }
 }

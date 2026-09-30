@@ -48,7 +48,15 @@ extension AppServices {
             store: store,
             readLibrary: {
                 let library = try await store.loadLibrary()
-                return LibraryLoad(sessions: library.sessions, skipped: library.issues.count)
+                let issues = library.issues.map { issue -> LibraryIssue in
+                    let kind: LibraryIssue.Kind = switch issue.kind {
+                    case .skipped: .skipped
+                    case .restored: .restored
+                    case .partiallyRecovered: .partiallyRecovered
+                    }
+                    return LibraryIssue(file: issue.url, kind: kind)
+                }
+                return LibraryLoad(sessions: library.sessions, issues: issues)
             },
             providerHealthCheck: { config, _ in
                 let provider = try ProviderResolver.provider(for: config, keychain: keychain)

@@ -1,0 +1,52 @@
+2026-09-30T10:50:42.188Z
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – Compiler Construction, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Lectures
+					6 row (selectable) Courses
+					7 row (selected) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 scroll area
+				13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					14 button CS 426, — Compiler Construction, 1
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 button Description: CS426 QA3 — SSA recap and IR, CS 426 · Today, 10 min · 3 takeaways, Secondary Actions: Select, Open
+			17 splitter (disabled, settable, float) 1211.5
+			18 container
+				19 image Description: Sparkle In A Magnifying Glass, ID: sparkle.magnifyingglass
+				20 text Ask CS 426 1 lecture
+				21 scroll area
+					22 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						23 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+							24 text What is the connection between SSA phi functions and the AST-to-three-address-code discussion in this course?
+				25 text field (settable) Ask about CS 426…
+				26 button Description: Stop answering, ID: stop.circle.fill
+				27 text Answers cite lectures, slides and timestamps across the course
+	28 toolbar
+		29 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		30 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		31 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			32 button New Lecture
+			33 menu button
+		34 search text field (settable) Search lectures, transcripts…
+			35 button Search
+	36 close button
+	37 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	38 minimize button
+	39 text CS 426 Compiler Construction
+40 menu bar
+	41 Lectern
+	42 File
+	43 Edit
+	44 View
+	45 Lecture
+	46 Window
+	47 Help
+
+The focused UI element is 25 text field (settable) Ask about CS 426…

@@ -1,0 +1,58 @@
+2026-09-30T11:40:44.032Z
+Window: "Lectern", App: Lectern.
+0 standard window Lectern, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 scroll area Secondary Actions: Scroll Up, Scroll Down
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button (disabled) Recent
+					7 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						8 button Description: QA3 demo regression, CS 374 · Today, Recording · 1:36, Secondary Actions: Select, Open
+						9 button Description: Dynamic Programming I, CS 374 · Today, 13 min · 4 takeaways · 2/3 correct, Secondary Actions: Select, Open
+						10 button Description: Type Inference, CS 421 · Yesterday, 13 min · 4 takeaways · 2/3 correct, Secondary Actions: Select, Open
+						11 button Description: Orthogonality & Least Squares, MATH 415 · Fri Sep 25, 13 min · 4 takeaways · 2/3 correct, Secondary Actions: Select, Open
+						12 button Description: Parsing II: LL(1) & Predictive Parsing, CS 421 · Thu Sep 24, 22 min · 9 takeaways · 2/4 correct, Secondary Actions: Select, Open
+						13 button Description: Graph Search: BFS & DFS, CS 374 · Wed Sep 23, 13 min · 4 takeaways · 2/2 correct, Secondary Actions: Select, Open
+					14 button CS 421, — Programming Languages & Compilers, 4
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 button Description: Type Inference, CS 421 · Yesterday, 13 min · 4 takeaways · 2/3 correct, Secondary Actions: Select, Open
+						17 button Description: Parsing II: LL(1) & Predictive Parsing, CS 421 · Thu Sep 24, 22 min · 9 takeaways · 2/4 correct, Secondary Actions: Select, Open
+						18 button Description: Lexical Analysis & Regular Languages, CS 421 · Tue Sep 22, 13 min · 4 takeaways · 2/2 correct, Secondary Actions: Select, Open
+						19 button Description: Lambda Calculus, CS 421 · Thu Sep 17, 13 min · 4 takeaways · 1/2 correct, Secondary Actions: Select, Open
+					20 button CS 374, — Algorithms & Models of Computation, 3
+					21 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						22 button Description: QA3 demo regression, CS 374 · Today, Recording · 1:36, Secondary Actions: Select, Open
+						23 button Description: Dynamic Programming I, CS 374 · Today, 13 min · 4 takeaways · 2/3 correct, Secondary Actions: Select, Open
+						24 button Description: Graph Search: BFS & DFS, CS 374 · Wed Sep 23, 13 min · 4 takeaways · 2/2 correct, Secondary Actions: Select, Open
+					25 button MATH 415, — Applied Linear Algebra, 2
+					26 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+				27 scroll bar (settable, float) 0
+					28 value indicator (settable, float) 0
+					29 increment arrow button
+					30 decrement arrow button
+					31 increment page button
+					32 decrement page button
+			33 splitter (disabled, settable, float) 1512
+	34 toolbar
+		35 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		36 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		37 pop up button Description: New Lecture, Help: New Lecture (⌘N)
+			38 button New Lecture
+			39 menu button
+		40 search text field (settable) Search lectures, transcripts…
+			41 button Search
+	42 close button
+	43 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	44 minimize button
+	45 text Lectern
+46 menu bar
+	47 Lectern
+	48 File
+	49 Edit
+	50 View
+	51 Lecture
+	52 Window
+	53 Help
+
+The focused UI element is 0 standard window Lectern, ID: main-AppWindow-2, Secondary Actions: Raise

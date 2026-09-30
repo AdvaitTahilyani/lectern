@@ -156,7 +156,7 @@ import Testing
         #expect(library.sessions == [good])
         #expect(Set(library.issues.map(\.url.lastPathComponent)) == ["session.json"])
         #expect(library.issues.count == 2)
-        #expect(library.issues.allSatisfy { !$0.message.isEmpty })
+        #expect(library.issues.allSatisfy { !$0.message.isEmpty && $0.kind == .skipped })
 
         await #expect(throws: StoreError.self) { try await store.loadSession(id: bad) }
         // The damaged file is left alone for the user to recover.
@@ -222,6 +222,7 @@ import Testing
         #expect(library.sessions.map(\.title) == ["First"])   // the last good copy
         #expect(library.issues.count == 1)
         #expect(library.issues[0].message.contains("restored from the last good copy"))
+        #expect(library.issues[0].kind == .restored)
         // The main file is whole again, and the empty one was kept.
         #expect(try await store.loadSession(id: session.id).title == "First")
         #expect(try await store.loadLibrary().issues.isEmpty)
@@ -237,6 +238,7 @@ import Testing
         try "{ nope".write(to: sessionFile(session.id).appendingPathExtension("bak"), atomically: true, encoding: .utf8)
         let library = try await store.loadLibrary()
         #expect(library.sessions.isEmpty && library.issues.count == 1)
+        #expect(library.issues.first?.kind == .skipped)
     }
 
     @Test func anEmptyFileNeverReplacesAGoodBackup() async throws {
@@ -265,6 +267,7 @@ import Testing
         let library = try await store.loadLibrary()
         #expect(library.sessions.first?.transcript.count == 1)
         #expect(library.issues.count == 1 && library.issues[0].message.contains("1 damaged part"))
+        #expect(library.issues[0].kind == .partiallyRecovered)
 
         try await store.save(library.sessions[0])   // makes the loss permanent in session.json...
         let kept = try String(contentsOf: sessionFile(id).appendingPathExtension("unreadable"), encoding: .utf8)

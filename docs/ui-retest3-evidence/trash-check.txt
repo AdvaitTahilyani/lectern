@@ -1,0 +1,83 @@
+Window: "E76DA276-F35B-417F-A288-CA963AC9EB4D", App: Finder.
+0 standard window E76DA276-F35B-417F-A288-CA963AC9EB4D, ID: FinderWindow, Secondary Actions: Raise
+	1 split group
+		2 scroll area Secondary Actions: Scroll Up, Scroll Down
+			3 outline sidebar
+				4 row (selectable) Description: clock, Value: Recents
+				5 row (selectable) Description: Two people, Value: Shared
+				6 row (selectable, expanded) Value: Favorites, Secondary Actions: Collapse
+				7 row (selectable) Description: App Store letter A icon, Value: Applications
+				8 row (selectable) Description: Document page, Value: Documents
+				9 row (selectable) Description: Menu bar with dock on a rectangle, Value: Desktop
+				10 row (selectable) Description: Arrow Down Circle, Value: Downloads
+				11 row (selectable) Description: move, Value: Advait
+				12 row (selectable) Description: move, Value: UIUC
+				13 row (selectable) Description: Internal hard drive, Value: Macintosh HD
+				14 row (selectable, expanded) Value: Locations, Secondary Actions: Collapse
+				15 row (selectable) Description: iCloud, Value: iCloud Drive
+				16 row (selectable) OneDrive - Personal
+				17 row (selectable) OneDrive - University of Illinois - Urbana
+				18 row (selectable) Box
+				19 row (selectable) Description: home, Value: advaittahilyani
+				20 row (selectable) Description: Internal hard drive, Value: Macintosh HD
+				21 row (selectable) Description: AirDrop concentric radio waves, Value: AirDrop
+				22 row (selectable) Description: Network nodes connected by lines, Value: Network
+				23 row (selectable) Description: trash, Value: Trash
+				24 row (selectable, expanded) Value: Tags, Secondary Actions: Collapse
+				25 row (selectable) Description: Small circle badge, Value: VISA
+				26 row (selectable) Description: Small circle badge, Value: veena 16/17 ay tds
+				27 row (selectable) Description: Small circle badge, Value: ipo
+				28 row (selectable) Description: Small circle badge, filled, Value: Red
+				29 row (selectable) Description: Small circle badge, filled, Value: Orange
+				30 row (selectable) Description: Small circle badge, filled, Value: Yellow
+				31 row (selectable) Description: Small circle badge, filled, Value: Green
+				32 row (selectable) Description: Two small circle badges, Value: All Tags…
+			33 scroll bar (settable, float) 0
+				34 value indicator (settable, float) 0
+				35 increment arrow button
+				36 decrement arrow button
+				37 increment page button
+				38 decrement page button
+		39 splitter (disabled, settable, float) 326
+		40 scroll area
+			41 collection Description: icon view, ID: IconView
+				42 section (disabled)
+					43 image session.json, Secondary Actions: open
+					44 image session.json.bak, Secondary Actions: open
+					45 image session.json.unreadable, Secondary Actions: open
+		46 unknown Details: status bar, ID: statusBar
+			47 text Value: 3 items, ID: statusBarText
+			48 slider (settable, float) Description: resize icon, Value: 24
+				49 value indicator (settable, float) 24
+		50 list path
+			51 text Value: Trash E76DA276-F35B-417F-A288-CA963AC9EB4D, Secondary Actions: open
+		52 text Value: Trash, ID: bannerText
+		53 button Empty
+	54 toolbar
+		55 container Back/Forward
+			56 button back
+			57 button (disabled) forward
+		58 radio button Description: icon view, Value: 1
+		59 radio button Description: list view, Value: 0
+		60 radio button Description: column view, Value: 0
+		61 radio button Description: gallery view, Value: 0
+		62 menu button Description: Group, Help: Change the item grouping (hold down Option to change the sort), Secondary Actions: Move previous, Move next, Remove from toolbar
+		63 button (disabled) Description: Share, Help: Share the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		64 button (disabled) Description: New Folder, Help: Create a new folder in the current location, Secondary Actions: Move previous, Move next, Remove from toolbar
+		65 menu button Description: Action, Help: Perform tasks with the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		66 search text field
+			67 button search
+	68 close button
+	69 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	70 minimize button
+	71 text E76DA276-F35B-417F-A288-CA963AC9EB4D
+72 menu bar
+	73 Finder
+	74 File
+	75 Edit
+	76 View
+	77 Go
+	78 Window
+	79 Help
+
+The focused UI element is 41 collection Description: icon view, ID: IconView

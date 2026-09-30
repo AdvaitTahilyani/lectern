@@ -1,0 +1,46 @@
+2026-09-30T10:53:20.487Z
+Window: "Lectern", App: Lectern.
+0 standard window Lectern, ID: main-AppWindow-2, Secondary Actions: Raise
+	1 split group main-AppWindow-2, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Lectures
+					6 row (selectable) Courses
+					7 row (selectable) Description: CS 426, Value: 2
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 scroll area
+				13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					14 button CS 426, — Compiler Construction, 2
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 button Description: QA3 disposable recovery import, CS 426 · Today, 0 min · 0 takeaways, Secondary Actions: Select, Open
+						17 button Description: CS426 QA3 — SSA recap and IR, CS 426 · Today, 10 min · 3 takeaways, Secondary Actions: Select, Open
+			18 splitter (disabled, settable, float) 1512
+	19 toolbar
+		20 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		21 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		22 pop up button New Lecture (⌘N)
+			23 button New Lecture
+			24 menu button
+		25 search text field (settable) Search lectures, transcripts…
+			26 button Search
+	27 close button
+	28 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	29 minimize button
+	30 text Lectern
+31 menu bar
+	32 Lectern
+	33 File
+	34 Edit
+	35 View
+	36 Lecture
+	37 Window
+	38 Help
+
+Selected:
+	5 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

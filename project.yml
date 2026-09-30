@@ -57,3 +57,35 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  LecternAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: App/LecternAppTests
+    dependencies:
+      - target: Lectern
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.advait.LecternAppTests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Lectern:
+    build:
+      targets:
+        Lectern: all
+        LecternAppTests: [test]
+    run:
+      config: Debug
+    # The test host runs in demo mode so app-hosted tests never open the real library or models.
+    test:
+      config: Debug
+      targets:
+        - LecternAppTests
+      commandLineArguments:
+        "-demo": true
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

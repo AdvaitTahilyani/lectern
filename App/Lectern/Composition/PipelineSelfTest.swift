@@ -159,6 +159,7 @@ nonisolated enum PipelineSelfTest {
             do {
                 let response = try await inner.complete(request)
                 await recorder.endCall(call(begin, request, start: start, firstToken: nil, usage: response.usage, failed: false))
+                Self.trace(request, response.text, at: begin.session)
                 return response
             } catch {
                 await recorder.endCall(call(begin, request, start: start, firstToken: nil, usage: nil, failed: true))
@@ -193,6 +194,25 @@ nonisolated enum PipelineSelfTest {
         }
 
         func healthCheck() async throws { try await inner.healthCheck() }
+
+        /// With LECTERN_PIPELINE_TRACE=<file>, appends each call's task (the prompt after its
+        /// transcript) and reply, for diagnosing a run.
+        private static func trace(_ request: LLMRequest, _ reply: String, at session: TimeInterval) {
+            guard let path = ProcessInfo.processInfo.environment["LECTERN_PIPELINE_TRACE"],
+                  let user = request.messages.last(where: { $0.role == .user })?.content else { return }
+            let transcript = user.components(separatedBy: "=====").first ?? ""
+            let lines = transcript.split(separator: "\n")
+            let entry = "### \(TimeFormat.clock(session)) window \(lines.dropFirst().first ?? "")…\(lines.last ?? "")\n"
+                + (user.components(separatedBy: "=====").dropFirst().joined(separator: "=====")) + "\nREPLY: \(reply)\n\n"
+            guard let data = entry.data(using: .utf8) else { return }
+            if let handle = FileHandle(forWritingAtPath: path) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                try? handle.close()
+            } else {
+                FileManager.default.createFile(atPath: path, contents: data)
+            }
+        }
     }
 
     // MARK: - Interactive trials

@@ -1,0 +1,19 @@
+2026-09-30T10:34:42.467Z
+Window: "Welcome to Lectern", App: Lectern.
+0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise
+	1 container
+		2 text Lectern listens so you can look up. Live takeaways from every lecture, on your Mac.
+		3 button Continue
+	4 close button
+	5 zoom button (disabled)
+	6 minimize button
+7 menu bar
+	8 Lectern
+	9 File
+	10 Edit
+	11 View
+	12 Lecture
+	13 Window
+	14 Help
+
+The focused UI element is 0 standard window Welcome to Lectern, ID: onboarding, Secondary Actions: Raise

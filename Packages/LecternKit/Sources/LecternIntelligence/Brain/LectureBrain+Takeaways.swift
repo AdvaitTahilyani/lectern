@@ -99,7 +99,8 @@ extension LectureBrain {
                                         budgetTokens: TokenBudget.segmentationSlides, allowed: { self.isPresented($0, at: newLast) }),
                 isFinal: isLastChunk,
                 unshownSlides: unshownSlidesLabel(at: newLast),
-                classEndedAt: classEndedAt.flatMap { $0 <= newLast ? $0 : nil }
+                classEndedAt: classEndedAt.flatMap { $0 <= newLast ? $0 : nil },
+                liveIsAside: live.map { timeline.asideCards.contains($0.id) } ?? false
             )
             do {
                 let hasLive = live != nil

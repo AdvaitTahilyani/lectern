@@ -17,6 +17,8 @@ struct LibraryView: View {
     private struct PendingRemoval: Identifiable {
         var session: LectureSession
         var verb: String
+        /// Cancelling an in-flight import (its partial session goes to the Trash).
+        var isImport = false
         var id: UUID { session.id }
     }
 
@@ -45,10 +47,19 @@ struct LibraryView: View {
             titleVisibility: .visible,
             presenting: pendingRemoval
         ) { removal in
-            Button("Move to Trash", role: .destructive) { app.deleteSession(removal.session.id) }
-            Button("Cancel", role: .cancel) {}
+            if removal.isImport {
+                Button("Cancel Import", role: .destructive) { app.cancelImport(removal.session.id) }
+                Button("Keep Importing", role: .cancel) {}
+            } else {
+                Button("Move to Trash", role: .destructive) { app.deleteSession(removal.session.id) }
+                Button("Cancel", role: .cancel) {}
+            }
         } message: { removal in
-            Text("\(removal.verb == "Discard" ? "Its recording and transcript" : "The lecture, with its transcript, takeaways and slides,") will be moved to the Trash.")
+            if removal.isImport {
+                Text("The import stops and what was processed so far is moved to the Trash.")
+            } else {
+                Text("\(removal.verb == "Discard" ? "Its recording and transcript" : "The lecture, with its transcript, takeaways and slides,") will be moved to the Trash.")
+            }
         }
         .overlay {
             RoundedRectangle(cornerRadius: DS.Radius.float, style: .continuous)
@@ -106,16 +117,29 @@ struct LibraryView: View {
 
     /// Non-modal banners: a failed save/delete (the error state covers an empty library) and
     /// session files that could not be read.
+    /// One sentence per kind of damage, e.g. "1 lecture was restored from its last good copy; its
+    /// latest changes may be missing. 1 lecture file couldn't be read and is left out."
+    static func issueMessage(_ issues: [LibraryIssue]) -> String? {
+        func count(_ kind: LibraryIssue.Kind) -> Int { issues.filter { $0.kind == kind }.count }
+        func lectures(_ n: Int) -> String { n == 1 ? "1 lecture" : "\(n) lectures" }
+        var parts: [String] = []
+        let restored = count(.restored), partial = count(.partiallyRecovered), skipped = count(.skipped)
+        if restored > 0 { parts.append("\(lectures(restored)) \(restored == 1 ? "was" : "were") restored from the last good copy; the latest changes may be missing.") }
+        if partial > 0 { parts.append("\(lectures(partial)) had damaged parts that were left out; the original file was kept.") }
+        if skipped > 0 { parts.append("\(skipped == 1 ? "1 lecture file" : "\(skipped) lecture files") couldn't be read and \(skipped == 1 ? "is" : "are") left out; the \(skipped == 1 ? "file is" : "files are") untouched.") }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     @ViewBuilder private var notices: some View {
         let failure = app.sessions.isEmpty ? nil : app.libraryError
-        let skipped = app.skippedLectureCount
-        if failure != nil || skipped > 0 {
+        let issues = app.libraryIssues
+        if failure != nil || !issues.isEmpty {
             VStack(spacing: DS.Space.s) {
                 if let failure {
                     NoticeBanner(notice: Notice(id: "library-error", kind: .warning, symbol: "exclamationmark.triangle", title: failure, placement: .takeaways, actionLabel: nil), onClose: { app.libraryError = nil })
                 }
-                if skipped > 0 {
-                    NoticeBanner(notice: Notice(id: "skipped-lectures", kind: .warning, symbol: "exclamationmark.triangle", title: "\(skipped) \(skipped == 1 ? "lecture" : "lectures") couldn't be read and \(skipped == 1 ? "was" : "were") left out. The files are untouched.", placement: .takeaways, actionLabel: nil), onClose: { app.skippedLectureCount = 0 })
+                if let message = Self.issueMessage(issues) {
+                    NoticeBanner(notice: Notice(id: "library-issues", kind: .warning, symbol: "exclamationmark.triangle", title: message, placement: .takeaways, actionLabel: nil), onClose: { app.libraryIssues = [] })
                 }
             }
             .padding(.horizontal, DS.Space.xxl)
@@ -205,7 +229,7 @@ struct LibraryView: View {
         let job = app.imports[s.id]
         return Group {
             if let job {
-                ImportProgressCard(session: s, job: job, course: app.course(id: s.courseID), onCancel: { app.cancelImport(s.id) }, onDismiss: { app.dismissFailedImport(s.id) })
+                ImportProgressCard(session: s, job: job, course: app.course(id: s.courseID), onCancel: { pendingRemoval = PendingRemoval(session: s, verb: "Cancel the import of", isImport: true) }, onDismiss: { app.dismissFailedImport(s.id) })
             } else if app.isInterrupted(s) {
                 InterruptedCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s),
                                 onResume: { app.resumeInterrupted(s.id) }, onFinish: { app.finishInterrupted(s.id) }, onDiscard: { pendingRemoval = PendingRemoval(session: s, verb: "Discard") })
@@ -277,9 +301,9 @@ struct LibraryView: View {
                 List(app.searchResults) { hit in
                     SearchHitRow(hit: hit, session: app.sessions.first { $0.id == hit.sessionID }, course: app.course(id: app.sessions.first { $0.id == hit.sessionID }?.courseID))
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { app.openSession(hit.sessionID, at: hit.time) }
+                        .onTapGesture(count: 2) { app.openSession(hit.sessionID, at: hit.time, slide: hit.slide) }
                         .focusable()
-                        .onKeyPress(.return) { app.openSession(hit.sessionID, at: hit.time); return .handled }
+                        .onKeyPress(.return) { app.openSession(hit.sessionID, at: hit.time, slide: hit.slide); return .handled }
                 }
                 .listStyle(.inset)
             }
@@ -402,6 +426,7 @@ struct ImportProgressCard: View {
                     }
                     Spacer()
                     Button("Cancel", action: onCancel).buttonStyle(.link).font(DS.Typo.caption)
+                        .accessibilityLabel("Cancel import")
                 }
                 Text(job.stageLabel).font(DS.Typo.footnote).foregroundStyle(.secondary).contentTransition(.numericText())
             }
@@ -409,7 +434,9 @@ struct ImportProgressCard: View {
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .surfaceCard(radius: DS.Radius.card)
-        .accessibilityElement(children: .combine)
+        // A group, not one combined element: combining folded the Cancel link into the card's
+        // default action, so "activating the progress" cancelled the import (QA Q3-2).
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(session.title), importing, \(job.stageLabel)")
     }
 

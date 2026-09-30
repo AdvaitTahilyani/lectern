@@ -1,0 +1,1 @@
+1c787bbaac4851a97ee0d1e43362fd1278e613ed7217c2298a24e027e1db1f31  /Users/advaittahilyani/Lectern/build/DD-codex3/Build/Products/Release/Lectern.app/Contents/MacOS/Lectern

@@ -28,11 +28,22 @@ public enum StoreError: LocalizedError {
 /// A file that was skipped while loading the library, or that loaded only after repairs (restored
 /// from its backup, or with damaged parts dropped).
 public struct LoadIssue: Sendable, Hashable {
+    public enum Kind: Sendable, Hashable {
+        /// Unreadable with no usable backup: left out of the library (the file is untouched).
+        case skipped
+        /// Damaged; restored from its last good copy (the latest changes may be missing).
+        case restored
+        /// Loaded, but damaged parts were dropped (a copy of the original was kept).
+        case partiallyRecovered
+    }
+
     public var url: URL
+    public var kind: Kind
     public var message: String
 
-    public init(url: URL, message: String) {
+    public init(url: URL, kind: Kind, message: String) {
         self.url = url
+        self.kind = kind
         self.message = message
     }
 }

@@ -1,0 +1,42 @@
+2026-09-30T10:39:26.482Z
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – Compiler Construction, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Lectures
+					6 row (selectable) Courses
+					7 row (selected) Description: CS 426, Value: 1
+					8 row (selectable) New Course…
+			9 button Description: On-device · Ready, Help: Model status — opens Settings › Models
+		10 splitter (disabled, settable, float) 240
+		11 split group
+			12 scroll area
+				13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					14 button CS 426, — Compiler Construction, 1
+					15 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+						16 progress indicator (selected) Description: CS426 QA3 — SSA recap and IR, importing, Transcribing 10%, Value: 0.3471, Secondary Actions: Cancel
+			17 splitter (disabled, settable, float) 1512
+	18 toolbar
+		19 button Description: Hide Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		20 button Description: Ask Course, Help: Ask about this course (⌘⌥K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		21 pop up button New Lecture (⌘N)
+			22 button New Lecture
+			23 menu button
+		24 search text field (settable) Search lectures, transcripts…
+			25 button Search
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+	29 text CS 426 Compiler Construction
+30 menu bar
+	31 Lectern
+	32 File
+	33 Edit
+	34 View
+	35 Lecture
+	36 Window
+	37 Help
+
+The focused UI element is 0 standard window CS 426 – Compiler Construction, ID: main-AppWindow-1, Secondary Actions: Raise
