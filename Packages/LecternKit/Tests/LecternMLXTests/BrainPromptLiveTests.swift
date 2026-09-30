@@ -55,11 +55,15 @@ struct BrainPromptLiveTests {
             label, m.promptTokens, m.reusedPromptTokens, m.prefilledTokens, m.generatedTokens,
             m.timeToFirstToken, m.prefillTokensPerSecond, m.decodeTokensPerSecond,
             Double(m.peakMemoryBytes) / 1e9))
+        let p = m.phases
+        log(String(
+            format: "[mlx]   phases: template %.3fs | prefill %.3fs | setup+last token %.3fs | first sample %.3fs",
+            p.templateSeconds, p.prefillSeconds, p.setupSeconds, p.firstStepSeconds))
     }
 
     @Test func consecutiveRollingUpdates() async throws {
         let provider = MLXProvider(role: .summaries, host: MLXLiveTests.host)
-        try await provider.warmUp()
+        try await provider.warmUp(jsonSchemas: [SegmentationReply.schema])
 
         let lecture = Prompts.Lecture(title: "LL(1) Parsing", course: "CS 421")
         let digest = DeckDigest.render(Self.deck)

@@ -252,3 +252,14 @@ struct GradeReply: ModelReply {
 
     static let shape = #"{"correct":true,"feedback":"…"}"#
 }
+
+// MARK: - Warm-up
+
+extension LectureBrain {
+    /// Every JSON schema the brain sends, so an on-device host can compile their grammars ahead of
+    /// the first real call (a schema's first use otherwise pays a one-time setup cost).
+    public static let jsonSchemas: [String] = [
+        SegmentationReply.schema, DetailReply.schema, RecapReply.schema,
+        MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema,
+    ]
+}

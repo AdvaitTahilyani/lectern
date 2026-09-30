@@ -21,10 +21,17 @@ let package = Package(
         .library(name: "LecternSlides", targets: ["LecternSlides"]),
         .library(name: "LecternStore", targets: ["LecternStore"]),
         .library(name: "LecternIntelligence", targets: ["LecternIntelligence"]),
+        .library(name: "LecternImport", targets: ["LecternImport"]),
     ],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.4"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.4"),
+        // Pinned to main: 3.31.4 predates MLXGuidedGeneration (JSON-schema constrained decoding) and the
+        // Sept 2026 Gemma 4 fixes (fused logit softcap, wrap-aware RotatingKVCache trim).
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", revision: "c043fb3b1ccf00f54ef8882a1e8da45c6e32e6f8"),
+        // LecternMLX: MLX GPU memory controls, Hugging Face downloader, tokenizers (mlx-swift-lm 3.x ships none).
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.32.2"),
+        .package(url: "https://github.com/huggingface/swift-huggingface", from: "0.9.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
     ],
     targets: [
         .target(name: "LecternCore"),
@@ -37,16 +44,32 @@ let package = Package(
             name: "LecternMLX",
             dependencies: [
                 "LecternCore",
+                .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "MLXGuidedGeneration", package: "mlx-swift-lm"),
+                .product(name: "HuggingFace", package: "swift-huggingface"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ]
         ),
         .target(name: "LecternSlides", dependencies: ["LecternCore"]),
         .target(name: "LecternStore", dependencies: ["LecternCore"]),
         .target(name: "LecternIntelligence", dependencies: ["LecternCore"]),
+        .target(name: "LecternImport", dependencies: ["LecternCore"]),
         .testTarget(name: "LecternCoreTests", dependencies: ["LecternCore"]),
         .testTarget(name: "LecternIntelligenceTests", dependencies: ["LecternIntelligence"]),
         .testTarget(name: "LecternSlidesTests", dependencies: ["LecternSlides"]),
+        .testTarget(name: "LecternStoreTests", dependencies: ["LecternStore"]),
         .testTarget(name: "LecternLLMTests", dependencies: ["LecternLLM"]),
+        .testTarget(name: "LecternImportTests", dependencies: ["LecternImport", "LecternCore"]),
+        .testTarget(name: "LecternTranscriptionTests", dependencies: ["LecternTranscription", "LecternCore"]),
+        .testTarget(
+            name: "LecternMLXTests",
+            dependencies: [
+                "LecternMLX", "LecternCore", "LecternIntelligence",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+            ]
+        ),
     ]
 )

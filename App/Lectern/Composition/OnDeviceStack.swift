@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import LecternCore
+import LecternIntelligence
 import LecternMLX
 import LecternTranscription
 
@@ -20,6 +21,21 @@ nonisolated final class OnDeviceStack: Sendable {
     func provider(model: String, role: LLMRole?) throws -> any LLMProvider {
         guard MLXModelHost.shared.modelManager.isDownloaded(model) else { throw LLMError.modelNotDownloaded(model) }
         return MLXProvider(model: model, role: role)
+    }
+
+    /// Loads the on-device model(s) a session will use and pre-compiles the brain's JSON grammars
+    /// in the background, so the first takeaway doesn't pay ~10 s of load + setup. No-op when every
+    /// role uses a server or cloud provider, or the model isn't downloaded yet.
+    func warmUp(for settings: AppSettings) {
+        let models = Set(LLMRole.allCases.map { settings.provider(for: $0) }.filter { $0.kind == .onDevice }.map(\.model))
+            .filter { MLXModelHost.shared.modelManager.isDownloaded($0) }
+        for model in models {
+            Task.detached(priority: .utility) {
+                // Best-effort: a model that fails to load fails again on the first real call, which
+                // the brain reports through its normal `.error` path.
+                try? await MLXModelHost.shared.warmUp(model, schemas: LectureBrain.jsonSchemas)
+            }
+        }
     }
 }
 

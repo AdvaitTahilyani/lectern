@@ -34,7 +34,8 @@ extension AppServices {
             },
             requestMicrophoneAccess: { await AVCaptureDevice.requestAccess(for: .audio) },
             makeBrain: { context, settings, slides in
-                LectureBrain(
+                OnDeviceStack.shared.warmUp(for: settings)
+                return LectureBrain(
                     context: context,
                     providers: ProviderResolver.roleProviders(for: settings, keychain: keychain),
                     slides: slides,

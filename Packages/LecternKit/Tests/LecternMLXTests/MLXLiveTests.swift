@@ -29,6 +29,10 @@ struct MLXLiveTests {
             label, m.promptTokens, m.reusedPromptTokens, m.prefilledTokens, m.generatedTokens,
             m.timeToFirstToken, m.prefillTokensPerSecond, m.decodeTokensPerSecond, gb,
             m.stopReason.rawValue))
+        let p = m.phases
+        log(String(
+            format: "[mlx]   phases: queue %.3fs | template %.3fs | prefill %.3fs | setup+last token %.3fs | first sample %.3fs",
+            m.queueSeconds, p.templateSeconds, p.prefillSeconds, p.setupSeconds, p.firstStepSeconds))
     }
 
     @Test func endToEnd() async throws {
@@ -47,6 +51,22 @@ struct MLXLiveTests {
         let warmStart = ContinuousClock.now
         try await provider.warmUp()
         log("[mlx] load \(warmStart - loadStart), warm-up \(ContinuousClock.now - warmStart), total since start \(ContinuousClock.now - started), active \(MLX.Memory.activeMemory / 1_000_000) MB")
+
+        // Tiny requests right after warm-up: is there a per-call or first-call-only cost?
+        let tiny = LLMRequest(
+            messages: [
+                .system("You are Lectern, a concise study assistant for a compilers course."),
+                .user("In one sentence, what is a FIRST set in LL(1) parsing? Keep it short."),
+            ],
+            maxTokens: 60, temperature: 0.2)
+        for i in 1 ... 2 {
+            report("tiny text #\(i)", try await provider.completeWithMetrics(tiny).metrics)
+        }
+        var tinyJSON = tiny
+        tinyJSON.responseFormat = .json(schema: #"{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}"#)
+        for i in 1 ... 2 {
+            report("tiny JSON #\(i)", try await provider.completeWithMetrics(tinyJSON).metrics)
+        }
 
         // (a) Cold JSON-mode request over a ~4k-token transcript.
         let transcript = LectureFixture.transcript(approximateTokens: 4000)
