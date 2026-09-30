@@ -175,11 +175,14 @@ struct ModelsSettings: View {
                     ForEach(ProviderKind.allCases) { Text($0.displayName).tag($0) }
                 }
                 .labelsHidden().frame(width: 150)
+                .accessibilityLabel("\(role.displayName) provider")
                 Picker("Model", selection: Binding(get: { config.model }, set: { model.setModel($0, for: role) })) {
                     ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
                     if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
                 }
-                .labelsHidden().frame(width: 190)
+                .labelsHidden().frame(width: 240)
+                .help(displayName(config.model, kind: config.kind))
+                .accessibilityLabel("\(role.displayName) model")
                 roleStatus(role, config: config)
             }
         }
@@ -258,13 +261,13 @@ struct ModelsSettings: View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             LabeledContent("URL") {
                 HStack {
-                    TextField("http://localhost:11434/v1", text: $model.localServerURL).textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
+                    TextField("URL", text: $model.localServerURL, prompt: Text("http://localhost:11434/v1")).labelsHidden().textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
                     testButton(.localServer)
                     testStatus(.localServer)
                 }
             }
             LabeledContent("Model") {
-                TextField("qwen3:8b", text: $model.localServerModel).textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
+                TextField("Model", text: $model.localServerModel, prompt: Text("qwen3:8b")).labelsHidden().textFieldStyle(.roundedBorder).onSubmit { model.commitLocalServer() }
             }
         }
         .padding(.vertical, DS.Space.xs)
@@ -274,7 +277,8 @@ struct ModelsSettings: View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             LabeledContent("API key") {
                 HStack {
-                    SecureField(model.isKeyStored(kind) ? "••••••••••••••••••••" : "Paste your key", text: Binding(get: { model.keyDraft(kind) }, set: { model.setKeyDraft($0, for: kind) }))
+                    SecureField("API key", text: Binding(get: { model.keyDraft(kind) }, set: { model.setKeyDraft($0, for: kind) }), prompt: Text(model.isKeyStored(kind) ? "••••••••••••••••••••" : "Paste your key"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { model.commitKey(kind) }
                     testButton(kind)
@@ -290,7 +294,8 @@ struct ModelsSettings: View {
                 })) {
                     ForEach(model.models(for: kind), id: \.self) { Text($0).tag($0) }
                 }
-                .labelsHidden().frame(width: 220)
+                .labelsHidden().frame(width: 260)
+                .accessibilityLabel("\(kind.displayName) model")
             }
         }
         .padding(.vertical, DS.Space.xs)
@@ -325,8 +330,11 @@ struct QuizSettingsView: View {
     var body: some View {
         Form {
             Section("Timing") {
-                Picker("Ask me a question every", selection: Binding(get: { model.settings.quiz.enabled ? model.settings.quiz.intervalMinutes : 0 }, set: { v in model.updateQuiz { $0.enabled = v > 0; if v > 0 { $0.intervalMinutes = v } } })) {
-                    Text("5 min").tag(5.0); Text("10 min").tag(10.0); Text("15 min").tag(15.0); Text("20 min").tag(20.0); Text("Off").tag(0.0)
+                let current = model.settings.quiz.enabled ? model.settings.quiz.intervalMinutes : 0
+                let intervals = ([5.0, 10, 15, 20] + (current > 0 && ![5.0, 10, 15, 20].contains(current) ? [current] : [])).sorted()
+                Picker("Ask me a question every", selection: Binding(get: { current }, set: { v in model.updateQuiz { $0.enabled = v > 0; if v > 0 { $0.intervalMinutes = v } } })) {
+                    ForEach(intervals, id: \.self) { m in Text(m == m.rounded() ? "\(Int(m)) min" : String(format: "%.1f min", m)).tag(m) }
+                    Text("Off").tag(0.0)
                 }
                 Picker("Time to answer", selection: Binding(get: { model.preferences.quizTimeToAnswer }, set: { v in model.updatePreferences { $0.quizTimeToAnswer = v } })) {
                     Text("45 s").tag(45.0); Text("90 s").tag(90.0); Text("2 min").tag(120.0)

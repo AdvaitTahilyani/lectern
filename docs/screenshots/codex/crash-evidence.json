@@ -1,0 +1,562 @@
+[
+  {
+    "file": "Lectern-2026-09-30-095854.ips",
+    "captureTime": "2026-09-30 09:58:43.9935 +0530",
+    "pid": 82006,
+    "exception": {
+      "codes": "0x0000000000000002, 0x000000016d2aff70",
+      "message": "Could not determine thread index for stack guard region",
+      "rawCodes": [
+        2,
+        6126501744
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_PROTECTION_FAILURE at 0x000000016d2aff70"
+    },
+    "faultingThread": 0,
+    "leadingFrames": [
+      {
+        "imageOffset": 15048304,
+        "symbol": "type metadata accessor for AccessibilityAttachment?",
+        "symbolLocation": 4,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 14930564,
+        "symbol": "AccessibilityNode.attachment.getter",
+        "symbolLocation": 100,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9970120,
+        "symbol": "AccessibilityNode.resolvedRole(forPlatformElement:)",
+        "symbolLocation": 676,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 17669636,
+        "symbol": "AccessibilityNode.labelExposedAs.getter",
+        "symbolLocation": 600,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975364,
+        "symbol": "AccessibilityNode.labelsToResolve.getter",
+        "symbolLocation": 644,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975588,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 164,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10090784,
+        "symbol": "partial apply for closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 20,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 20179560,
+        "symbol": "thunk for @escaping @callee_guaranteed () -> (@out Any?)",
+        "symbolLocation": 52,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 755744,
+        "symbol": "_accessibilityGetAssociatedObjectForAttribute",
+        "symbolLocation": 208,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 752672,
+        "symbol": "NSAccessibilityGetObjectValueForAttribute",
+        "symbolLocation": 460,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 750996,
+        "symbol": "_NSAccessibilityOverrideValueForAttribute",
+        "symbolLocation": 184,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19448148,
+        "symbol": "___NSAccessibilityEntryPointValueForAttribute_block_invoke.772",
+        "symbolLocation": 948,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19441484,
+        "symbol": "NSAccessibilityPerformEntryPointObject",
+        "symbolLocation": 44,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 2630132,
+        "symbol": "_NSAccessibilityEntryPointValueForAttribute",
+        "symbolLocation": 224,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 17676656,
+        "symbol": "PlatformAccessibilityElementProtocol<>.valueForAttribute<A>(_:asType:)",
+        "symbolLocation": 204,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9976116,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 692,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      }
+    ],
+    "accessibilityLabelFrameCount": 12
+  },
+  {
+    "file": "Lectern-2026-09-30-101207.ips",
+    "captureTime": "2026-09-30 10:12:05.4127 +0530",
+    "pid": 86806,
+    "exception": {
+      "codes": "0x0000000000000002, 0x000000016a753f70",
+      "message": "Could not determine thread index for stack guard region",
+      "rawCodes": [
+        2,
+        6081036144
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_PROTECTION_FAILURE at 0x000000016a753f70"
+    },
+    "faultingThread": 0,
+    "leadingFrames": [
+      {
+        "imageOffset": 15048304,
+        "symbol": "type metadata accessor for AccessibilityAttachment?",
+        "symbolLocation": 4,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 14930564,
+        "symbol": "AccessibilityNode.attachment.getter",
+        "symbolLocation": 100,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9970120,
+        "symbol": "AccessibilityNode.resolvedRole(forPlatformElement:)",
+        "symbolLocation": 676,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 17669636,
+        "symbol": "AccessibilityNode.labelExposedAs.getter",
+        "symbolLocation": 600,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975364,
+        "symbol": "AccessibilityNode.labelsToResolve.getter",
+        "symbolLocation": 644,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975588,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 164,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10090784,
+        "symbol": "partial apply for closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 20,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 20179560,
+        "symbol": "thunk for @escaping @callee_guaranteed () -> (@out Any?)",
+        "symbolLocation": 52,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 755744,
+        "symbol": "_accessibilityGetAssociatedObjectForAttribute",
+        "symbolLocation": 208,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 752672,
+        "symbol": "NSAccessibilityGetObjectValueForAttribute",
+        "symbolLocation": 460,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 750996,
+        "symbol": "_NSAccessibilityOverrideValueForAttribute",
+        "symbolLocation": 184,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19448148,
+        "symbol": "___NSAccessibilityEntryPointValueForAttribute_block_invoke.772",
+        "symbolLocation": 948,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19441484,
+        "symbol": "NSAccessibilityPerformEntryPointObject",
+        "symbolLocation": 44,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 2630132,
+        "symbol": "_NSAccessibilityEntryPointValueForAttribute",
+        "symbolLocation": 224,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 17676656,
+        "symbol": "PlatformAccessibilityElementProtocol<>.valueForAttribute<A>(_:asType:)",
+        "symbolLocation": 204,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9976116,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 692,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      }
+    ],
+    "accessibilityLabelFrameCount": 12
+  },
+  {
+    "file": "Lectern-2026-09-30-101606.ips",
+    "captureTime": "2026-09-30 10:16:03.7129 +0530",
+    "pid": 93914,
+    "exception": {
+      "codes": "0x0000000000000002, 0x000000016ac17f70",
+      "message": "Could not determine thread index for stack guard region",
+      "rawCodes": [
+        2,
+        6086033264
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_PROTECTION_FAILURE at 0x000000016ac17f70"
+    },
+    "faultingThread": 0,
+    "leadingFrames": [
+      {
+        "imageOffset": 15048304,
+        "symbol": "type metadata accessor for AccessibilityAttachment?",
+        "symbolLocation": 4,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 14930564,
+        "symbol": "AccessibilityNode.attachment.getter",
+        "symbolLocation": 100,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9970120,
+        "symbol": "AccessibilityNode.resolvedRole(forPlatformElement:)",
+        "symbolLocation": 676,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 17669636,
+        "symbol": "AccessibilityNode.labelExposedAs.getter",
+        "symbolLocation": 600,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975364,
+        "symbol": "AccessibilityNode.labelsToResolve.getter",
+        "symbolLocation": 644,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975588,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 164,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10090784,
+        "symbol": "partial apply for closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 20,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 20179560,
+        "symbol": "thunk for @escaping @callee_guaranteed () -> (@out Any?)",
+        "symbolLocation": 52,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 755744,
+        "symbol": "_accessibilityGetAssociatedObjectForAttribute",
+        "symbolLocation": 208,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 752672,
+        "symbol": "NSAccessibilityGetObjectValueForAttribute",
+        "symbolLocation": 460,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 750996,
+        "symbol": "_NSAccessibilityOverrideValueForAttribute",
+        "symbolLocation": 184,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19448148,
+        "symbol": "___NSAccessibilityEntryPointValueForAttribute_block_invoke.772",
+        "symbolLocation": 948,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19441484,
+        "symbol": "NSAccessibilityPerformEntryPointObject",
+        "symbolLocation": 44,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 2630132,
+        "symbol": "_NSAccessibilityEntryPointValueForAttribute",
+        "symbolLocation": 224,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 17676656,
+        "symbol": "PlatformAccessibilityElementProtocol<>.valueForAttribute<A>(_:asType:)",
+        "symbolLocation": 204,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9976116,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 692,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      }
+    ],
+    "accessibilityLabelFrameCount": 12
+  },
+  {
+    "file": "Lectern-2026-09-30-104929.ips",
+    "captureTime": "2026-09-30 10:49:26.7490 +0530",
+    "pid": 13714,
+    "exception": {
+      "codes": "0x0000000000000002, 0x000000016aa8bf90",
+      "message": "Could not determine thread index for stack guard region",
+      "rawCodes": [
+        2,
+        6084411280
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_PROTECTION_FAILURE at 0x000000016aa8bf90"
+    },
+    "faultingThread": 0,
+    "leadingFrames": [
+      {
+        "imageOffset": 15048304,
+        "symbol": "type metadata accessor for AccessibilityAttachment?",
+        "symbolLocation": 4,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 14930564,
+        "symbol": "AccessibilityNode.attachment.getter",
+        "symbolLocation": 100,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9970120,
+        "symbol": "AccessibilityNode.resolvedRole(forPlatformElement:)",
+        "symbolLocation": 676,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 17669636,
+        "symbol": "AccessibilityNode.labelExposedAs.getter",
+        "symbolLocation": 600,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975364,
+        "symbol": "AccessibilityNode.labelsToResolve.getter",
+        "symbolLocation": 644,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9975588,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 164,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10090784,
+        "symbol": "partial apply for closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 20,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 20179560,
+        "symbol": "thunk for @escaping @callee_guaranteed () -> (@out Any?)",
+        "symbolLocation": 52,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 755744,
+        "symbol": "_accessibilityGetAssociatedObjectForAttribute",
+        "symbolLocation": 208,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 752672,
+        "symbol": "NSAccessibilityGetObjectValueForAttribute",
+        "symbolLocation": 460,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 750996,
+        "symbol": "_NSAccessibilityOverrideValueForAttribute",
+        "symbolLocation": 184,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19448148,
+        "symbol": "___NSAccessibilityEntryPointValueForAttribute_block_invoke.772",
+        "symbolLocation": 948,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 19441484,
+        "symbol": "NSAccessibilityPerformEntryPointObject",
+        "symbolLocation": 44,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 2630132,
+        "symbol": "_NSAccessibilityEntryPointValueForAttribute",
+        "symbolLocation": 224,
+        "imageIndex": 4
+      },
+      {
+        "imageOffset": 17676656,
+        "symbol": "PlatformAccessibilityElementProtocol<>.valueForAttribute<A>(_:asType:)",
+        "symbolLocation": 204,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9976116,
+        "symbol": "AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 692,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 9997168,
+        "symbol": "@objc AccessibilityNode.accessibilityLabel()",
+        "symbolLocation": 44,
+        "imageIndex": 3
+      },
+      {
+        "imageOffset": 10046108,
+        "symbol": "closure #4 in AccessibilityNode.applyProperties(to:)",
+        "symbolLocation": 72,
+        "imageIndex": 3
+      }
+    ],
+    "accessibilityLabelFrameCount": 12
+  }
+]

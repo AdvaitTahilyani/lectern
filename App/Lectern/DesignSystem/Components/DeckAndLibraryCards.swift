@@ -78,7 +78,6 @@ struct DeckDropZone: View {
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { setup.isDragTargeted }, set: { setup.setDragTargeted($0) })) { providers in
             handleDrop(providers)
         }
-        .accessibilityLabel(setup.deckURL == nil ? "Drop the slide deck here" : "Slide deck loaded")
     }
 
     private var converting: some View {
@@ -117,6 +116,7 @@ struct DeckDropZone: View {
                 .buttonStyle(.plain)
                 .popover(isPresented: $showPreview, arrowEdge: .bottom) { DeckPreviewGrid(images: images) }
                 .help("Preview all pages")
+                .accessibilityLabel("Preview slide deck, \(images.pageCount) pages")
             VStack(spacing: DS.Space.xs) {
                 Text(fileLine).font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 indexingLine

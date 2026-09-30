@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import LecternCore
+import NaturalLanguage
 import SwiftUI
 
 /// Owns one `LectureSession` (live or review): consumes transcription events and brain updates,
@@ -449,7 +450,8 @@ final class LiveSessionModel {
         var words = 0
         var sentences: [String] = []
         for t in settled {
-            let first = t.summary.split(separator: ".").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? t.summary
+            // Whole sentences only ("e.g." must not end the summary — QA F4).
+            guard let first = Self.firstSentence(of: t.summary) else { continue }
             let count = first.split(separator: " ").count
             if words + count > 80 { break }
             words += count
@@ -460,7 +462,7 @@ final class LiveSessionModel {
         var summary = Takeaway(
             id: SessionConventions.summaryID(for: id),
             title: SessionConventions.summaryTitle(sessionID: id),
-            summary: sentences.joined(separator: ". ") + ".",
+            summary: sentences.joined(separator: " "),
             detail: TakeawayDetail(bullets: [], keyTerms: Array(terms.prefix(8))),
             start: 0, end: accumulated, slidePages: [], isLive: false
         )
@@ -469,6 +471,20 @@ final class LiveSessionModel {
         session.takeaways.insert(summary, at: 0)
         withAnimation(DS.Motion.morph) { summaryState = .ready }
         markDirty()
+    }
+
+    /// First sentence of `text` per the linguistic tokenizer, with terminal punctuation.
+    nonisolated static func firstSentence(of text: String) -> String? {
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
+        var first: String?
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            first = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return false
+        }
+        guard var s = first ?? (text.isEmpty ? nil : text) else { return nil }
+        if let last = s.last, !".!?".contains(last) { s += "." }
+        return s
     }
 
     func retrySummary() {
@@ -551,7 +567,8 @@ final class LiveSessionModel {
             let previousLiveID = liveTakeaway?.id
             let summary = summary
             withAnimation(DS.Motion.settle) {
-                session.takeaways = (summary.map { [$0] } ?? []) + list
+                // A range never ends before it starts, whatever timeline the brain used (QA F3).
+                session.takeaways = (summary.map { [$0] } ?? []) + list.map { t in var t = t; t.end = max(t.end, t.start); return t }
             }
             if let previousLiveID, let now = list.first(where: { $0.id == previousLiveID }), !now.isLive {
                 settledCount += 1

@@ -120,6 +120,9 @@ struct LecternCommands: Commands {
             Button("Import Recording…") { app.showImport() }.keyboardShortcut("i", modifiers: [.command, .shift])
             Button("New Window") { openWindow(id: "main") }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
+        CommandGroup(after: .textEditing) {
+            Button("Find") { NotificationCenter.default.post(name: .lecternFind, object: nil) }.keyboardShortcut("f", modifiers: .command)
+        }
         CommandGroup(replacing: .help) {
             Button("Welcome to Lectern") { NotificationCenter.default.post(name: .lecternOpenOnboarding, object: nil) }
         }
@@ -169,4 +172,6 @@ extension Notification.Name {
     static let lecternExport = Notification.Name("lectern.export")
     static let lecternOpenOnboarding = Notification.Name("lectern.openOnboarding")
     static let lecternOpenSettings = Notification.Name("lectern.openSettings")
+    /// ⌘F: focus the library search field or the transcript search.
+    static let lecternFind = Notification.Name("lectern.find")
 }

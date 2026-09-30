@@ -42,9 +42,18 @@ struct AskView: View {
             }
         }
         .onChange(of: composerFocused) { _, f in session.isTypingInAsk = f }
-        .onChange(of: session.focusAskRequest) { _, _ in composerFocused = true }
-        .onAppear { if session.focusAskRequest > 0 { composerFocused = true } }
+        .onChange(of: session.focusAskRequest) { _, _ in focusComposerSoon() }
+        .onAppear { if session.focusAskRequest > 0 { focusComposerSoon() } }
         .onDisappear { session.isTypingInAsk = false }
+    }
+
+    /// The composer may not be in the hierarchy yet when the tab switches; focus on the next turn.
+    private func focusComposerSoon() {
+        Task { @MainActor in
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(60))
+            composerFocused = true
+        }
     }
 
     private var footer: String {
@@ -117,7 +126,6 @@ struct UserBubble: View {
                 .background(DS.Colors.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .textSelection(.enabled)
         }
-        .accessibilityLabel("You asked: \(text)")
     }
 }
 
@@ -134,10 +142,14 @@ struct AnswerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
+            // Selectable, link-bearing text is exposed as ONE plain-string element: resolving
+            // accessibility labels through its link runs recurses in AppKit (C1 stack overflow).
             Text(AnswerFormatter.attributed(message.text, sessionID: sessionID))
                 .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(AnswerFormatter.plainText(message.text))
             if !message.citations.isEmpty {
                 Divider()
                 CitationRow(citations: message.citations, sessionID: sessionID, thumbnail: thumbnail, onOpen: onOpen)

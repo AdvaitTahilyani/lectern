@@ -16,18 +16,41 @@ struct LiveSessionView: View {
     @State private var tier: LayoutTier = .three
     /// Inspector state to restore when leaving the single tier (which force-closes it).
     @State private var inspectorBeforeSingle = true
+    /// Ignore split-view collapse callbacks for a moment after a programmatic change: AppKit reports
+    /// intermediate collapsed states through the binding, which otherwise re-asserts the value
+    /// (`_setCollapsed` ↔ `didChangeCollapsed` loop, QA H1).
+    @State private var inspectorSettleUntil = Date.distantPast
+
+    @FocusState private var rootFocused: Bool
 
     var body: some View {
         SizeNeutral { content }
+            // Session-wide keys (DESIGN §8): quiz 1–4 / S / Esc and Space to pause work whenever the
+            // window has focus and no text field does; the root holds default focus so they never
+            // depend on the quiz container itself being focused (QA F2).
+            .focusable()
+            .focusEffectDisabled()
+            .focused($rootFocused)
+            .onKeyPress(characters: .decimalDigits) { press in
+                guard !session.isTypingInAsk, let quiz = session.quiz, quiz.acceptsAnswers, let n = Int(press.characters), (1...4).contains(n) else { return .ignored }
+                session.selectOption(n - 1)
+                return .handled
+            }
+            .onKeyPress("s") { if session.quiz?.phase == .asking, !session.isTypingInAsk { session.snoozeQuiz(); return .handled }; return .ignored }
+            .onKeyPress(.escape) { if session.quiz != nil, !session.isTypingInAsk { session.skipQuiz(); return .handled }; return .ignored }
+            .onKeyPress(.space) { if session.isLive, !session.isTypingInAsk { session.togglePause(); return .handled }; return .ignored }
             .environment(\.openURL, OpenURLAction { url in session.open(url) ? .handled : .systemAction })
-            .background(DS.Colors.canvas)
+            .background(DS.Colors.canvas.ignoresSafeArea())
             .navigationTitle(session.title)
             .navigationSubtitle(session.subtitle)
             .toolbar { SessionToolbar(session: session, tier: tier) }
             // Presentation is pure state (never derived from measured width) and is toggled with
             // animations disabled: an animated NSSplitViewItem collapse while AppKit-backed controls
             // inside stream updates exhausts AppKit's constraint-update budget and aborts.
-            .inspector(isPresented: Binding(get: { session.isInspectorShown }, set: { v in setInspector(v) })) {
+            .inspector(isPresented: Binding(get: { session.isInspectorShown }, set: { v in
+                guard v != session.isInspectorShown, Date.now >= inspectorSettleUntil else { return }
+                setInspector(v)   // a user collapse/expand
+            })) {
                 SizeNeutral { InspectorView(session: session) }
                     .inspectorColumnWidth(min: DS.Layout.inspector.min, ideal: DS.Layout.inspector.ideal, max: DS.Layout.inspector.max)
             }
@@ -52,6 +75,7 @@ struct LiveSessionView: View {
             }
             .onAppear {
                 applyPendingNavigation()
+                Task { @MainActor in await Task.yield(); rootFocused = true }
                 Task { try? await Task.sleep(for: .seconds(1)); hasAppeared = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: .lecternExport)) { _ in
@@ -105,6 +129,7 @@ struct LiveSessionView: View {
     /// Shows/hides the inspector without the split-view animation (see the `.inspector` note).
     private func setInspector(_ shown: Bool, persist: Bool = true) {
         guard session.isInspectorShown != shown else { return }
+        inspectorSettleUntil = Date.now.addingTimeInterval(0.8)
         var t = Transaction()
         t.disablesAnimations = true
         withTransaction(t) { session.isInspectorShown = shown }
@@ -137,7 +162,10 @@ struct SessionToolbar: ToolbarContent {
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if tier == .single {
+        if !session.isLive, session.isEditingTitle {
+            ToolbarItem(placement: .principal) { TitleEditor(session: session) }
+        }
+        if tier == .single, !session.isEditingTitle {
             ToolbarItem(placement: .principal) {
                 Picker("Pane", selection: $session.pane) {
                     ForEach(SessionPane.allCases) { Text($0.label).tag($0) }
@@ -229,6 +257,10 @@ struct StopPopover: View {
         }
         .padding(DS.Space.l)
         .frame(width: 320)
+        .background {
+            // ⌘↩ also finishes (DESIGN §8); a button can carry only one shortcut.
+            Button("") { session.finish() }.keyboardShortcut(.return, modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
     }
 }
 
@@ -245,7 +277,6 @@ struct InspectorView: View {
                 Button { withAnimation(DS.Motion.quick) { showSearch.toggle() } } label: { Image(systemName: "magnifyingglass") }
                     .buttonStyle(.borderless)
                     .help("Find in transcript (⌘F)")
-                    .keyboardShortcut("f", modifiers: .command)
                     .disabled(session.inspectorTab != .transcript)
             }
             .padding(.horizontal, DS.Space.m)
@@ -258,6 +289,10 @@ struct InspectorView: View {
             }
         }
         .onChange(of: session.inspectorTab) { _, tab in if tab != .transcript { showSearch = false } }
+        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in
+            session.inspectorTab = .transcript
+            showSearch = true
+        }
         .onChange(of: session.isLive) { _, live in if live, session.inspectorTab == .quiz { session.inspectorTab = .transcript } }
     }
 }
@@ -287,5 +322,26 @@ struct SegmentedTabs: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector tab")
+    }
+}
+
+/// Inline title editor shown in the toolbar's principal slot (⌘⇧T in review).
+struct TitleEditor: View {
+    var session: LiveSessionModel
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Lecture title", text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 320, height: 22)
+            .focused($focused)
+            .onSubmit { session.setTitle(draft); session.isEditingTitle = false }
+            .onKeyPress(.escape) { session.isEditingTitle = false; return .handled }
+            .onAppear {
+                draft = session.title
+                Task { @MainActor in await Task.yield(); try? await Task.sleep(for: .milliseconds(60)); focused = true }
+            }
+            .accessibilityLabel("Lecture title")
     }
 }

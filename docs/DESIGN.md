@@ -1116,3 +1116,18 @@ Register via `.keyboardShortcut` on buttons (so they show in menus and tooltips)
 | Review | — | Summary slot `.redacted` "Writing summary…" | Summary crossfades in | Summary failed → slot shows "Couldn't write the summary" [Try again] |
 | Settings › Models | — | Test connection `ProgressView` | Download progress | Row-level `exclamationmark.triangle` + Retry |
 | Onboarding | — | Downloads | — | Download failed → "Retry" on the row; Continue stays enabled |
+
+## Appendix C — QA fixes (30 Sep 2026)
+
+Decisions taken while fixing the hands-on QA findings (`docs/ui-review.md`); each amends the section it names.
+
+- **§4.4 Slides column:** list rows are the compact 96×54 thumbnail + right-aligned page number again (QA V4); the full-width hero above the list is the only large rendering.
+- **§4.6 Quiz card:** the card is capped at 250 pt and scrolls internally (QA V5); option rows are 30 pt with 6 pt spacing; Snooze/Skip are mini capsule buttons.
+- **§4.3 Tiers:** breakpoints have 20 pt of hysteresis; the inspector is pure state, toggled without the split-view animation, and the tier only closes it on entering the single tier (restoring the previous state on leaving). Two `.inspector`s must never coexist in one window: Course Ask is the Library view's inspector, not the split view's.
+- **§4.4 Transcript:** volatile text is plain `.secondary` (no per-glyph shimmer); a hypothesis never continues a student turn. Transcript search focuses via the Find command (⌘F), not a toolbar shortcut.
+- **§4.5 Single tier tip:** a `NoticeBanner` in the Takeaways column with an "Open" action, not a popover.
+- **§4.8/§8 Keys:** quiz 1–4 / S / Esc and Space-to-pause are handled at the session root (default focus) so they work whenever no text field has focus. ⌘↩ starts a lecture (Setup) and finishes it (Stop popover, alongside ↩). ⌘⇧T shows an inline title field in the toolbar's principal slot.
+- **§3.1 Canvas:** `DS.Colors.canvas` is an opaque asset (`Canvas`), because `windowBackgroundColor` is translucent on macOS 26 and let the Library bleed through under a session (QA V1).
+- **§9 Accessibility:** selectable or link-bearing text is exposed as one plain-string element (`children: .ignore` + label); `.combine` is never applied over selectable text (QA C1). Lecture cards are buttons with Open/Select actions; role pickers carry explicit labels.
+- **§4.9 Export:** the PDF paginates block-by-block so a takeaway's title stays with its bullets (QA V8). The summary is built from whole sentences (QA F4).
+- **Demo:** transcript timestamps follow the session clock at every speed (QA F3); takeaway ranges are clamped to end ≥ start in the app model.

@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var isDropTargeted = false
     @State private var thumbnails = ThumbnailCache()
     @State private var showNoResults = false
+    @FocusState private var searchFocused: Bool
     @State private var noResultsTask: Task<Void, Never>?
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: DS.Space.l)]
@@ -48,6 +49,11 @@ struct LibraryView: View {
             }
         }
         .searchable(text: $app.searchText, placement: .toolbar, prompt: "Search lectures, transcripts…")
+        .searchFocused($searchFocused)
+        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in
+            guard app.path.isEmpty else { return }
+            Task { @MainActor in await Task.yield(); searchFocused = true }
+        }
         .searchScopes($app.searchScope, activation: .onSearchPresentation) {
             ForEach(LibrarySearchScope.allCases) { Text($0.label).tag($0) }
         }
@@ -117,7 +123,6 @@ struct LibraryView: View {
             }
             .padding(DS.Space.xxl)
         }
-        .onTapGesture { selectedSession = nil }
     }
 
     @ViewBuilder
@@ -167,6 +172,9 @@ struct LibraryView: View {
                     .onTapGesture { selectedSession = s.id }
                     .focusable()
                     .onKeyPress(.return) { app.openSession(s.id); return .handled }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(named: "Open") { app.openSession(s.id) }
+                    .accessibilityAction(named: "Select") { selectedSession = s.id }
                     .contextMenu {
                         Button("Open") { app.openSession(s.id) }
                         Menu("Export") {

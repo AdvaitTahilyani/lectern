@@ -83,6 +83,18 @@ nonisolated enum AnswerFormatter {
         return result
     }
 
+    /// Accessibility-friendly plain text: citation markers become words ("Slide 12", "14:32").
+    static func plainText(_ text: String) -> String {
+        var out = text
+        for m in text.matches(of: /\[([SsTt])\s*([^\[\]]{1,12})\]/).reversed() {
+            let kind = m.1.lowercased(), value = String(m.2).trimmingCharacters(in: .whitespaces)
+            let replacement: String
+            if kind == "s" { replacement = "Slide \(value)" } else if let secs = TimeFormat.parse(value) { replacement = TimeFormat.clock(secs) } else { replacement = value }
+            out.replaceSubrange(m.range, with: " " + replacement)
+        }
+        return out.replacingOccurrences(of: "*", with: "")
+    }
+
     private static func markdown(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
     }

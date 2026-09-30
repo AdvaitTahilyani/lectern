@@ -78,8 +78,9 @@ nonisolated enum DS {
         static let review = Color.orange
         static let warning = Color.yellow
 
-        /// Canvas behind content in the detail column.
-        static let canvas = Color(nsColor: .windowBackgroundColor)
+        /// Canvas behind content in the detail column. An opaque asset (not `windowBackgroundColor`,
+        /// which is translucent on macOS 26 and let the Library show through under a session).
+        static let canvas = Color("Canvas")
         /// Opaque card surface.
         static let surface = Color("Surface")
         /// Slightly raised surface (expanded card, hovered row).

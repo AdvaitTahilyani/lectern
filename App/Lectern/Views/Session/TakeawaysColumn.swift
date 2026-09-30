@@ -110,18 +110,11 @@ struct TakeawaysColumn: View {
         .onKeyPress(.downArrow) { moveFocus(1); return .handled }
         .onKeyPress(.upArrow) { moveFocus(-1); return .handled }
         .onKeyPress(.return) { if let t = focusedTakeaway { toggle(t); return .handled }; return .ignored }
-        .onKeyPress(.space) { if let t = focusedTakeaway { toggle(t); return .handled }; if session.isLive { session.togglePause(); return .handled }; return .ignored }
+        .onKeyPress(.space) { if let t = focusedTakeaway { toggle(t); return .handled }; return .ignored }
         .onKeyPress(.escape) {
-            if session.quiz != nil { session.skipQuiz(); return .handled }
-            if session.expandedTakeawayID != nil { session.expandTakeaway(nil); return .handled }
+            if session.expandedTakeawayID != nil, session.quiz == nil { session.expandTakeaway(nil); return .handled }
             return .ignored
         }
-        .onKeyPress(characters: .decimalDigits) { press in
-            guard let quiz = session.quiz, quiz.acceptsAnswers, let n = Int(press.characters), (1...4).contains(n), !session.isTypingInAsk else { return .ignored }
-            session.selectOption(n - 1)
-            return .handled
-        }
-        .onKeyPress("s") { if session.quiz?.phase == .asking, !session.isTypingInAsk { session.snoozeQuiz(); return .handled }; return .ignored }
         .task {
             try? await Task.sleep(for: .seconds(45))
             if session.settledTakeaways.isEmpty { withAnimation(motion.morph) { firstMinuteHint = true } }

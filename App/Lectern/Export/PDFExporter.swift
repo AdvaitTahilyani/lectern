@@ -10,28 +10,42 @@ nonisolated enum PDFExporter {
     private static let margin: CGFloat = 48
 
     static func write(session: LectureSession, course: Course?, to url: URL) throws {
-        let content = attributedDocument(session: session, course: course)
+        let blocks = attributedBlocks(session: session, course: course)
         var mediaBox = page
         guard let consumer = CGDataConsumer(url: url as CFURL),
               let ctx = CGContext(consumer: consumer, mediaBox: &mediaBox, [kCGPDFContextTitle: session.title] as CFDictionary) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        let framesetter = CTFramesetterCreateWithAttributedString(content)
         let textRect = page.insetBy(dx: margin, dy: margin)
-        var location = 0
         var pageNumber = 1
-        while location < content.length {
-            ctx.beginPDFPage(nil)
-            let path = CGPath(rect: textRect, transform: nil)
-            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
-            CTFrameDraw(frame, ctx)
-            let visible = CTFrameGetVisibleStringRange(frame)
-            drawFooter(ctx, page: pageNumber, title: session.title)
-            ctx.endPDFPage()
-            if visible.length == 0 { break }
-            location += visible.length
-            pageNumber += 1
+        var y = textRect.maxY          // next block's top edge (CG coordinates, y up)
+        var pageOpen = false
+        func openPage() { ctx.beginPDFPage(nil); pageOpen = true; y = textRect.maxY }
+        func closePage() { drawFooter(ctx, page: pageNumber, title: session.title); ctx.endPDFPage(); pageOpen = false; pageNumber += 1 }
+
+        // Blocks (a takeaway's title + summary + bullets is one block) are kept together when they
+        // fit on a page; only blocks taller than a page are split (QA V8).
+        for block in blocks {
+            let setter = CTFramesetterCreateWithAttributedString(block)
+            let needed = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(), nil, CGSize(width: textRect.width, height: .greatestFiniteMagnitude), nil).height
+            if !pageOpen { openPage() }
+            if needed > y - textRect.minY, needed <= textRect.height { closePage(); openPage() }
+            var location = 0
+            while location < block.length {
+                if !pageOpen { openPage() }
+                let available = y - textRect.minY
+                let rect = CGRect(x: textRect.minX, y: textRect.minY, width: textRect.width, height: available)
+                let frame = CTFramesetterCreateFrame(setter, CFRange(location: location, length: 0), CGPath(rect: rect, transform: nil), nil)
+                let visible = CTFrameGetVisibleStringRange(frame)
+                if visible.length == 0 { closePage(); continue }
+                CTFrameDraw(frame, ctx)
+                let drawn = CTFramesetterSuggestFrameSizeWithConstraints(setter, visible, nil, CGSize(width: textRect.width, height: .greatestFiniteMagnitude), nil).height
+                y -= drawn
+                location += visible.length
+                if location < block.length { closePage() }
+            }
         }
+        if pageOpen { closePage() }
         ctx.closePDF()
     }
 
@@ -42,8 +56,11 @@ nonisolated enum PDFExporter {
         CTLineDraw(line, ctx)
     }
 
-    static func attributedDocument(session: LectureSession, course: Course?) -> NSAttributedString {
-        let doc = NSMutableAttributedString()
+    /// The document as blocks that should not be split across pages when avoidable.
+    static func attributedBlocks(session: LectureSession, course: Course?) -> [NSAttributedString] {
+        var blocks: [NSAttributedString] = []
+        var doc = NSMutableAttributedString()
+        func flush() { if doc.length > 0 { blocks.append(doc); doc = NSMutableAttributedString() } }
         let body = NSFont.systemFont(ofSize: 11)
         let mono = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
         let gray = NSColor(white: 0.45, alpha: 1)
@@ -62,6 +79,7 @@ nonisolated enum PDFExporter {
         var meta = [(session.startedAt ?? session.createdAt).formatted(date: .abbreviated, time: .shortened), TimeFormat.clock(session.duration)]
         if let course { meta.insert("\(course.code) — \(course.name)", at: 0) }
         add(meta.joined(separator: "  ·  "), font: body, color: gray, style: para(18))
+        flush()
 
         let summaryID = SessionConventions.summaryID(for: session.id)
         if let summary = session.takeaways.first(where: { $0.id == summaryID }) {
@@ -70,11 +88,13 @@ nonisolated enum PDFExporter {
             if let terms = summary.detail?.keyTerms, !terms.isEmpty {
                 add("Key terms: " + terms.map(\.term).joined(separator: ", "), font: body, color: gray, style: para(16))
             }
+            flush()
         }
         let takeaways = session.takeaways.filter { $0.id != summaryID && !$0.isLive }
         if !takeaways.isEmpty {
             add("Takeaways", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
             for t in takeaways {
+                flush()
                 add("\(TimeFormat.clock(t.start))–\(TimeFormat.clock(t.end))  \(t.title)", font: .systemFont(ofSize: 12, weight: .semibold), style: para(2))
                 add(t.summary, font: body, style: para(4))
                 for b in t.detail?.bullets ?? [] { add("•  \(b)", font: body, style: para(1, indent: 12, headIndent: 24)) }
@@ -89,6 +109,7 @@ nonisolated enum PDFExporter {
                 add("\(TimeFormat.clock(r.askedAt))  \(result) — \(r.question.prompt)", font: body, style: para(2))
             }
             add("", font: body, style: para(8))
+            flush()
         }
         if !session.transcript.isEmpty {
             add("Transcript", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
@@ -96,8 +117,10 @@ nonisolated enum PDFExporter {
                 let line = NSMutableAttributedString(string: TimeFormat.clock(p.start) + "  ", attributes: [.font: mono, .foregroundColor: gray])
                 line.append(NSAttributedString(string: p.text + "\n", attributes: [.font: body, .foregroundColor: NSColor.black, .paragraphStyle: para(6, headIndent: 0)]))
                 doc.append(line)
+                flush()
             }
         }
-        return doc
+        flush()
+        return blocks
     }
 }

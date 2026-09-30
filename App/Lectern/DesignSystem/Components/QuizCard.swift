@@ -24,6 +24,7 @@ struct QuizCard: View {
     @FocusState private var shortAnswerFocused: Bool
 
     var body: some View {
+        ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             switch quiz.phase {
             case .asking, .grading:
@@ -63,6 +64,11 @@ struct QuizCard: View {
         .padding(.horizontal, DS.Space.l)
         .padding(.vertical, DS.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        // Capped so ≥ 2 takeaway cards stay visible above the dock (QA V5); long feedback scrolls.
+        .frame(maxHeight: 250)
+        .fixedSize(horizontal: false, vertical: true)
         .lecternGlass(.regular, in: .rect(cornerRadius: DS.Radius.float))
         .onHover(perform: onHover)
         .accessibilityElement(children: .contain)

@@ -146,7 +146,7 @@ struct SetupView: View {
         }
         .lecternProminent()
         .controlSize(.extraLarge)
-        .keyboardShortcut(.defaultAction)
+        .keyboardShortcut(.return, modifiers: .command)
         .disabled(!app.setup.canStart || app.liveSession != nil)
         .help(app.liveSession != nil ? "A lecture is already recording" : "Start Lecture (⌘↩)")
         .padding(.top, DS.Space.s)

@@ -28,7 +28,7 @@ struct CourseAskView: View {
                 .padding(DS.Space.m)
             Text("Answers cite lectures, slides and timestamps across the course").font(DS.Typo.footnote).foregroundStyle(.secondary).padding(.bottom, DS.Space.s)
         }
-        .onAppear { composerFocused = true }
+        .onAppear { Task { @MainActor in await Task.yield(); try? await Task.sleep(for: .milliseconds(60)); composerFocused = true } }
         .task(id: app.sessions.count) { model.prepare(sessions: app.sessions) }
     }
 }
@@ -84,13 +84,18 @@ struct CourseAskThread: View {
     private func answerView(text: String, citations: [CourseCitation], streaming: Bool) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             let attributed = CourseAnswerFormatter.attributed(text, ordinals: model.ordinals)
+            // One plain-string accessibility element over link-bearing text (see C1 in AskView).
             if streaming {
                 HStack(alignment: .lastTextBaseline, spacing: 0) {
                     Text(attributed)
                     Caret(animating: true)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(CourseAnswerFormatter.plainText(text))
             } else {
                 Text(attributed).textSelection(.enabled)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(CourseAnswerFormatter.plainText(text))
             }
             if !citations.isEmpty {
                 Divider()
@@ -191,6 +196,17 @@ nonisolated enum CourseAnswerFormatter {
         }
         result.append(markdown(String(text[cursor...])))
         return result
+    }
+
+    /// Plain text for accessibility: "[L9 S12]" → "Lecture 9 slide 12", "[L9 T14:32]" → "Lecture 9 14:32".
+    static func plainText(_ text: String) -> String {
+        var out = text
+        for m in text.matches(of: /\[[Ll](\d+)\s+([SsTt])\s*([^\[\]]{1,12})\]/).reversed() {
+            let value = String(m.3).trimmingCharacters(in: .whitespaces)
+            let tail = m.2.lowercased() == "s" ? "slide \(value)" : (TimeFormat.parse(value).map(TimeFormat.clock) ?? value)
+            out.replaceSubrange(m.range, with: " Lecture \(m.1) \(tail)")
+        }
+        return out.replacingOccurrences(of: "*", with: "")
     }
 
     private static func markdown(_ s: String) -> AttributedString {

@@ -112,10 +112,12 @@ struct SlidesColumn: View {
     private func thumbnailRow(_ page: Int, images: SlideImageStore) -> some View {
         let isCurrent = page == session.displayedSlide
         let highlighted = page == session.highlightedSlide
-        let thumbWidth = DS.Layout.slidesColumn.ideal - 2 * DS.Space.l - DS.Space.s
+        // Compact list rows (DESIGN §4.4): 96×54 thumbnail, page number right-aligned, so ~10 rows
+        // fit; the hero image above shows the current slide at full column width.
+        let thumbWidth = DS.Size.slideThumb.width
         return Button { session.selectSlide(page) } label: {
-            HStack(spacing: DS.Space.xs) {
-                Rectangle().fill(.quaternary).frame(width: 1).opacity(session.visitedSlides.contains(page) && !isCurrent ? 1 : 0)
+            HStack(spacing: DS.Space.s) {
+                Rectangle().fill(.quaternary).frame(width: 1, height: thumbWidth * images.aspect - 8).opacity(session.visitedSlides.contains(page) && !isCurrent ? 1 : 0)
                 SlideImage(image: images.image(page: page, width: thumbWidth), page: page, isCurrent: isCurrent)
                     .frame(width: thumbWidth, height: thumbWidth * images.aspect)
                     .overlay {
@@ -125,17 +127,13 @@ struct SlidesColumn: View {
                                 .matchedGeometryEffect(id: "slideRing", in: ring, isSource: isCurrent)
                         }
                     }
-                    .overlay(alignment: .bottomTrailing) {
-                        Text("\(page)")
-                            .font(DS.Typo.mono)
-                            .fontWeight(isCurrent ? .semibold : .regular)
-                            .foregroundStyle(isCurrent ? AnyShapeStyle(DS.Colors.accent) : AnyShapeStyle(.secondary))
-                            .padding(.horizontal, DS.Space.xs)
-                            .padding(.vertical, 1)
-                            .background(DS.Colors.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
-                            .padding(DS.Space.xs)
-                    }
+                Spacer(minLength: DS.Space.s)
+                Text("\(page)")
+                    .font(DS.Typo.mono)
+                    .fontWeight(isCurrent ? .semibold : .regular)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(DS.Colors.accent) : AnyShapeStyle(.secondary))
             }
+            .padding(.trailing, DS.Space.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

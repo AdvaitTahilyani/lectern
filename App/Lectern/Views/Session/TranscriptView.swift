@@ -96,8 +96,9 @@ struct TranscriptView: View {
         }
         .focusSection()
         .onChange(of: searchShown) { _, shown in
-            if shown { searchFocused = true } else { query = ""; hitIndex = 0 }
+            if shown { focusSearchSoon() } else { query = ""; hitIndex = 0 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in if searchShown { focusSearchSoon() } }
         .onKeyPress(.escape) {
             guard searchShown else { return .ignored }
             showSearch?.wrappedValue = false
@@ -146,6 +147,15 @@ struct TranscriptView: View {
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
+    /// Focus after the field is in the hierarchy (a same-frame focus request is dropped).
+    private func focusSearchSoon() {
+        Task { @MainActor in
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(60))
+            searchFocused = true
+        }
+    }
+
     private func step(_ d: Int) {
         guard !hits.isEmpty else { return }
         hitIndex = (hitIndex + d + hits.count) % hits.count
@@ -181,6 +191,9 @@ struct TranscriptView: View {
                     .font(DS.Typo.body)
                     .lineSpacing(DS.Typo.transcriptLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Selectable text is one plain-string element (never combined with a parent label).
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(Int(p.start) / 60) minutes \(Int(p.start) % 60) seconds\(speaker.isLecturer ? "" : ", student"): \(p.text)\(volatile.map { " In progress: \($0)" } ?? "")")
                 }
                 .padding(speaker.isLecturer ? 0 : DS.Space.m)
                 .background {
@@ -192,8 +205,7 @@ struct TranscriptView: View {
             }
             .background(RoundedRectangle(cornerRadius: DS.Radius.control, style: .continuous).fill(DS.Colors.accent.opacity(flashID == p.id ? 0.10 : 0)))
             .animation(.easeOut(duration: 0.8), value: flashID)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(Int(p.start) / 60) minutes \(Int(p.start) % 60) seconds\(speaker.isLecturer ? "" : ", student"): \(p.text)")
+            .accessibilityElement(children: .contain)
         }
     }
 

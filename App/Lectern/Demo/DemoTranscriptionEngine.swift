@@ -89,7 +89,7 @@ nonisolated final class DemoTranscriptionEngine: TranscriptionEngine, @unchecked
                     continuation.yield(.level(level))
                     guard await sleep(dt / 4) else { return }
                 }
-                clock += dt
+                clock += dt / speed   // timestamps follow the wall clock the app's session clock uses
                 spoken.append(word)
                 // ASR-style revision: occasionally show a lower-cased/partial word that gets corrected.
                 var hypothesis = spoken.joined(separator: " ")
@@ -109,7 +109,7 @@ nonisolated final class DemoTranscriptionEngine: TranscriptionEngine, @unchecked
                 // Diarization lags the text by a moment.
                 if tick == 4 { continuation.yield(.speakers([segmentID: speaker])) }
             }
-            clock += gap
+            clock += gap / speed
         }
         // Script exhausted: keep the mic "open" with room noise until stopped.
         while !Task.isCancelled {

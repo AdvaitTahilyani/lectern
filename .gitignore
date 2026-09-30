@@ -7,3 +7,4 @@ xcuserdata/
 .swiftpm/
 Packages/LecternKit/.build*/
 TestData/
+docs/screenshots/codex/*.png
