@@ -74,6 +74,13 @@ extension AppServices {
                         quiz: settings.quiz,
                         summaryIntervalSeconds: settings.summaryIntervalSeconds
                     )
+                },
+                correctTranscript: { transcript, deck in
+                    guard StoredSettings.current().fixesJargonFromSlides, let deck else { return transcript }
+                    let vocabulary = DeckVocabulary(deck: deck)
+                    guard !vocabulary.isEmpty else { return transcript }
+                    let corrector = TranscriptCorrector(vocabulary: vocabulary)
+                    return transcript.map(corrector.correct)
                 }
             ),
             mediaSpaceBrowser: LiveMediaSpaceBrowser(),

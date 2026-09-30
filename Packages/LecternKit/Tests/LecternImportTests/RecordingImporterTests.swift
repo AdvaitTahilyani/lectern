@@ -32,6 +32,38 @@ private func workDirectories(in scratch: URL) -> [String] {
         }
     }
 
+    /// Corrections must reach the brain: takeaways are written from the corrected transcript.
+    @Test func transcriptIsCorrectedBeforeSummarizing() async throws {
+        let scratch = try makeTemporaryDirectory("scratch")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let directory = try makeTemporaryDirectory("fixture")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let audio = try SpeechFixture.make(AudioExtractorTests.sentence, format: "m4a", in: directory)
+
+        let brain = Box<FakeBrain?>(nil)
+        let deck = SlideDeck(fileName: "s.pdf", originalFileName: "lec9.pdf", title: nil, pages: [])
+        let seenDeck = Box<SlideDeck?>(nil)
+        let importer = RecordingImporter(
+            makeEngine: { Self.engine() },
+            makeBrain: { _ in
+                let fake = FakeBrain()
+                brain.value = fake
+                return fake
+            },
+            scratchDirectory: scratch,
+            correctTranscript: { segments, deck in
+                seenDeck.value = deck
+                return segments.map { var s = $0; s.text = s.text.uppercased(); return s }
+            }
+        )
+        let result = try await importer.importRecording(.file(audio), into: LectureSession(title: "W", deck: deck)) { _ in }
+
+        #expect(seenDeck.value == deck)
+        #expect(result.transcript.allSatisfy { $0.text == $0.text.uppercased() })
+        let ingested = try #require(await brain.value?.ingested)
+        #expect(!ingested.isEmpty && ingested.allSatisfy { $0.text == $0.text.uppercased() })
+    }
+
     @Test func importsAnAudioFileEndToEnd() async throws {
         let scratch = try makeTemporaryDirectory("scratch")
         defer { try? FileManager.default.removeItem(at: scratch) }

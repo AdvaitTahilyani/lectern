@@ -529,7 +529,6 @@ final class AppModel {
         case .mediaSpace(let ms, let captions): session.source = .mediaSpace(entryID: ms.entryID, pageURL: ms.pageURL, usedCaptions: captions)
         }
         let deckURL = importDraft.deckURL
-        let fixingJargon = settings.fixesJargonFromSlides
         let job = ImportJob(session: session)
         imports[session.id] = job
         libraryDidUpdate(session)
@@ -551,7 +550,8 @@ final class AppModel {
                 }
             }
             do { try await services.store.save(draft) } catch { self?.libraryError = error.localizedDescription }
-            job.start(source: source, services: services, fixingJargon: fixingJargon) { [weak self] result in
+            // Start from `draft`: it carries the ingested deck, which the job's initial copy lacks.
+            job.start(draft, source: source, services: services) { [weak self] result in
                 guard let self else { return }
                 self.libraryDidUpdate(result)
                 Task { do { try await services.store.save(result) } catch { self.libraryError = error.localizedDescription } }

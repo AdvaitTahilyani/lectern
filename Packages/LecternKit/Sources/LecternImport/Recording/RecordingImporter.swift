@@ -8,6 +8,8 @@ import LecternCore
 public struct RecordingImporter: RecordingImporting {
     public typealias EngineFactory = @Sendable () -> any TranscriptionEngine
     public typealias BrainFactory = @Sendable (BrainContext) async -> any LectureIntelligence
+    /// Rewrites the finished transcript before it is summarized (e.g. deck-based jargon fixes).
+    public typealias TranscriptCorrection = @Sendable ([TranscriptSegment], SlideDeck?) async -> [TranscriptSegment]
 
     private let makeEngine: EngineFactory
     private let makeBrain: BrainFactory
@@ -15,6 +17,7 @@ public struct RecordingImporter: RecordingImporting {
     private let extractor: AudioExtractor
     private let onWarning: @Sendable (String) -> Void
     private let scratchRoot: URL
+    private let correctTranscript: TranscriptCorrection?
 
     /// - Parameters:
     ///   - makeEngine: creates the transcription engine used for `transcribeFile`.
@@ -25,13 +28,16 @@ public struct RecordingImporter: RecordingImporting {
     ///     created; each is removed when the import ends, however it ends.
     ///   - onWarning: non-fatal problems (engine warnings, failed summary passes) worth showing
     ///     subtly; the import still completes.
+    ///   - correctTranscript: applied to the transcript before summarizing, so takeaways are
+    ///     written from the corrected text.
     public init(
         makeEngine: @escaping EngineFactory,
         makeBrain: @escaping BrainFactory,
         kaltura: KalturaClient = KalturaClient(),
         audioExtractor: AudioExtractor = AudioExtractor(),
         scratchDirectory: URL = FileManager.default.temporaryDirectory,
-        onWarning: @escaping @Sendable (String) -> Void = { _ in }
+        onWarning: @escaping @Sendable (String) -> Void = { _ in },
+        correctTranscript: TranscriptCorrection? = nil
     ) {
         self.makeEngine = makeEngine
         self.makeBrain = makeBrain
@@ -39,6 +45,7 @@ public struct RecordingImporter: RecordingImporting {
         self.extractor = audioExtractor
         self.scratchRoot = scratchDirectory
         self.onWarning = onWarning
+        self.correctTranscript = correctTranscript
     }
 
     public func importRecording(
@@ -51,7 +58,7 @@ public struct RecordingImporter: RecordingImporting {
         defer { try? FileManager.default.removeItem(at: workDirectory) }
 
         var result = session
-        let transcript: Transcript
+        var transcript: Transcript
         switch source {
         case .file(let url):
             transcript = try await transcribe(mediaFile: url, vocabulary: session.vocabulary, workDirectory: workDirectory, progress: progress)
@@ -78,6 +85,7 @@ public struct RecordingImporter: RecordingImporting {
         try Task.checkCancellation()
         guard !transcript.segments.isEmpty else { throw ImportError.emptyTranscript }
 
+        if let correctTranscript { transcript.segments = await correctTranscript(transcript.segments, session.deck) }
         progress(.summarizing(fraction: 0))
         result.transcript = transcript.segments
         result.duration = max(transcript.duration, transcript.segments.last?.end ?? 0)

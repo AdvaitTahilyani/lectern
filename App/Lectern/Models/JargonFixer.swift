@@ -42,14 +42,4 @@ final class JargonFixer {
         }
         return cachedCorrector
     }
-
-    /// Corrects a whole imported transcript (off the main actor; the first call may load the
-    /// system word list).
-    nonisolated static func fix(_ transcript: [TranscriptSegment], deck: SlideDeck?, services: AppServices) async -> [TranscriptSegment] {
-        guard let deck else { return transcript }
-        return await Task.detached(priority: .utility) {
-            guard let corrector = services.makeTranscriptCorrector(deck) else { return transcript }
-            return transcript.map(corrector.correct)
-        }.value
-    }
 }

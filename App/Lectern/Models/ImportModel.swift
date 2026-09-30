@@ -69,19 +69,19 @@ final class ImportJob: Identifiable {
         }
     }
 
-    /// Runs the import. With `fixingJargon`, misheard course jargon in the transcript is corrected
-    /// from the deck (keeping what was heard) before the finished session is handed back and saved.
-    func start(source: RecordingSource, services: AppServices, fixingJargon: Bool, onFinished: @escaping (LectureSession) -> Void, onFailed: @escaping (String) -> Void) {
-        let draft = session
+    /// Runs the import of `draft` (the job's session plus anything prepared since the job was
+    /// created, such as the ingested deck). Jargon correction happens inside the importer, before
+    /// summarizing, so takeaways are written from the corrected transcript.
+    func start(_ draft: LectureSession, source: RecordingSource, services: AppServices, onFinished: @escaping (LectureSession) -> Void, onFailed: @escaping (String) -> Void) {
+        session = draft
         task = Task { [weak self] in
             do {
-                var result = try await services.recordingImporter.importRecording(source, into: draft) { stage in
+                let result = try await services.recordingImporter.importRecording(source, into: draft) { stage in
                     Task { @MainActor in
                         guard let self, case .running = self.state else { return }
                         withAnimation(DS.Motion.numeric) { self.state = .running(stage) }
                     }
                 }
-                if fixingJargon { result.transcript = await JargonFixer.fix(result.transcript, deck: result.deck, services: services) }
                 guard let self, !Task.isCancelled else { return }
                 self.session = result
                 self.state = .finished
