@@ -1,0 +1,46 @@
+Window: "Models", App: Lectern.
+0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 heading Roles
+		3 container
+			4 text Summaries Quizzes Ask Each role can use a different provider. On-device keeps everything private.
+		5 heading Providers
+		6 container
+			7 disclosure triangle Description: On-device (MLX), Value: on
+			8 text Parakeet TDT 0.6B 600 MB Installed
+			9 button Remove
+			10 text Gemma 4 26B-A4B (QAT 4-bit) 15.6 GB Installed
+			11 button Remove
+			12 text Gemma 4 12B (4-bit) 6.8 GB Installed
+			13 button Remove
+			14 text Qwen3.5 9B (4-bit) 6 GB
+			15 button Download
+			16 text Models live in Storage › Location. 8.2 GB free.
+			17 disclosure triangle Description: Local server (Ollama / LM Studio), Value: off
+			18 disclosure triangle Description: OpenAI, Value: off
+			19 disclosure triangle Description: Anthropic, Value: off
+		20 scroll bar (settable, float) 0
+			21 value indicator (settable, float) 0
+			22 increment arrow button
+			23 decrement arrow button
+			24 increment page button
+			25 decrement page button
+	26 toolbar
+		27 button General, Secondary Actions: Move next, Remove from toolbar
+		28 button Transcription, Secondary Actions: Move previous, Move next, Remove from toolbar
+		29 button Models, Secondary Actions: Move previous, Move next, Remove from toolbar
+		30 button Quizzes, Secondary Actions: Move previous, Move next, Remove from toolbar
+		31 button Focus, Secondary Actions: Move previous, Remove from toolbar
+	32 close button
+	33 zoom button (disabled)
+	34 text Models
+35 menu bar
+	36 Lectern
+	37 File
+	38 Edit
+	39 View
+	40 Lecture
+	41 Window
+	42 Help
+
+The focused UI element is 0 standard window Models, ID: com_apple_SwiftUI_Settings_window, Secondary Actions: Raise

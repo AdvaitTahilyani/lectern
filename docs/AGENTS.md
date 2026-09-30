@@ -23,3 +23,6 @@ ln -s $K/Sources/LecternCore $P/Sources/; ln -s $K/Sources/<YourTarget> $P/Sourc
 # write $P/Package.swift declaring just those targets (+ your external deps, e.g. FluidAudio)
 cd $P && swift test
 ```
+
+**Warning:** tests that read `TestData/` locate it relative to their source path, so they silently
+skip in symlinked isolated packages. Run real-data suites in the real package before reporting.

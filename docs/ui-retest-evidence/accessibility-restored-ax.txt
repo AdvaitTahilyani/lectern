@@ -1,0 +1,79 @@
+Window: "VoiceOver", App: System Settings.
+0 standard window VoiceOver, ID: Main, Secondary Actions: Raise
+	1 split group Main, SidebarNavigationSplitView
+		2 scroll area Secondary Actions: Scroll Up, Scroll Down
+			3 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
+				4 row (selectable)
+				5 row (selectable) Advait Tahilyani, Apple Account
+				6 row (selectable)
+				7 row (selectable) Description: Software Update Available, Value: 1
+				8 row (selectable) Renew AppleCare Coverage, There are 34 days left to protect your AirPods against accidental damage.
+				9 row (selectable)
+				10 row (selectable) Wi-Fi
+				11 row (selectable) Bluetooth
+				12 row (selectable) Network
+				13 row (selectable) VPN
+				14 row (selectable) Battery
+				15 row (selectable)
+				16 row (selectable) General
+				17 row (selected) Accessibility
+				18 row (selectable) Appearance
+				19 row (selectable) Desktop & Dock
+				20 row (selectable) Displays
+				21 row (selectable) Menu Bar
+				22 row (selectable) Siri
+				23 row (selectable) Spotlight
+				24 row (selectable) Wallpaper
+				25 row (selectable)
+				26 row (selectable) Notifications
+				27 row (selectable) Sound
+				28 row (selectable) Focus
+				29 row (selectable) Screen Time
+				30 row (selectable)
+				31 row (selectable) Lock Screen
+				32 row (selectable) Privacy & Security
+				33 row (selectable) Touch ID & Password
+				34 row (selectable) Users & Groups
+				35 row (selectable)
+				36 row (selectable) Game Center
+				37 row (selectable) iCloud
+				38 row (selectable) Internet Accounts
+				39 row (selectable) Wallet & Apple Pay
+				40 row (selectable)
+				41 row (selectable) Keyboard
+				42 row (selectable) Trackpad
+				43 row (selectable) Game Controllers
+				44 row (selectable) Printers & Scanners
+			45 scroll bar (settable, float) 0
+				46 value indicator (settable, float) 0
+				47 increment arrow button
+				48 decrement arrow button
+				49 increment page button
+				50 decrement page button
+		51 search text field (settable) Search
+			52 button Search
+		53 splitter (disabled, settable, float) 232
+		54 scroll area Secondary Actions: Cancel
+			55 switch To toggle VoiceOver, quickly press Touch ID three times while holding the Command key., Value: off, ID: AX_VOICEOVER_ENABLED
+			56 button Description: Open VoiceOver Tutorial…, ID: AX_VO_OPEN_TRAINING
+			57 button Description: Open VoiceOver Utility…, ID: AX_VO_OPEN_UTILITY
+			58 button Help
+	59 toolbar
+		60 container
+			61 button Description: Go Back, ID: chevron.backward
+			62 menu button (disabled) Description: Go Forward, ID: chevron.forward
+	63 close button
+	64 zoom button
+	65 minimize button
+	66 text VoiceOver
+67 menu bar
+	68 System Settings
+	69 Edit
+	70 View
+	71 Window
+	72 Help
+
+Selected:
+	17 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

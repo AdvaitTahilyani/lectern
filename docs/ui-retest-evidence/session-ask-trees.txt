@@ -1,0 +1,731 @@
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Answering…
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more 
+				59 text field (settable) Explain slide 12 simply
+				60 button Description: Stop answering, ID: stop.circle.fill
+				61 text On-device · answers cite slides
+	62 toolbar
+		63 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		64 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		65 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		66 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		67 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 menu button More, ID: ellipsis.circle
+	72 close button
+	73 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	74 minimize button
+	75 text CS 426 CS 374 · Today
+76 menu bar
+	77 Lectern
+	78 File
+	79 Edit
+	80 View
+	81 Lecture
+	82 Window
+	83 Help
+
+The focused UI element is 59 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
+
+---
+Window: "CS 426", App: Lectern.
+0 standard window CS 426 – CS 374 · Today, ID: main-AppWindow-1, Secondary Actions: Raise
+	1 split group main-AppWindow-1, SidebarNavigationSplitView
+		2 splitter (disabled, settable, float) -1
+		3 split group
+			4 container
+				5 text SLIDES
+				6 toggle button Description: Auto, Help: Follow the lecture's slides automatically, Value: on
+				7 text TAKEAWAYS 1
+				8 image Description: Audio Waveform, ID: waveform
+				9 text Listening
+				10 button Description: Slide 4, Help: Open full size
+				11 text 4 of 34
+				12 scroll area Secondary Actions: Scroll Up, Scroll Down
+					13 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						14 button Slide 1
+						15 button Slide 2
+						16 button Slide 3
+						17 button Slide 4, current
+						18 button Slide 5
+						19 button Slide 6
+						20 button Slide 7
+						21 button Slide 8
+						22 button Slide 9
+						23 button Slide 10
+						24 button Slide 11
+						25 button Slide 12
+						26 button Slide 13
+						27 button Slide 14
+						28 button Slide 15
+						29 button Slide 16
+						30 button Slide 17
+						31 button Slide 18
+						32 button Slide 19
+						33 button Slide 20
+						34 button Slide 21
+						35 button Slide 22
+						36 button Slide 23
+					37 scroll bar (settable, float) 0
+						38 value indicator (settable, float) 0
+						39 increment arrow button
+						40 decrement arrow button
+						41 increment page button
+						42 decrement page button
+				43 scroll area
+					44 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						45 button Help: Double-tap to expand, Secondary Actions: Copy, Ask about this, 0 minutes 0 seconds, Slides 1–2, Description: From tokens to syntax trees, 0:00 to 0:17, slides 1 to 2, Summary: The parser consumes the lexer's tokens and builds a syntax tree from a context-free grammar; today's goal is building an LL(1) parse table by hand.
+				46 text Current topic: Recursive descent and the choice problem. One function per nonterminal; the hard part is choosing which production to expand.
+			47 splitter (disabled, settable, float) 999.5
+			48 container
+				49 container Inspector tab
+					50 button Transcript
+					51 button (selected) Ask
+				52 button (disabled) Description: Search, Help: Find in transcript (⌘F)
+				53 Scope
+					54 radio button Description: This lecture, Value: 1
+					55 radio button Description: Whole course, Value: 0
+				56 scroll area
+					57 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+						58 text Explain predictive parsing
+							59 text Explain predictive parsing
+						60 unknown Based on the lecture so far: Top-down parsers expand the leftmost nonterminal; recursive descent picks a production by peeking at the next token, and LL(1) means one token always suffices.  Slide 3. Ask about FIRST sets, FOLLOW sets, the parse table, left recursion or left factoring for a more specific answer.
+						61 button Description: Slide 3, Help: Show slide 3
+				62 text field (settable) Explain slide 12 simply
+				63 button (disabled) Description: Send, ID: arrow.up.circle.fill
+				64 text On-device · answers cite slides
+	65 toolbar
+		66 button Description: Show Sidebar, Secondary Actions: Increment, Decrement, Delete, Cancel
+		67 button Description: Back, ID: chevron.backward, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		68 button Description: Recording, Help: Pause recording, Value: 0 minutes, Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		69 button Description: Pause, Help: Pause (⌘⇧P), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		70 button Description: Stop, Help: Stop… (⌘.), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		71 button Description: Ask, Help: Ask (⌘K), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		72 button Description: Focus panel, Help: Toggle Focus panel (⌘⇧F), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		73 button Description: Inspector, Help: Toggle inspector (⌘⌥I), Secondary Actions: Increment, Decrement, Delete, Cancel, Move previous, Move next, Remove from toolbar
+		74 menu button More, ID: ellipsis.circle
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text CS 426 CS 374 · Today
+79 menu bar
+	80 Lectern
+	81 File
+	82 Edit
+	83 View
+	84 Lecture
+	85 Window
+	86 Help
+
+The focused UI element is 62 text field (settable) Explain slide 12 simply
