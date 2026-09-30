@@ -5,7 +5,7 @@ import WebKit
 @testable import LecternImport
 
 @MainActor @Suite(.serialized) struct BrowserTests {
-    static let token = "djJ8MTMyOTk3MnzQEUhC3w1VE1rITKH_9lJ3BiNZGW25"
+    static let token = "djJ8MTMyOTk3MnxsZWN0ZXJuLXRlc3QtdG9rZW4tbm90LXJlYWw"
 
     private func load(html: String, at address: String, timeout: Duration = .seconds(10)) async throws -> (MediaSpaceBrowserState, [MediaSpaceSource]) {
         let state = MediaSpaceBrowserState()

@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct MediaSpaceDetectorTests {
     static let page = URL(string: "https://mediaspace.illinois.edu/media/t/1_oj3ppr67/414259392")!
-    static let token = "djJ8MTMyOTk3MnzQEUhC3w1VE1rITKH"
+    static let token = "djJ8MTMyOTk3MnxsZWN0ZXJuLXRlc3QtdG9rZW4tbm90LXJlYWw"
 
     @Test func combinesPartialSignalsIntoASource() {
         var detector = MediaSpaceDetector()

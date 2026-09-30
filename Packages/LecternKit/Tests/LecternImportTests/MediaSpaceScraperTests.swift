@@ -13,7 +13,9 @@ import Testing
         #expect(source.entryID == "1_oj3ppr67")
         #expect(source.title == "Compiler Construction (CS 426 NG) (CS 426 NU) Fall 2026")
         // The playback session, not the in-app-messaging one.
-        #expect(source.ks.hasPrefix("djJ8MTMyOTk3MnzQEUhC3w1VE1rITKH_"))
+        // Compare with the ks inside the page's own playManifest URL (no token is hardcoded here).
+        let playback = try #require(html.firstMatch(of: /playManifest\/entryId\/1_oj3ppr67\/[^"']*?\/ks\/([A-Za-z0-9_\-=]+)\//)?.1)
+        #expect(source.ks == String(playback))
         #expect(!source.ks.isEmpty)
     }
 
