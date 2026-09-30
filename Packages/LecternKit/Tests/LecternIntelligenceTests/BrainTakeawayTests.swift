@@ -116,6 +116,31 @@ import Testing
         #expect(a.reasoning == .off)
     }
 
+    /// Slide progress ("SLIDES NOT YET SHOWN") changes as the lecture advances; it must stay in
+    /// the prompt tail so the cached system prefix and transcript prefix are unaffected.
+    @Test func slideProgressDoesNotBreakThePrefix() async throws {
+        let provider = ScriptedProvider(texts: [
+            Fixtures.segmentation("new_topic", title: "LL(1) parsing", summary: "One token of lookahead."),
+            Fixtures.segmentation("continue", title: "LL(1) parsing", summary: "Parse table decides."),
+        ])
+        let brain = Fixtures.brain(provider, interval: 30, tuning: BrainTuning(wordsPerUpdate: 10_000, firstUpdateSeconds: 30))
+        let log = UpdateLog(brain.updates)
+        await brain.setCurrentSlide(1)
+        for s in lecture[0..<3] { await brain.ingest(s) }
+        #expect(await log.wait { _ in provider.requests.count == 1 })
+        await brain.setCurrentSlide(3)
+        await brain.tick(sessionTime: 40)
+        for s in lecture[3..<6] { await brain.ingest(s) }
+        #expect(await log.wait { _ in provider.requests.count == 2 })
+
+        let (a, b) = (provider.requests[0], provider.requests[1])
+        #expect(a.system == b.system)
+        #expect(!a.system.contains("NOT YET SHOWN"))
+        let transcriptA = a.lastUser.components(separatedBy: "\n\n=====\n")[0]
+        let transcriptB = b.lastUser.components(separatedBy: "\n\n=====\n")[0]
+        #expect(transcriptB.hasPrefix(transcriptA))
+    }
+
     @Test func promptBudgetIsRespected() async throws {
         let long = Fixtures.segments((0..<400).map { "sentence \($0) talks about FIRST and FOLLOW sets and LL one parse tables in detail" }, seconds: 5)
         let provider = ScriptedProvider(responder: { _ in .text(Fixtures.segmentation("continue", title: "LL(1) parsing", summary: "s")) })

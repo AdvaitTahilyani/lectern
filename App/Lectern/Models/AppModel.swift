@@ -214,12 +214,12 @@ final class AppModel {
     }
 
     private static func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = UserDefaults.lectern.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
     private static func save<T: Encodable>(_ value: T, key: String) {
-        if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) }
+        if let data = try? JSONEncoder().encode(value) { UserDefaults.lectern.set(data, forKey: key) }
     }
 
     // MARK: - Courses

@@ -320,3 +320,11 @@ nonisolated struct DemoConfiguration: Sendable {
         return DemoConfiguration(isEnabled: enabled, speed: speed, flatGlass: args.contains("-flatGlass"), driverToken: token)
     }()
 }
+
+extension UserDefaults {
+    /// Where settings and UI preferences persist. Demo mode gets its own suite so scripted runs
+    /// never change the real app's settings (e.g. marking onboarding as completed).
+    // `UserDefaults` is documented as thread-safe but isn't marked Sendable in the SDK.
+    nonisolated(unsafe) static let lectern: UserDefaults =
+        DemoConfiguration.current.isEnabled ? UserDefaults(suiteName: "com.advait.Lectern.demo") ?? .standard : .standard
+}

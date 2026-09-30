@@ -230,7 +230,7 @@ nonisolated enum StoredSettings {
     static let key = "LecternSettings"
 
     static func current() -> AppSettings {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = UserDefaults.lectern.data(forKey: key),
               let settings = try? JSONDecoder().decode(AppSettings.self, from: data) else { return AppSettings() }
         return settings
     }
