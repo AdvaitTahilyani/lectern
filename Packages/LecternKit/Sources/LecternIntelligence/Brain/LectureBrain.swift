@@ -23,6 +23,7 @@ public actor LectureBrain: LectureIntelligence {
     let slideSearch: (any SlideSearching)?
     let excerpts: SlideExcerpts
     let slideSupport: SlideSupport
+    let openingStretch: OpeningStretch
     let lecture: Prompts.Lecture
     /// Rendered once: part of every role's byte-stable prompt prefix.
     let digest: String
@@ -88,6 +89,7 @@ public actor LectureBrain: LectureIntelligence {
         slideSearch = slides
         excerpts = SlideExcerpts(deck: context.deck, search: slides)
         slideSupport = SlideSupport(deck: context.deck)
+        openingStretch = OpeningStretch(deck: context.deck)
         lecture = Prompts.Lecture(title: context.sessionTitle, course: context.courseName)
         digest = DeckDigest.render(context.deck)
         self.tuning = tuning

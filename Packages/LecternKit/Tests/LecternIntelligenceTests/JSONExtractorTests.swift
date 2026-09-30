@@ -174,7 +174,7 @@ import Testing
         #expect(r.distractors == ["b", "c", "d"])
     }
 
-    static let allSchemas = [SegmentationReply.schema, DetailReply.schema, RecapReply.schema,
+    static let allSchemas = [SegmentationReply.schema, DetailReply.schema, RecapReply.schema, CardReply.schema,
                              MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema]
 
     @Test func schemasAreValidJSON() throws {

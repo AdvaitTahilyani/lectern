@@ -54,7 +54,8 @@ struct TopicTimeline: Sendable {
         if reply.action == .newTopic, title.isEmpty || summary.isEmpty {
             throw ReplyRejected(reason: "For \"new_topic\", title and summary describe the new topic and must not be empty.")
         }
-        if hasLiveTopic, reply.action == .continueTopic, summary.isEmpty {
+        // An admin stretch leaves the live card untouched, so it needs no summary.
+        if hasLiveTopic, reply.action == .continueTopic, summary.isEmpty, reply.newLinesKind != .admin {
             throw ReplyRejected(reason: "\"summary\" must not be empty.")
         }
         if summary.count > maxSummaryChars + 80 {
@@ -91,6 +92,7 @@ struct TopicTimeline: Sendable {
         }
 
         let isSameTitle = title.caseInsensitiveCompare(current.title) == .orderedSame
+            || Self.isNearDuplicate(title: title, summary: summary, of: current)
         if reply.action == .continueTopic || isSameTitle || reply.newLinesKind == .admin {
             if reply.newLinesKind == .admin {
                 // An admin stretch is not a topic: extend the live one, keep its title and summary.
@@ -162,6 +164,75 @@ struct TopicTimeline: Sendable {
         let clipped = max(range.lowerBound, floor)..<max(max(range.lowerBound, floor), range.upperBound)
         return BoundaryMatcher.locate(quote: quote, in: chunk.segments, range: clipped, preferFrom: preferFrom)
     }
+
+    /// Adds a settled card for a stretch the rolling updates skipped (see `OpeningStretch`), in
+    /// time order before any later card.
+    mutating func insertSettled(title: String, summary: String, start: TimeInterval, end: TimeInterval, now: Date = .now) {
+        let card = Takeaway(title: Self.cleanTitle(title), summary: Text.clampSentences(PlainMath.clean(summary), maxChars: Self.maxSummaryChars),
+                            start: start, end: end, isLive: false, updatedAt: now)
+        let index = takeaways.firstIndex { $0.start >= start } ?? takeaways.endIndex
+        takeaways.insert(card, at: index)
+    }
+
+    /// A `new_topic` that names the live topic again ("AST to three-address code conversion" →
+    /// "Mapping AST to 3-address code") refines the live card instead of splitting it: titles
+    /// nearly the same, or fairly similar with overlapping summaries.
+    static let duplicateTitleSimilarity = 0.6
+    static let similarTitleSimilarity = 0.5
+    static let similarSummarySimilarity = 0.3
+
+    /// A new summary whose content words are nearly all already in the card's summary restates it.
+    static let restatedSummaryContainment = 0.8
+    static let minTermsForContainment = 4
+
+    static func isNearDuplicate(title: String, summary: String, of card: Takeaway) -> Bool {
+        let titles = similarity(title, card.title)
+        return titles >= duplicateTitleSimilarity
+            || (titles >= similarTitleSimilarity && similarity(summary, card.summary) >= similarSummarySimilarity)
+            || containment(of: summary, in: card.summary) >= restatedSummaryContainment
+    }
+
+    /// Share of `a`'s content words that also occur in `b` (0 when `a` is too short to judge).
+    private static func containment(of a: String, in b: String) -> Double {
+        let x = terms(a), y = terms(b)
+        guard x.count >= minTermsForContainment else { return 0 }
+        return Double(x.intersection(y).count) / Double(x.count)
+    }
+
+    /// Merges the live card into the settled card before it when they are the same topic (e.g.
+    /// the model opens "Recap: phi placement" right after the brain wrote a recap card for the
+    /// same lines). The earlier card becomes live again, spanning both. Returns whether it merged.
+    @discardableResult
+    mutating func mergeLiveIntoPreviousIfDuplicate(now: Date = .now) -> Bool {
+        guard takeaways.count >= 2, let live, !takeaways[takeaways.count - 2].isLive,
+              Self.isNearDuplicate(title: live.title, summary: live.summary, of: takeaways[takeaways.count - 2]) else { return false }
+        var previous = takeaways[takeaways.count - 2]
+        previous.end = max(previous.end, live.end)
+        previous.slidePages = Self.merge(previous.slidePages, live.slidePages)
+        previous.isLive = true
+        previous.detail = nil
+        previous.updatedAt = now
+        takeaways.removeLast(2)
+        takeaways.append(previous)
+        return true
+    }
+
+    /// Stemmed content words, with number words and digits unified.
+    private static func terms(_ s: String) -> Set<String> {
+        Set(Text.words(s).map { numberWords[$0] ?? $0 }.compactMap { word -> String? in
+            if word.allSatisfy(\.isNumber) { return word }
+            return TranscriptRetriever.terms(word).first
+        })
+    }
+
+    /// Jaccard similarity of `terms`.
+    private static func similarity(_ a: String, _ b: String) -> Double {
+        let x = terms(a), y = terms(b)
+        guard !x.isEmpty, !y.isEmpty else { return 0 }
+        return Double(x.intersection(y).count) / Double(x.union(y).count)
+    }
+
+    private static let numberWords = ["one": "1", "two": "2", "three": "3", "four": "4", "five": "5"]
 
     static func cleanTitle(_ raw: String) -> String {
         var t = PlainMath.clean(Text.collapse(raw)).trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’*#").union(.whitespaces))

@@ -73,6 +73,29 @@ struct SegmentationReply: ModelReply, Equatable {
     static let shape = #"{"new_lines_about":"…","new_lines_kind":"same_concept"|"new_concept"|"admin_or_chat","action":"continue"|"new_topic","boundary_quote":"…","closed_summary":"…","title":"…","summary":"…","slides":[1,2]}"#
 }
 
+// MARK: - Opening recap card
+
+/// Title and summary for a card written after the fact (the lecture's opening recap).
+struct CardReply: ModelReply {
+    var title: String
+    var summary: String
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: NormalizedKey.self)
+        title = c.string("title")
+        summary = c.string("summary")
+    }
+
+    static let schema = """
+    {"type":"object","additionalProperties":false,"properties":{\
+    "title":{"type":"string"},\
+    "summary":{"type":"string"}},\
+    "required":["title","summary"]}
+    """
+
+    static let shape = #"{"title":"Recap: …","summary":"…"}"#
+}
+
 // MARK: - Expanded takeaway
 
 struct DetailReply: ModelReply {

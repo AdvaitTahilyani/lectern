@@ -68,6 +68,8 @@ extension LectureBrain {
                 liveTitle: live?.title,
                 liveSummary: live?.summary,
                 liveDuration: live.map { (newRange.isEmpty ? $0.end : segments[newEnd - 1].end) - $0.start },
+                unopenedMinutes: live == nil && OpeningStretch.needsNudge(segments[chunk.window])
+                    ? max(1, Int(((newLast - segments[chunk.window.lowerBound].start) / 60).rounded())) : nil,
                 earlierTitles: timeline.takeaways.filter { !$0.isLive }.suffix(6).map(\.title),
                 slidesInTopic: live.map { excerpts.titles(slidesShown(from: $0.start, to: newStart)) } ?? nil,
                 slidesInNewLines: newRange.isEmpty ? nil : excerpts.titles(slidesShown(from: newStart, to: newLast)),
@@ -87,9 +89,21 @@ extension LectureBrain {
                 switch timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages) {
                 // Nothing opened yet: keep the skipped lines in the window so the first card can
                 // still claim them. A lecture often opens with something that reads like admin
-                // ("let me correct last week's slides…") but carries real content.
-                case .ignored: topicWindowStart = windowStart
-                case .opened(let boundary), .split(let boundary): topicWindowStart = boundary
+                // ("let me correct last week's slides…") but carries real content; if the model
+                // keeps declining a long technical stretch, it becomes a Recap card anyway.
+                case .ignored:
+                    topicWindowStart = windowStart
+                    if await addOpeningRecap(chunk.window) { topicWindowStart = newEnd }
+                case .opened(let boundary):
+                    topicWindowStart = boundary
+                    // The first card starts at its quoted boundary; a long technical stretch
+                    // before it would otherwise belong to no card.
+                    await addOpeningRecap(chunk.window.lowerBound..<boundary)
+                    // Opening right after a recap card on the same subject continues that card.
+                    if timeline.mergeLiveIntoPreviousIfDuplicate(), let merged = timeline.live {
+                        topicWindowStart = segments.firstIndex { $0.end > merged.start } ?? boundary
+                    }
+                case .split(let boundary): topicWindowStart = boundary
                 case .refined: topicWindowStart = windowStart
                 }
                 summarizedCount = max(summarizedCount, newEnd)
@@ -101,6 +115,33 @@ extension LectureBrain {
                 emit(.error("Takeaways paused: \(error.brainMessage)"))
                 return false
             }
+        }
+    }
+
+    /// Writes a settled "Recap" card for skipped opening lines when they deserve one (see
+    /// `OpeningStretch`). Returns whether a card was added. Failures are reported, not thrown:
+    /// the rolling update itself succeeded.
+    @discardableResult
+    private func addOpeningRecap(_ range: Range<Int>) async -> Bool {
+        let stretch = segments[range]
+        guard timeline.takeaways.filter({ !$0.isLive }).isEmpty, openingStretch.deservesRecap(stretch),
+              let first = stretch.first, let last = stretch.last else { return false }
+        do {
+            let card = try await StructuredGeneration.generate(
+                CardReply.self, provider: providers.summaries,
+                messages: Prompts.openingRecap(lecture: lecture, digest: digest,
+                                               transcript: TranscriptText.renderFitting(stretch, maxTokens: TokenBudget.topicWindow)),
+                profile: .segmentation
+            ) { reply in
+                let title = TopicTimeline.cleanTitle(reply.title)
+                guard !title.isEmpty, !reply.summary.isEmpty else { throw ReplyRejected(reason: "Give a \"title\" and a \"summary\".") }
+                return (title.lowercased().hasPrefix("recap") ? title : "Recap: " + title, reply.summary)
+            }
+            timeline.insertSettled(title: card.0, summary: card.1, start: first.start, end: last.end)
+            return true
+        } catch {
+            emit(.error("Takeaways: couldn't write the opening recap: \(error.brainMessage)"))
+            return false
         }
     }
 

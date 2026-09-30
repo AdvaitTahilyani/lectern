@@ -166,6 +166,12 @@ import Testing
         #expect(timeline.takeaways[0].title == "FIRST sets")
     }
 
+    @Test func adminRepliesNeedNoSummary() {
+        let admin = SegmentationReply(action: .continueTopic, newLinesKind: .admin, title: "", summary: "")
+        #expect((try? TopicTimeline.check(admin, hasLiveTopic: true)) != nil)
+        #expect(throws: ReplyRejected.self) { try TopicTimeline.check(SegmentationReply(action: .continueTopic, newLinesKind: .sameConcept, title: "", summary: ""), hasLiveTopic: true) }
+    }
+
     @Test func checkRejectsNarratedSummaries() {
         #expect(throws: ReplyRejected.self) { try TopicTimeline.check(SegmentationReply(action: .continueTopic, title: "t", summary: "The instructor clarifies the quiz."), hasLiveTopic: true) }
         #expect((try? TopicTimeline.check(SegmentationReply(action: .continueTopic, title: "t", summary: "Instruction selection maps IR to machine code."), hasLiveTopic: true)) != nil)

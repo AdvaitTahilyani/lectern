@@ -108,6 +108,9 @@ enum Prompts {
         var liveSummary: String?
         /// How long the live topic has run, in seconds.
         var liveDuration: TimeInterval?
+        /// With no topic yet: minutes of lecture already skipped, when that is long (see
+        /// `OpeningStretch.needsNudge`).
+        var unopenedMinutes: Int? = nil
         var earlierTitles: [String]
         /// "[S9] Title; [S10] Title" — slides shown during the current topic / the new lines.
         var slidesInTopic: String?
@@ -151,12 +154,21 @@ enum Prompts {
             """ + splitPressure(title: title, duration: input.liveDuration ?? 0)
                 + (isFinal ? " The lecture ends after these lines." : "")
         case (nil, _, _):
-            task = """
-            No topic has started yet. If the new lines contain real lecture content, reply \
-            "new_topic" with boundary_quote (the first words of that content), title and summary; \
-            leave closed_summary empty. If they are only greetings, admin or logistics, reply \
-            "continue" with empty title and summary.
-            """
+            if let minutes = input.unopenedMinutes {
+                task = """
+                No topic has started yet after \(minutes) minutes of lecture. Unless the whole \
+                transcript above is purely greetings and logistics, open a topic now: reply \
+                "new_topic" with boundary_quote (the first words of the content), title and summary. \
+                A recap or correction of earlier material IS a topic: title it "Recap: …".
+                """
+            } else {
+                task = """
+                No topic has started yet. If the new lines contain real lecture content, reply \
+                "new_topic" with boundary_quote (the first words of that content), title and summary; \
+                leave closed_summary empty. If they are only greetings, admin or logistics, reply \
+                "continue" with empty title and summary.
+                """
+            }
         }
         tail.append("TASK: " + task + " Reply with JSON only.")
 
@@ -175,6 +187,23 @@ enum Prompts {
         default:
             return " \"\(title)\" has run \(minutes) min, longer than a typical topic (about 5). Unless the new lines are clearly still the same single idea, reply \"new_topic\" at the first point where a new concept, step or slide section begins."
         }
+    }
+
+    /// A card for opening lines the rolling updates skipped (recap or correction of earlier
+    /// material). Shares the summaries role's prefix.
+    static func openingRecap(lecture: Lecture, digest: String, transcript: String) -> [LLMMessage] {
+        let user = """
+        TRANSCRIPT:
+        \(transcript)
+
+        =====
+        TASK: These opening lines of the lecture recap or correct earlier material. Write one card for \
+        them, ignoring any logistics.
+        - title: "Recap: " followed by 2-6 words naming the concept.
+        - summary: 1-2 sentences, at most 220 characters, stating the technical content itself.
+        Reply with one JSON object: {"title": "...", "summary": "..."}. Reply with JSON only.
+        """
+        return [system(summariesInstructions, lecture: lecture, digest: digest), .user(user)]
     }
 
     struct DetailInput: Sendable {
