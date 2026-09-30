@@ -81,7 +81,9 @@ Live tests that call real models are opt-in: `LECTERN_LIVE_TESTS=1`. Real-lectur
 
 ## Known limitations
 
-- The build is ad-hoc signed, so macOS may ask for microphone / Keychain / Automation permission
-  again after a rebuild.
+- Builds are ad-hoc signed unless the local signing identity exists. Run
+  `Scripts/make-signing-identity.sh` once, and `build.sh` signs every build with it, so macOS keeps
+  microphone / Keychain / Automation permissions across rebuilds. The identity is only trusted on
+  this Mac; other Macs need right-click → Open.
 - Speaker detection handles up to 4 voices and can miss quiet students far from the mic.
 - Custom-vocabulary boosting is off by default: it fixed jargon but dropped other words.
