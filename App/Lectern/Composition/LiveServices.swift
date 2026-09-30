@@ -255,19 +255,24 @@ nonisolated final class EngineCache: Sendable {
 }
 
 /// Setup's level meter, backed by the same capture pipeline transcription uses.
+///
+/// The reader task owns the capture for its whole life: it stops the capture when it ends, so a
+/// `stop()` that arrives while `start` is still awaiting the microphone can't orphan the engine.
 nonisolated final class CaptureLevelMonitor: AudioLevelMonitoring {
-    private let capture = AudioCapture()
     private let task = Mutex<Task<Void, Never>?>(nil)
 
     func start(deviceID: String?) -> AsyncStream<Float> {
         let (stream, continuation) = AsyncStream.makeStream(of: Float.self, bufferingPolicy: .bufferingNewest(1))
-        let capture = capture
         let reader = Task {
+            let capture = AudioCapture()
             do {
-                for try await event in try await capture.start(deviceID: deviceID) {
+                let events = try await capture.start(deviceID: deviceID)
+                for try await event in events {
+                    if Task.isCancelled { break }
                     if case .level(let level) = event { continuation.yield(level) }
                 }
             } catch {}
+            await capture.stop()
             continuation.finish()
         }
         task.withLock { $0?.cancel(); $0 = reader }
@@ -277,8 +282,6 @@ nonisolated final class CaptureLevelMonitor: AudioLevelMonitoring {
 
     func stop() {
         task.withLock { $0?.cancel(); $0 = nil }
-        let capture = capture
-        Task { await capture.stop() }
     }
 }
 

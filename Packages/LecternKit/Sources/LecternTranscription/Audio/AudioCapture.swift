@@ -52,6 +52,12 @@ public actor AudioCapture {
             throw error
         }
         self.continuation = continuation
+        // A consumer that stops listening (cancelled task, dropped stream) must not leave the
+        // engine running: an orphaned engine keeps reacting to device changes after its session.
+        let started = generation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.stopIfStill(started) }
+        }
         // The notification is posted per engine; only our own engine's changes matter.
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil
@@ -73,6 +79,12 @@ public actor AudioCapture {
         continuation = nil
     }
 
+    /// Stops only if no newer `start`/`stop` has happened since `session` began.
+    private func stopIfStill(_ session: Int) {
+        guard generation == session, continuation != nil else { return }
+        stop()
+    }
+
     // MARK: - Engine lifecycle
 
     private func startEngine(
@@ -90,6 +102,13 @@ public actor AudioCapture {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw TranscriptionError.audioEngineFailed("The input device reports no usable audio format.")
+        }
+        // Mid device-change the node's output format can lag the hardware's. Installing a tap with
+        // a mismatched format raises an Objective-C exception (an uncatchable abort), so treat it
+        // as a retryable failure instead.
+        let hardware = input.inputFormat(forBus: 0)
+        guard hardware.sampleRate == format.sampleRate, hardware.channelCount >= 1 else {
+            throw TranscriptionError.audioEngineFailed("The input device is still changing format.")
         }
         let processor = try TapProcessor(format: format, continuation: continuation)
         Self.installTap(on: input, format: format, processor: processor)
@@ -156,6 +175,8 @@ public actor AudioCapture {
 
         let gapStart = ContinuousClock.now
         teardownEngine()
+        // Device switches post several changes in a row; rebuilding immediately races them.
+        try? await Task.sleep(for: .milliseconds(300))
 
         var deviceUID = requestedDeviceUID
         var lastError: Error = TranscriptionError.audioEngineFailed("The audio engine could not be restarted.")
