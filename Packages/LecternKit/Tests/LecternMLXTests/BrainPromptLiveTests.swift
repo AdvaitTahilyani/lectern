@@ -22,7 +22,7 @@ struct BrainPromptLiveTests {
         FileHandle.standardError.write(Data((message.replacingOccurrences(of: "\n", with: "⏎") + "\n").utf8))
     }
 
-    private static var deck: SlideDeck {
+    static var deck: SlideDeck {
         let topics = [
             "Syntax analysis", "Context-free grammars", "Derivations", "Ambiguity", "Top-down parsing",
             "Recursive descent", "Left recursion", "Left factoring", "FIRST sets", "Computing FIRST",
@@ -112,6 +112,58 @@ struct BrainPromptLiveTests {
         #expect(newTopic.metrics.reusedPromptTokens > 1000)
         for reply in [cold, sameTopic, newTopic] {
             _ = try JSONSerialization.jsonObject(with: Data(reply.response.text.utf8))
+        }
+        await MLXLiveTests.host.unload()
+    }
+
+    /// Summary, Ask, summary, Ask on real brain prompts, first with one prompt-cache slot per
+    /// model (every role switch evicts the other prefix), then with the default three.
+    @Test func alternatingRolesKeepTheirPrefixesWarm() async throws {
+        let lecture = Prompts.Lecture(title: "LL(1) Parsing", course: "CS 421")
+        let digest = DeckDigest.render(Self.deck)
+        let lines = LectureFixture.transcript(approximateTokens: 3000).components(separatedBy: "\n")
+        let window = lines.prefix(lines.count - 2).joined(separator: "\n")
+        let grown = lines.joined(separator: "\n")
+
+        func summary(_ transcript: String, _ liveSummary: String) -> LLMRequest {
+            request(Prompts.SegmentationInput(
+                lecture: lecture, digest: digest, transcript: transcript, newLinesFrom: 900,
+                liveTitle: "FIRST and FOLLOW sets", liveSummary: liveSummary, liveDuration: 480,
+                earlierTitles: ["Context-free grammars"], slidesInTopic: "[S9] FIRST sets; [S11] FOLLOW sets",
+                slidesInNewLines: "[S13] LL(1) table", slides: "[S13] LL(1) table. Fill [A, a] with A → α.",
+                isFinal: false))
+        }
+        func ask(_ question: String, recent: String) -> LLMRequest {
+            let context = Prompts.AskContext(
+                lecture: lecture, digest: digest,
+                topics: "[1:00–9:00] Context-free grammars — terminals, nonterminals, productions.\n[9:00–] FIRST and FOLLOW sets — FIRST(α) begins strings; FOLLOW(A) follows A.",
+                slides: "[S9] FIRST sets. [S11] FOLLOW sets.", excerpts: nil, recent: recent,
+                question: question)
+            return LLMRequest(
+                messages: Prompts.ask(context, history: []),
+                maxTokens: GenerationProfile.answer.maxTokens,
+                temperature: GenerationProfile.answer.temperature)
+        }
+        let recent = String(window.suffix(3000))
+        let calls: [(String, LLMRole, LLMRequest)] = [
+            ("summary 1", .summaries, summary(window, "FIRST(α) collects the terminals that begin strings derived from α.")),
+            ("ask 1", .ask, ask("What is FOLLOW of the start symbol?", recent: recent)),
+            ("summary 2", .summaries, summary(grown, "FIRST and FOLLOW sets drive the LL(1) table.")),
+            ("ask 2", .ask, ask("How do FIRST and FOLLOW fill the LL(1) table?", recent: String(grown.suffix(3000)))),
+        ]
+
+        for slots in [1, 3] {
+            let host = MLXModelHost(configuration: .init(promptCacheSlots: slots))
+            try await MLXProvider(role: .summaries, host: host)
+                .warmUp(jsonSchemas: [SegmentationReply.schema])
+            let baseline = MLX.Memory.activeMemory
+            for (label, role, request) in calls {
+                let result = try await MLXProvider(role: role, host: host).completeWithMetrics(request)
+                report("\(slots) slot(s), \(label)", result.metrics)
+                log(String(format: "[mlx]   KV caches held: %.2f GB",
+                           Double(MLX.Memory.activeMemory - baseline) / 1e9))
+            }
+            await host.unload()
         }
     }
 }

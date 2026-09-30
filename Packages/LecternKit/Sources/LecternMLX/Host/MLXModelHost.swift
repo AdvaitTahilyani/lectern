@@ -11,8 +11,8 @@ import MLXLMCommon
 ///   (Ask, then quizzes, then summaries).
 /// - Keeps each model's KV cache between calls so a prompt that shares a prefix with the
 ///   previous one only prefills the new suffix.
-/// - Limits MLX's buffer cache, drops KV caches on memory-pressure warnings and unloads models
-///   on critical pressure.
+/// - Limits MLX's buffer cache, keeps a single KV cache per model for five minutes after a
+///   memory-pressure warning, and unloads models on critical pressure.
 public actor MLXModelHost {
     public static let shared = MLXModelHost()
 
@@ -23,6 +23,9 @@ public actor MLXModelHost {
     /// Resident engines, least recently used first.
     private var engines: [(id: String, engine: MLXInferenceEngine)] = []
     private var pressureMonitor: MemoryPressureMonitor?
+    /// When the last memory-pressure warning arrived; prompt-cache slots stay at one for a while.
+    private var memoryWarningAt: ContinuousClock.Instant?
+    private static let pressureCooldown: Duration = .seconds(300)
 
     public init(configuration: MLXHostConfiguration = .init(), modelManager: ModelManager = .shared) {
         self.configuration = configuration
@@ -59,10 +62,10 @@ public actor MLXModelHost {
         MLX.Memory.clearCache()
     }
 
-    /// Drops every model's reusable KV cache (weights stay loaded).
+    /// Drops every model's reusable KV caches (weights stay loaded).
     public func dropPromptCaches() async {
         for entry in engines {
-            await entry.engine.dropPromptCache()
+            await entry.engine.dropPromptCaches()
         }
     }
 
@@ -79,6 +82,10 @@ public actor MLXModelHost {
         let queuedAt = ContinuousClock.now
         return try await withGPU(priority: priority) {
             let engine = try await engine(for: id)
+            if let warned = memoryWarningAt, ContinuousClock.now - warned > Self.pressureCooldown {
+                memoryWarningAt = nil
+                await engine.restorePromptCacheSlots()
+            }
             let waited = ContinuousClock.now - queuedAt
             let seconds = Double(waited.components.seconds) + Double(waited.components.attoseconds) / 1e18
             return try await engine.generate(request, queueSeconds: seconds, onText: onText)
@@ -138,7 +145,10 @@ public actor MLXModelHost {
     private func handleMemoryPressure(_ level: MemoryPressureMonitor.Level) async {
         switch level {
         case .warning:
-            await dropPromptCaches()
+            for entry in engines {
+                await entry.engine.shrinkPromptCachesToOne()
+            }
+            memoryWarningAt = .now
         case .critical:
             unload()
         }

@@ -28,13 +28,13 @@ actor MLXInferenceEngine {
     private let context: ModelContext
     private let conventions: ModelConventions
     private let configuration: MLXHostConfiguration
-    private let promptCache: PromptCache
+    private let promptCaches: PromptCachePool
     private var grammars: GrammarLibrary?
     private var maskExpander: GrammarMaskExpander?
     private var whitespace: (bias: MLXArray, tokenIDs: Set<Int>)?
     private var closingBias: MLXArray?
-    /// Stable-prefix length of the most recent message prefix (see `stablePrefixLength`).
-    private var stablePrefix: (key: StablePrefixKey, length: Int)?
+    /// Stable-prefix lengths of recent message prefixes (see `stablePrefixLength`).
+    private var stablePrefixes: [StablePrefixKey: Int] = [:]
 
     init(modelID: String, context: sending ModelContext, configuration: MLXHostConfiguration) {
         self.modelID = modelID
@@ -44,7 +44,9 @@ actor MLXInferenceEngine {
             tokenizer: context.tokenizer, configuration: context.configuration)
         let model = context.model
         let slack = configuration.slidingWindowRewindSlack
-        self.promptCache = PromptCache { try Self.makeLayers(for: model, slack: slack) }
+        self.promptCaches = PromptCachePool(capacity: configuration.promptCacheSlots) {
+            PromptCache { try Self.makeLayers(for: model, slack: slack) }
+        }
         self.context = context
     }
 
@@ -76,15 +78,26 @@ actor MLXInferenceEngine {
         for schema in schemas {
             library.giveBack(try library.borrow(schema: schema), schema: schema, acceptedTokens: 0)
         }
-        promptCache.invalidate()
-        stablePrefix = nil
+        promptCaches.removeAll()
+        stablePrefixes.removeAll()
         MLX.Memory.clearCache()
     }
 
-    /// Drops the reusable KV cache (the next call prefills from scratch).
-    func dropPromptCache() {
-        promptCache.invalidate()
+    /// Drops the reusable KV caches (the next call prefills from scratch).
+    func dropPromptCaches() {
+        promptCaches.removeAll()
         MLX.Memory.clearCache()
+    }
+
+    /// Under memory pressure: keep only the most recently used prompt cache from now on.
+    func shrinkPromptCachesToOne() {
+        promptCaches.setCapacity(1)
+        MLX.Memory.clearCache()
+    }
+
+    /// Restores the configured number of prompt-cache slots (after memory pressure eased).
+    func restorePromptCacheSlots() {
+        promptCaches.setCapacity(configuration.promptCacheSlots)
     }
 
     // MARK: - Generation
@@ -109,8 +122,9 @@ actor MLXInferenceEngine {
         }
         let stable = stablePrefixLength(of: request, prompt: prompt)
         let rendered = clock.now
+        let promptCache = promptCaches.slot(for: prompt)
         let reuse = try promptCache.reuse(for: prompt, stablePrefix: stable)
-        try prefill(prompt, reuse: reuse)
+        try prefill(prompt, reuse: reuse, into: promptCache)
         let prefilled = clock.now
 
         let processor = try makeProcessor(for: request, prompt: prompt)
@@ -202,7 +216,7 @@ actor MLXInferenceEngine {
 
     /// Evaluates `prompt[reusedTokens ..< count - 1]` into the cache in steps, committing
     /// progress after every step so a cancelled prefill is still reusable.
-    private func prefill(_ prompt: [Int], reuse: PromptCache.Reuse) throws {
+    private func prefill(_ prompt: [Int], reuse: PromptCache.Reuse, into promptCache: PromptCache) throws {
         let end = prompt.count - 1
         var position = reuse.reusedTokens
         promptCache.commit(Array(prompt[..<position]))
@@ -232,14 +246,14 @@ actor MLXInferenceEngine {
 
     /// Number of leading prompt tokens that do not depend on the last message: everything up to
     /// where its content starts. Found by rendering the request with that content emptied, and
-    /// cached per message prefix (the brain's system message is stable for a session).
+    /// cached per message prefix (each role's system message is stable for a session).
     private func stablePrefixLength(of request: LLMRequest, prompt: [Int]) -> Int? {
         guard !request.messages.isEmpty else { return nil }
         let key = StablePrefixKey(
             messages: Array(request.messages.dropLast()),
             lastRole: request.messages[request.messages.count - 1].role,
             reasoning: request.reasoning)
-        if let stablePrefix, stablePrefix.key == key { return stablePrefix.length }
+        if let length = stablePrefixes[key] { return length }
 
         var probe = request
         probe.messages[probe.messages.count - 1].content = ""
@@ -247,7 +261,8 @@ actor MLXInferenceEngine {
         guard let probeTokens = try? ChatPromptRenderer.render(probe, tokenizer: context.tokenizer)
         else { return nil }
         let length = PromptCache.commonPrefixLength(prompt, probeTokens)
-        stablePrefix = (key, length)
+        if stablePrefixes.count >= 16 { stablePrefixes.removeAll() }
+        stablePrefixes[key] = length
         return length
     }
 

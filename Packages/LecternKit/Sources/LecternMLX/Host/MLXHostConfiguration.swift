@@ -7,6 +7,10 @@ public struct MLXHostConfiguration: Sendable, Hashable {
     /// Extra rows sliding-window layers keep so the previous call's instruction and output can
     /// be rewound exactly (prompt-prefix reuse). Costs `slack × ~200 KB` for Gemma 4 26B.
     public var slidingWindowRewindSlack: Int
+    /// Reusable prompt caches kept per model (LRU). One per distinct stable prefix in use, so
+    /// summaries, quizzes and Ask do not evict each other. Each costs ~1.0–1.1 GB for a 3–6.5k-token
+    /// prompt with Gemma 4 26B (measured). Dropped to one under memory pressure.
+    public var promptCacheSlots: Int
     /// Prompt tokens evaluated per prefill step.
     public var prefillStepSize: Int
     /// Loaded models kept in memory at once; loading another evicts the least recently used.
@@ -19,6 +23,7 @@ public struct MLXHostConfiguration: Sendable, Hashable {
     public init(
         bufferCacheLimitBytes: Int = 1 << 30,
         slidingWindowRewindSlack: Int = 2048,
+        promptCacheSlots: Int = 3,
         prefillStepSize: Int = 512,
         maxResidentModels: Int = 1,
         topP: Double = 0.95,
@@ -26,6 +31,7 @@ public struct MLXHostConfiguration: Sendable, Hashable {
     ) {
         self.bufferCacheLimitBytes = bufferCacheLimitBytes
         self.slidingWindowRewindSlack = slidingWindowRewindSlack
+        self.promptCacheSlots = promptCacheSlots
         self.prefillStepSize = prefillStepSize
         self.maxResidentModels = maxResidentModels
         self.topP = topP

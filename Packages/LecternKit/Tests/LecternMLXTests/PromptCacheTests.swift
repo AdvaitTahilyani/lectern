@@ -103,3 +103,43 @@ import Testing
     }
 }
 
+
+@Suite struct PromptCachePoolTests {
+    init() { MetalLibrary.ensureConfigured() }
+
+    private func filled(_ cache: PromptCache, _ tokens: [Int]) throws {
+        let reuse = try cache.reuse(for: tokens)
+        let kv = MLXArray.zeros([1, 1, tokens.count - reuse.reusedTokens, 2])
+        for layer in reuse.layers { _ = layer.update(keys: kv, values: kv) }
+        cache.commit(tokens)
+    }
+
+    @Test func rolesWithDifferentPrefixesKeepSeparateSlots() throws {
+        let pool = PromptCachePool(capacity: 2) { PromptCache { [KVCacheSimple()] } }
+        let summaries = Array(0 ..< 300)
+        let ask = Array(1000 ..< 1300)
+        try filled(pool.slot(for: summaries + [1]), summaries + [1])
+        try filled(pool.slot(for: ask + [2]), ask + [2])
+        #expect(pool.count == 2)
+
+        // Each role finds its own warm slot again.
+        #expect(pool.slot(for: summaries + [3]).tokens.starts(with: summaries))
+        #expect(pool.slot(for: ask + [4]).tokens.starts(with: ask))
+
+        // A third prefix evicts the least recently used slot (summaries).
+        let quiz = Array(5000 ..< 5300)
+        let evicted = pool.slot(for: quiz)
+        #expect(evicted.isEmpty)
+        #expect(pool.count == 2)
+        #expect(pool.slot(for: ask + [5]).tokens.starts(with: ask))
+    }
+
+    @Test func shrinkingKeepsMostRecent() throws {
+        let pool = PromptCachePool(capacity: 3) { PromptCache { [KVCacheSimple()] } }
+        try filled(pool.slot(for: Array(0 ..< 200)), Array(0 ..< 200))
+        try filled(pool.slot(for: Array(500 ..< 700)), Array(500 ..< 700))
+        pool.setCapacity(1)
+        #expect(pool.count == 1)
+        #expect(pool.slot(for: Array(500 ..< 700) + [1]).tokens.starts(with: Array(500 ..< 700)))
+    }
+}
