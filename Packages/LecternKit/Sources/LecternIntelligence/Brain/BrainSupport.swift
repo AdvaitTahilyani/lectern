@@ -78,7 +78,9 @@ struct BrainTuning: Sendable {
     /// A topic shorter than this is re-titled instead of split off (see `TopicTimeline`).
     var minTopicSeconds: TimeInterval = 150
     /// Slide tracking cadence and transcript window.
-    var slideCheckSeconds: TimeInterval = 10
+    /// Slide trackers count observations, so this cadence (in transcript time) is part of their
+    /// tuning: `SlideIndex` expects a call every ~15–20 s.
+    var slideCheckSeconds: TimeInterval = 15
     var slideWindowSeconds: TimeInterval = 60
     /// Minimum new lecture material between two timed quiz questions.
     var quizNewMaterialSeconds: TimeInterval = 240

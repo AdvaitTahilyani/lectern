@@ -68,14 +68,15 @@ enum Prompts {
     For "continue", leave boundary_quote and closed_summary empty.
 
     Rules:
-    - A topic is one concept, technique or step that has its own slide(s) and a few minutes of \
-    explanation. Related ideas are still separate topics: in a parsing lecture, "LL(1) parsing", \
-    "FIRST sets", "FOLLOW sets" and "Building the parse table" are four topics. When the lecturer \
-    starts explaining a new named concept or the next step of an algorithm, start a new topic.
+    - A topic is one concept, one step of an algorithm, or one slide section (slides sharing a \
+    title), typically about 5 minutes of lecture (usually 3-8). Related ideas are still separate \
+    topics: in a parsing lecture, "LL(1) parsing", "FIRST sets", "FOLLOW sets" and "Building the \
+    parse table" are four topics. When the lecturer starts explaining a new named concept, the \
+    next step of an algorithm, or moves to a slide with a new title, start a new topic.
     - Do not split for an example of the current concept, a student question or a short aside.
     - If the new lines only return to or restate one of the EARLIER TOPICS, reply "continue".
-    - A topic usually lasts 3-10 minutes. If the current topic has run much longer, look hard for \
-    where a new concept started.
+    - If the current topic has run much longer than 5 minutes, look hard for where a new \
+    concept, step or slide section started.
     - Admin and chit-chat (homework, exams, quizzes, logistics, "can everyone hear me", the class \
     ending, students chatting) never become a topic and never appear in a summary: for those lines \
     reply "continue". A correction or recap of earlier material is lecture content, not admin.
@@ -147,7 +148,7 @@ enum Prompts {
             reply "new_topic" with boundary_quote (where the new concept starts), closed_summary for \
             "\(title)", and title and summary for the new topic. If they still explain "\(title)", \
             reply "continue" with a title and summary for the whole topic.
-            """ + (input.liveDuration ?? 0 > 600 ? " \"\(title)\" has run over 10 minutes, so check carefully whether the new lines moved on to a new concept or step." : "")
+            """ + splitPressure(title: title, duration: input.liveDuration ?? 0)
                 + (isFinal ? " The lecture ends after these lines." : "")
         case (nil, _, _):
             task = """
@@ -161,6 +162,19 @@ enum Prompts {
 
         let user = "TRANSCRIPT:\n" + input.transcript + "\n\n=====\n" + tail.joined(separator: "\n\n")
         return [system(summariesInstructions, lecture: input.lecture, digest: input.digest), .user(user)]
+    }
+
+    /// Escalating nudge as the live topic ages past the ~5-minute target.
+    static func splitPressure(title: String, duration: TimeInterval) -> String {
+        let minutes = Int((duration / 60).rounded())
+        switch duration {
+        case ..<(4 * 60):
+            return ""
+        case ..<(7 * 60):
+            return " \"\(title)\" has run \(minutes) min; topics in this lecture typically last about 5."
+        default:
+            return " \"\(title)\" has run \(minutes) min, longer than a typical topic (about 5). Unless the new lines are clearly still the same single idea, reply \"new_topic\" at the first point where a new concept, step or slide section begins."
+        }
     }
 
     struct DetailInput: Sendable {

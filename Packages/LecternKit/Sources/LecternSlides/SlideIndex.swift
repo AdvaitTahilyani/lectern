@@ -69,11 +69,33 @@ public struct SlideIndex: SlideSearching {
         static let backtrackMinMatchedWeight = 5.0
         static let backtrackMinCoverage = 0.3
 
-        /// Evidence for a leap ahead or a step back must hold continuously for this long
-        /// (seconds), i.e. across two independent ~60 s transcript windows.
-        static let sustain: TimeInterval = 60
-        /// Observations further apart than this do not count as continuous.
-        static let maxGap: TimeInterval = 45
+        // Evidence over time is counted in *observations* (calls), not seconds: callers check
+        // every ~15–20 s of transcript time (LectureBrain uses 15 s), so the result is the same
+        // whether the lecture is live, played back faster, or imported all at once.
+        /// A leap ahead is taken once its target won `leapObservations` of the last `leapWindow`
+        /// observations. Windows overlap (60 s of speech every 15 s), so this means the evidence
+        /// held for over a minute, while tolerating the noisy observations of real speech.
+        static let leapObservations = 5
+        static let leapWindow = 8
+        /// Before any slide is known, the first `openingPages` pages are taken at once; a later
+        /// page needs `firstObservations` of the last `firstWindow` observations.
+        static let openingPages = 3
+        static let firstObservations = 3
+        static let firstWindow = 5
+        /// ...and before a return to an earlier slide is suggested (≈ 45–60 s).
+        static let backtrackObservations = 4
+
+        /// Speech whose content words are mostly absent from the deck (a recap of last lecture,
+        /// Q&A, chat) never moves the slide.
+        static let minInDeckShare = 0.42
+        static let minTokensForDeckShare = 8
+
+        /// Consecutive pages whose term sets overlap at least this much (Jaccard) form one "build"
+        /// group: the same slide revealed step by step. Speech cannot tell them apart, so the
+        /// tracker treats the group as one unit and steps through it with time.
+        static let buildSimilarity = 0.55
+        /// Supporting observations on a build page before stepping to the next one (≈ 3 min).
+        static let buildStepObservations = 12
     }
 
     private let pages: [Page]
@@ -84,6 +106,11 @@ public struct SlideIndex: SlideSearching {
     /// Shared by copies of the index; see `BacktrackTracker`.
     private let backtrack = SustainedEvidence()
     private let leap = SustainedEvidence()
+    private let buildDwell = BuildDwell()
+    /// Per page index: first and last index of its build group (itself when it has none).
+    private let groupStart: [Int]
+    private let groupEnd: [Int]
+    private let vocabulary: Set<String>
 
     /// Number of indexed pages.
     public var pageCount: Int { pages.count }
@@ -104,6 +131,8 @@ public struct SlideIndex: SlideSearching {
             return Page(number: page.number, text: page.text, termCounts: counts, length: counts.values.reduce(0, +))
         }
         self.pages = pages
+        (groupStart, groupEnd) = Self.buildGroups(pages.map { Set($0.termCounts.keys) })
+        vocabulary = Set(pages.flatMap(\.termCounts.keys))
 
         var documentFrequency: [String: Int] = [:]
         for page in pages { for term in page.termCounts.keys { documentFrequency[term, default: 0] += 1 } }
@@ -146,50 +175,89 @@ public struct SlideIndex: SlideSearching {
     /// own (see `backtrackCandidate` for suggesting a return). Pages are scored like a search,
     /// then reweighted by a prior around `near` (staying or advancing a page or two is likely, a
     /// leap ahead is not). The result changes only when the new page clearly beats `near`
-    /// (hysteresis), and leaps need extra evidence. Returns nil when the speech does not single
-    /// out a slide; callers should then keep showing `near`.
+    /// (hysteresis); a leap needs stronger evidence over `Tuning.leapObservations` calls. A run of
+    /// near-identical build slides is one unit: distances are measured from its last page, it is
+    /// entered at its first page, and it is stepped through as the lecturer dwells on it. Speech
+    /// that is mostly off-deck (a recap, chat) never moves the slide. Returns nil when the speech
+    /// does not single out a slide; callers should then keep showing `near`.
+    ///
+    /// Stateful across calls (leap confirmation, build stepping): call it every ~15–20 s of
+    /// transcript with the trailing ~60 s of speech.
     public func likelySlide(forTranscript text: String, near: Int?) -> Int? {
-        likelySlide(forTranscript: text, near: near, at: ProcessInfo.processInfo.systemUptime)
-    }
-
-    /// `at` is a monotonic time in seconds; tests supply their own clock.
-    func likelySlide(forTranscript text: String, near: Int?, at time: TimeInterval) -> Int? {
         guard !pages.isEmpty else { return nil }
-        let terms = queryTerms(SlideTokenizer.tokens(text)).filter { idf[$0.key] != nil }
+        let tokens = SlideTokenizer.tokens(text)
+        let terms = queryTerms(tokens).filter { idf[$0.key] != nil }
         let queryMass = terms.keys.reduce(0.0) { $0 + (idf[$1] ?? 0) }
-        guard queryMass > 0 else { return nil }
+        guard queryMass > 0, !isOffDeck(tokens) else {
+            leap.miss()
+            return nil
+        }
 
         let combined = score(terms: terms, text: text).combined
         let nearIndex = near.flatMap { number in pages.firstIndex { $0.number == number } }
+        // Distances count from the end of the current build group.
+        let anchor = nearIndex.map { groupEnd[$0] }
         let adjusted = combined.enumerated().map { index, score in
-            guard let nearIndex else { return score }
-            return index < nearIndex ? 0 : score * Tuning.prior(distance: index - nearIndex)
+            guard let nearIndex, let anchor else { return score }
+            if index < nearIndex { return 0 }
+            return score * Tuning.prior(distance: index <= anchor ? 0 : index - anchor)
         }
         let ranked = adjusted.indices.sorted { adjusted[$0] != adjusted[$1] ? adjusted[$0] > adjusted[$1] : $0 < $1 }
-        guard let best = ranked.first, adjusted[best] > 0 else { return nil }
-        let isJump = nearIndex.map { Tuning.isJump(distance: best - $0) } ?? false
-        guard isConfident(pageIndex: best, terms: terms, queryMass: queryMass, isJump: isJump) else { return nil }
+        guard var best = ranked.first, adjusted[best] > 0 else {
+            leap.miss()
+            return nil
+        }
+        if let nearIndex, groupStart[best] == groupStart[nearIndex] {
+            best = nearIndex                                   // still on the current build group
+        } else if nearIndex.map({ groupStart[best] > $0 }) ?? true {
+            best = groupStart[best]                            // a build group is entered at its start
+        }
+        let isJump = anchor.map { Tuning.isJump(distance: best - $0) } ?? false
+        // With nothing known yet, a page past the opening ones must hold up over a few
+        // observations: lectures often open with chatter or a recap that happens to match a page.
+        let isUnconfirmedFirst = nearIndex == nil && best >= Tuning.openingPages
+        guard isConfident(pageIndex: best, terms: terms, queryMass: queryMass, isJump: isJump) else {
+            leap.miss()
+            return nil
+        }
 
-        guard best != nearIndex else {
-            leap.reset()
-            return pages[best].number
+        if let nearIndex, best == nearIndex {
+            leap.miss()
+            return pages[stepThroughBuild(from: nearIndex)].number
         }
         if let nearIndex, adjusted[nearIndex] > 0, adjusted[best] < adjusted[nearIndex] * Tuning.switchMargin {
             // Hysteresis: stay put unless the newcomer clearly wins.
-            leap.reset()
-            return pages[nearIndex].number
+            leap.miss()
+            return pages[stepThroughBuild(from: nearIndex)].number
         }
-        if let rival = ranked.first(where: { $0 != best && $0 != nearIndex }),
-           adjusted[best] < adjusted[rival] * (isJump ? Tuning.minSeparationForJump : Tuning.minSeparation) {
+        let rivals = ranked.filter { candidate in
+            groupStart[candidate] != groupStart[best] && (nearIndex.map { groupStart[candidate] != groupStart[$0] } ?? true)
+        }
+        if let rival = rivals.first, adjusted[best] < adjusted[rival] * (isJump ? Tuning.minSeparationForJump : Tuning.minSeparation) {
+            leap.miss()
             return nil
+        }
+        if isUnconfirmedFirst {
+            let confirmed = leap.observe(candidate: best, context: -1, required: Tuning.firstObservations, window: Tuning.firstWindow,
+                                         sameTarget: { self.groupStart[$0] == self.groupStart[$1] || abs($0 - $1) <= 2 }, strict: false)
+            return confirmed.map { pages[$0].number }
         }
         guard isJump, let nearIndex else {
             leap.reset()
             return pages[best].number
         }
-        // A leap ahead is only taken once the same target has held up for a while.
-        return leap.observe(candidate: pages[best].number, context: pages[nearIndex].number, at: time, strict: false) == nil
-            ? nil : pages[best].number
+        // Lecture vocabulary recurs across a deck: when the speech matches an earlier page (or the
+        // current one) best, a far page that merely wins among the pages ahead is not evidence of
+        // a leap. The target must be the best match in the whole deck.
+        if let globalBest = combined.indices.max(by: { combined[$0] < combined[$1] }),
+           groupStart[globalBest] != groupStart[best], combined[best] < combined[globalBest] {
+            leap.miss()
+            return nil
+        }
+        // A leap ahead is only taken once the same target has held up for a few observations.
+        let confirmed = leap.observe(candidate: best, context: nearIndex, required: Tuning.leapObservations, window: Tuning.leapWindow,
+                                     sameTarget: { self.groupStart[$0] == self.groupStart[$1] || abs($0 - $1) <= 2 }, strict: false)
+        return confirmed.map { pages[$0].number }
     }
 
     /// Convenience for live use: scores the final `window` seconds of `segments`.
@@ -201,12 +269,17 @@ public struct SlideIndex: SlideSearching {
     ///
     /// Deliberately hard to satisfy, because the answer is only ever offered as a suggestion: one
     /// earlier page must, in the same call, cover the speech far better than the current page
-    /// and than every later page; and that must hold continuously for a minute or more (across
-    /// two independent windows), so a passing digression ("as we said about separation of
-    /// concerns...") does not qualify. Call it as often as `likelySlide`, with the same text.
+    /// and than every later page; and that must hold for `Tuning.backtrackObservations`
+    /// consecutive calls (about a minute), so a passing digression ("as we said about separation
+    /// of concerns...") does not qualify. Call it as often as `likelySlide`, with the same text.
     /// The suggestion disappears (nil) as soon as the evidence stops holding or `current` changes.
     public func backtrackCandidate(forTranscript text: String, current: Int) -> Int? {
-        backtrackCandidate(forTranscript: text, current: current, at: ProcessInfo.processInfo.systemUptime)
+        let candidate = strongEarlierPage(forTranscript: text, current: current)
+        guard let currentIndex = pages.firstIndex(where: { $0.number == current }) else { return nil }
+        let index = backtrack.observe(candidate: candidate.flatMap { page in pages.firstIndex { $0.number == page } },
+                                      context: currentIndex, required: Tuning.backtrackObservations,
+                                      sameTarget: { self.groupStart[$0] == self.groupStart[$1] || abs($0 - $1) <= 2 }, strict: true)
+        return index.map { pages[$0].number }
     }
 
     /// `backtrackCandidate(forTranscript:current:)` for transcript segments.
@@ -214,10 +287,37 @@ public struct SlideIndex: SlideSearching {
         backtrackCandidate(forTranscript: Self.recentText(of: segments, window: window), current: current)
     }
 
-    /// `at` is a monotonic time in seconds; tests supply their own clock.
-    func backtrackCandidate(forTranscript text: String, current: Int, at time: TimeInterval) -> Int? {
-        let candidate = strongEarlierPage(forTranscript: text, current: current)
-        return backtrack.observe(candidate: candidate, context: current, at: time, strict: true)
+    // MARK: Build groups and off-deck speech
+
+    /// Groups runs of consecutive near-duplicate pages.
+    static func buildGroups(_ termSets: [Set<String>]) -> (start: [Int], end: [Int]) {
+        var start = Array(termSets.indices)
+        for i in termSets.indices.dropFirst() {
+            let a = termSets[i - 1], b = termSets[i]
+            let union = a.union(b).count
+            if union > 0, Double(a.intersection(b).count) / Double(union) >= Tuning.buildSimilarity { start[i] = start[i - 1] }
+        }
+        var end = Array(termSets.indices)
+        for i in termSets.indices.reversed() where i + 1 < termSets.count && start[i + 1] == start[i] { end[i] = end[i + 1] }
+        return (start, end)
+    }
+
+    /// First and last page number of each build group with more than one page.
+    var buildGroups: [ClosedRange<Int>] {
+        pages.indices.filter { groupStart[$0] == $0 && groupEnd[$0] > $0 }.map { pages[$0].number...pages[groupEnd[$0]].number }
+    }
+
+    private func isOffDeck(_ tokens: [String]) -> Bool {
+        guard tokens.count >= Tuning.minTokensForDeckShare else { return false }
+        let inDeck = tokens.filter(vocabulary.contains).count
+        return Double(inDeck) / Double(tokens.count) < Tuning.minInDeckShare
+    }
+
+    /// While the speech keeps supporting the current build group, advances one page per
+    /// `Tuning.buildStepObservations` observations (builds are revealed as the lecturer talks).
+    private func stepThroughBuild(from index: Int) -> Int {
+        guard groupEnd[index] > index else { return index }
+        return buildDwell.observe(index) ? index + 1 : index
     }
 
     private func strongEarlierPage(forTranscript text: String, current: Int) -> Int? {
@@ -311,42 +411,65 @@ public struct SlideIndex: SlideSearching {
     }
 }
 
-/// Remembers how long one candidate page has been supported by the evidence.
+/// How long (in observations) the tracker has dwelt on one build page. Reference type for the same
+/// reason as `SustainedEvidence`.
+private final class BuildDwell: Sendable {
+    private let state = Mutex((page: -1, observations: 0))
+
+    /// Records one supporting observation on `page`; true when it is time to step to the next page.
+    func observe(_ page: Int) -> Bool {
+        state.withLock { dwell in
+            if dwell.page != page { dwell = (page, 0) }
+            dwell.observations += 1
+            guard dwell.observations >= SlideIndex.Tuning.buildStepObservations else { return false }
+            dwell = (page + 1, 0)
+            return true
+        }
+    }
+}
+
+/// Remembers which candidate page (an index) recent observations supported.
 ///
 /// `SlideIndex` is a value type shared freely between actors, so the running evidence lives in
 /// this small reference type. The mutex guards all access; the state is tiny.
 private final class SustainedEvidence: Sendable {
     private struct State {
         var context: Int?
-        var candidate: Int?
-        var since: TimeInterval = 0
-        var lastSeen: TimeInterval = 0
+        /// Most recent last; nil = an observation without a candidate.
+        var recent: [Int?] = []
     }
 
     private let state = Mutex(State())
 
-    /// Feeds one observation; returns the candidate once it has held under the same `context` (the
-    /// current slide) for `Tuning.sustain` seconds. Candidates within two pages of the first one
-    /// count as the same (a run of near-identical build slides). A `strict` tracker forgets the
-    /// candidate as soon as one observation lacks support; a lenient one only when no supporting
-    /// observation arrives for `Tuning.maxGap` seconds.
-    func observe(candidate: Int?, context: Int, at time: TimeInterval, strict: Bool) -> Int? {
+    /// Feeds one observation. A `strict` tracker returns the candidate once the last `required`
+    /// observations (under the same `context`, the current slide) all supported it; a lenient one
+    /// once `required` of the last `window` did. `sameTarget` decides whether two candidates are
+    /// the same target (e.g. pages of one build group).
+    func observe(candidate: Int?, context: Int, required: Int, window: Int? = nil,
+                 sameTarget: (Int, Int) -> Bool, strict: Bool) -> Int? {
         state.withLock { state in
-            defer { state.context = context }
-            guard let candidate else {
-                if strict { state.candidate = nil }
-                return nil
+            if state.context != context { state = State(context: context) }
+            let span = strict ? required : max(required, window ?? required)
+            state.recent.append(candidate)
+            if state.recent.count > span { state.recent.removeFirst(state.recent.count - span) }
+            guard let candidate else { return nil }
+            let support = state.recent.suffix(span).filter { $0.map { sameTarget($0, candidate) } ?? false }.count
+            if strict {
+                return state.recent.count >= required && support >= required ? candidate : nil
             }
-            let continuing = state.context == context
-                && state.candidate.map { abs($0 - candidate) <= 2 } == true
-                && time - state.lastSeen <= SlideIndex.Tuning.maxGap
-            if !continuing { state.candidate = candidate; state.since = time }
-            state.lastSeen = time
-            return time - state.since >= SlideIndex.Tuning.sustain ? candidate : nil
+            return support >= required ? candidate : nil
+        }
+    }
+
+    /// An observation without a candidate.
+    func miss() {
+        state.withLock { state in
+            state.recent.append(nil)
+            if state.recent.count > SlideIndex.Tuning.leapWindow { state.recent.removeFirst() }
         }
     }
 
     func reset() {
-        state.withLock { $0.candidate = nil }
+        state.withLock { $0.recent.removeAll() }
     }
 }

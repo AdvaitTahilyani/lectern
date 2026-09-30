@@ -36,7 +36,7 @@ struct RealLectureTests {
         #expect(page.text.contains("Register-to-Register"))
     }
 
-    /// Replays the captions in 60 s windows every 20 s, starting on slide 1, and checks the slide
+    /// Replays the captions in 60 s windows every 15 s (LectureBrain's cadence), starting on slide 1, and checks the slide
     /// shown at a handful of moments whose slide is clear from the lecture content.
     @Test(arguments: [false, true])
     func trackingFollowsTheLecture(useSemantic: Bool) async throws {
@@ -119,8 +119,8 @@ enum RealLecture {
         }
     }
 
-    /// Runs `likelySlide` and `backtrackCandidate` every 20 s over the trailing 60 s of captions,
-    /// starting on slide 1, with the replay time as the evidence clock.
+    /// Runs `likelySlide` and `backtrackCandidate` every 15 s over the trailing 60 s of captions,
+    /// starting on slide 1 (the cadence LectureBrain uses; the trackers count observations).
     static func replay(through index: SlideIndex) throws -> Trajectory {
         let segments = try transcript()
         let end = segments.map(\.end).max() ?? 0
@@ -131,11 +131,11 @@ enum RealLecture {
         var time = 60.0
         while time <= end + 20 {
             let text = segments.filter { $0.end > time - 60 && $0.end <= time }.map(\.text).joined(separator: " ")
-            if let slide = index.likelySlide(forTranscript: text, near: current, at: time), slide != current {
+            if let slide = index.likelySlide(forTranscript: text, near: current), slide != current {
                 current = slide
                 changes.append((time, slide))
             }
-            if let page = index.backtrackCandidate(forTranscript: text, current: current, at: time) {
+            if let page = index.backtrackCandidate(forTranscript: text, current: current) {
                 if open?.page == page && open?.current == current { open?.to = time } else {
                     if let finished = open { suggestions.append(finished) }
                     open = Suggestion(from: time, to: time, current: current, page: page)
@@ -144,7 +144,7 @@ enum RealLecture {
                 suggestions.append(finished)
                 open = nil
             }
-            time += 20
+            time += 15
         }
         if let finished = open { suggestions.append(finished) }
         return Trajectory(changes: changes.map { (time: $0.0, slide: $0.1) }, suggestions: suggestions)

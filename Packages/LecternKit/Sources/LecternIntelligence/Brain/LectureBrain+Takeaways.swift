@@ -82,6 +82,7 @@ extension LectureBrain {
                     messages: Prompts.segmentation(input), profile: .segmentation
                 ) { try TopicTimeline.check($0, hasLiveTopic: hasLive) }
                 if newRange.isEmpty { reply.action = .continueTopic }
+                reply.slides = slideSupport.supported(reply.slides, by: reply.title + " " + reply.summary, fallback: chunk.relevantPages)
 
                 switch timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages) {
                 // Nothing opened yet: keep the skipped lines in the window so the first card can

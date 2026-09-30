@@ -41,9 +41,20 @@ struct SlideExcerpts: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    /// "[S9] Title; [S10] Title" for `pages`, or nil when empty.
+    /// "[S9] Title; [S14–S17] Title" for `pages`, or nil when empty. Consecutive pages with the
+    /// same title (build slides) collapse into one range.
     func titles(_ pages: [Int]) -> String? {
-        let parts = pages.compactMap { n in deck?.page(n).map { "[S\(n)] " + Text.truncate(Text.collapse($0.title ?? DeckDigest.pageText($0)), maxChars: 60) } }
+        var runs: [(first: Int, last: Int, title: String)] = []
+        for n in pages {
+            guard let page = deck?.page(n) else { continue }
+            let title = Text.truncate(Text.collapse(page.title ?? DeckDigest.pageText(page)), maxChars: 60)
+            if let last = runs.last, last.title == title, n > last.last {
+                runs[runs.count - 1].last = n
+            } else {
+                runs.append((n, n, title))
+            }
+        }
+        let parts = runs.map { $0.first == $0.last ? "[S\($0.first)] \($0.title)" : "[S\($0.first)–S\($0.last)] \($0.title)" }
         return parts.isEmpty ? nil : parts.joined(separator: "; ")
     }
 

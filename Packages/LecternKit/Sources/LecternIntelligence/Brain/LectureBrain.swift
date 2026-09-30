@@ -22,6 +22,7 @@ public actor LectureBrain: LectureIntelligence {
     let providers: RoleProviders
     let slideSearch: (any SlideSearching)?
     let excerpts: SlideExcerpts
+    let slideSupport: SlideSupport
     let lecture: Prompts.Lecture
     /// Rendered once: part of every role's byte-stable prompt prefix.
     let digest: String
@@ -86,6 +87,7 @@ public actor LectureBrain: LectureIntelligence {
         self.providers = providers
         slideSearch = slides
         excerpts = SlideExcerpts(deck: context.deck, search: slides)
+        slideSupport = SlideSupport(deck: context.deck)
         lecture = Prompts.Lecture(title: context.sessionTitle, course: context.courseName)
         digest = DeckDigest.render(context.deck)
         self.tuning = tuning

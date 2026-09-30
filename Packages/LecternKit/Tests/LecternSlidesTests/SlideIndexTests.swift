@@ -123,17 +123,23 @@ import Testing
     @Test func aStrongTopicChangeAheadOverridesTheForwardPrior() async throws {
         let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
         let speech = Self.lecture[7].speech
-        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 0) == nil, "a leap of five slides waits for confirmation")
-        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 30) == nil)
-        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 60) == 8)
-        // Any interruption restarts the confirmation.
-        #expect(index.likelySlide(forTranscript: "okay any questions", near: 3, at: 110) == nil)
-        #expect(index.likelySlide(forTranscript: speech, near: 3, at: 120) == nil)
+        // A leap of five slides waits until it has won 5 of the last 8 observations...
+        for _ in 0..<4 { #expect(index.likelySlide(forTranscript: speech, near: 3) == nil, "a leap of five slides waits for confirmation") }
+        #expect(index.likelySlide(forTranscript: speech, near: 3) == 8)
+        // ...which tolerates a noisy observation in between...
+        let noisy = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+        for text in [speech, speech, "okay any questions", speech, speech] { #expect(noisy.likelySlide(forTranscript: text, near: 3) == nil) }
+        #expect(noisy.likelySlide(forTranscript: speech, near: 3) == 8)
+        // ...but not a stretch of other talk.
+        let interrupted = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+        for text in [speech, speech, "okay any questions", "okay any questions", "okay any questions", "okay any questions", speech, speech] {
+            #expect(interrupted.likelySlide(forTranscript: text, near: 3) == nil)
+        }
     }
 
     @Test func aShortStepAheadNeedsNoConfirmation() async throws {
         let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
-        #expect(index.likelySlide(forTranscript: Self.lecture[4].speech, near: 3, at: 0) == 5)
+        #expect(index.likelySlide(forTranscript: Self.lecture[4].speech, near: 3) == 5)
     }
 
     @Test func neverReturnsAnEarlierSlideThanNear() async throws {
@@ -162,6 +168,9 @@ import Testing
 
     @Test func unknownNearSlideIsIgnored() async throws {
         let index = SlideIndex(deck: try await FixtureDeck.load().deck, useSemanticSimilarity: false)
+        // An unknown slide counts as none known: a page past the opening ones is confirmed first.
+        #expect(index.likelySlide(forTranscript: Self.lecture[7].speech, near: 99) == nil)
+        #expect(index.likelySlide(forTranscript: Self.lecture[7].speech, near: 99) == nil)
         #expect(index.likelySlide(forTranscript: Self.lecture[7].speech, near: 99) == 8)
     }
 }
@@ -179,10 +188,11 @@ import Testing
     Remember FIRST of X is the set of terminals that can begin strings derived from X.
     """
 
-    /// Feeds `speech` every 20 s from `start` for `seconds`, returning what was suggested when.
+    /// Feeds `speech` once per 20 s from `start` for `seconds` (one observation each), returning
+    /// what was suggested when.
     private func feed(_ index: SlideIndex, _ speech: String, current: Int, from start: TimeInterval, for seconds: TimeInterval) -> [(time: TimeInterval, page: Int?)] {
         stride(from: start, through: start + seconds, by: 20).map { t in
-            (t, index.backtrackCandidate(forTranscript: speech, current: current, at: t))
+            (t, index.backtrackCandidate(forTranscript: speech, current: current))
         }
     }
 
@@ -205,15 +215,15 @@ import Testing
     @Test func theSuggestionEndsWhenTheEvidenceDoes() async throws {
         let index = try await index()
         #expect(feed(index, Self.firstSetsMinute, current: 8, from: 0, for: 100).last?.page == 4)
-        #expect(index.backtrackCandidate(forTranscript: "okay any questions before we move on", current: 8, at: 120) == nil)
+        #expect(index.backtrackCandidate(forTranscript: "okay any questions before we move on", current: 8) == nil)
         // and it has to build up again from scratch
-        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 8, at: 140) == nil)
+        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 8) == nil)
     }
 
     @Test func changingTheCurrentSlideRestartsTheEvidence() async throws {
         let index = try await index()
         #expect(feed(index, Self.firstSetsMinute, current: 8, from: 0, for: 100).last?.page == 4)
-        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 9, at: 120) == nil)
+        #expect(index.backtrackCandidate(forTranscript: Self.firstSetsMinute, current: 9) == nil)
     }
 
     @Test func staysQuietWhenTheCurrentSlideIsTheOneBeingDiscussed() async throws {
