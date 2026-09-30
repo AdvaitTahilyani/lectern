@@ -135,7 +135,7 @@ import Testing
         """#))
         let response = try await provider(server).complete(simpleRequest)
         #expect(response.text == "Hello there")
-        #expect(response.usage == LLMUsage(inputTokens: 2010, outputTokens: 7))
+        #expect(response.usage == LLMUsage(inputTokens: 2010, outputTokens: 7, cachedInputTokens: 2000, cacheWriteTokens: 0))
         let sent = try #require(server.requests.first)
         #expect(sent.url.path == "/v1/messages")
         #expect(sent.headers["x-api-key"] == "sk-ant-test")
@@ -195,7 +195,7 @@ import Testing
         ]))
         let result = try await collect(provider(server).stream(simpleRequest))
         #expect(result.deltas == ["Hel", "lo"])
-        #expect(result.usage == LLMUsage(inputTokens: 1025, outputTokens: 15))
+        #expect(result.usage == LLMUsage(inputTokens: 1025, outputTokens: 15, cachedInputTokens: 1000, cacheWriteTokens: 0))
         #expect(server.requests.first?.json["stream"] as? Bool == true)
     }
 

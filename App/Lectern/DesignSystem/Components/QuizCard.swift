@@ -8,6 +8,8 @@ struct QuizCard: View {
     var streak: Int
     var showStreak: Bool
     var sessionID: UUID
+    /// Seconds allowed for the question (`UIPreferences.quizTimeToAnswer`), for the countdown ring.
+    var timeToAnswer: TimeInterval
     var thumbnail: (Int) -> NSImage? = { _ in nil }
     var onSelect: (Int) -> Void
     var onShortAnswerChange: (String) -> Void
@@ -80,7 +82,7 @@ struct QuizCard: View {
 
     private var header: some View {
         HStack(spacing: DS.Space.s) {
-            DeadlineRing(deadline: quiz.deadline, paused: quiz.phase == .grading)
+            DeadlineRing(deadline: quiz.deadline, total: timeToAnswer, paused: quiz.phase == .grading)
             Text("Quick check · \(quiz.question.concept)")
                 .font(DS.Typo.caption).fontWeight(.semibold).foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -152,8 +154,6 @@ struct QuizCard: View {
         Group {
             if case .multipleChoice(let options, _) = q.kind, let i = quiz.selectedOption, options.indices.contains(i) {
                 Text(options[i]).font(DS.Typo.body)
-            } else if case .shortAnswer = q.kind {
-                EmptyView()
             }
         }
     }
@@ -212,19 +212,20 @@ struct OptionRow: View {
 /// 16 pt ring draining to the deadline; a `mono` countdown under Reduce Motion.
 struct DeadlineRing: View {
     var deadline: Date
+    /// Length of the whole countdown in seconds (the ring is full at that point).
+    var total: TimeInterval
     var paused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: reduceMotion ? 1 : 0.25)) { timeline in
             let remaining = max(0, deadline.timeIntervalSince(timeline.date))
-            let total = max(1, deadline.timeIntervalSince(Date.now) + (Date.now.timeIntervalSince(timeline.date)))
             if reduceMotion {
                 Text(TimeFormat.clock(remaining)).font(DS.Typo.mono).foregroundStyle(.secondary)
             } else {
                 ZStack {
                     Circle().stroke(.quaternary, lineWidth: 2)
-                    Circle().trim(from: 0, to: min(1, remaining / max(total, 90)))
+                    Circle().trim(from: 0, to: min(1, remaining / max(1, total)))
                         .stroke(paused ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Colors.accent), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }

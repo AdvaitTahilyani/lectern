@@ -10,9 +10,6 @@ struct LiveSessionView: View {
     @State private var width: CGFloat = 0
     @State private var hasAppeared = false
 
-    @State private var editedTitle = ""
-    @FocusState private var titleFocused: Bool
-
     @State private var tier: LayoutTier = .three
     /// Inspector state to restore when leaving the single tier (which force-closes it).
     @State private var inspectorBeforeSingle = true
@@ -67,7 +64,7 @@ struct LiveSessionView: View {
                 if !first, hasAppeared { tierChanged(from: old, to: new) }
             }
             .onChange(of: session.showSlides) { _, v in app.updatePreferences { $0.slidesVisible = v } }
-            .onDisappear { session.saveIfDirty() }
+            .onDisappear { Task { await session.flush() } }
             // Presentation modifiers live on the root, which is never removed by tier changes:
             // adding/removing a presentation inside layout re-enters AppKit's constraint pass.
             .fileImporter(isPresented: $session.showDeckChooser, allowedContentTypes: [.pdf]) { r in
@@ -78,6 +75,14 @@ struct LiveSessionView: View {
                 Task { @MainActor in await Task.yield(); rootFocused = true }
                 Task { try? await Task.sleep(for: .seconds(1)); hasAppeared = true }
             }
+            // Session-wide keys need the root focused again once a text field lets go (QA F2).
+            .onChange(of: session.isTypingInAsk) { _, typing in
+                if !typing { Task { @MainActor in try? await Task.sleep(for: .milliseconds(80)); rootFocused = true } }
+            }
+            .onChange(of: session.focusRootRequest) { _, _ in
+                Task { @MainActor in try? await Task.sleep(for: .milliseconds(80)); rootFocused = true }
+            }
+            .onChange(of: tier) { _, t in session.layoutTier = t }
             .onReceive(NotificationCenter.default.publisher(for: .lecternExport)) { _ in
                 guard !session.isLive else { return }
                 ExportCoordinator.exportMarkdown(session: session.session, course: session.course)
@@ -110,6 +115,7 @@ struct LiveSessionView: View {
         case .takeaways: TakeawaysColumn(session: session, tier: tier)
         case .transcript: TranscriptView(session: session)
         case .slides: SlidesColumn(session: session)
+        case .ask: AskView(session: session)
         }
     }
 
@@ -172,13 +178,13 @@ struct SessionToolbar: ToolbarContent {
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
-                .frame(width: 220)
+                .frame(width: 270)
             }
         }
         ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
             if session.isLive {
-                SessionClock(elapsed: session.elapsed, state: session.recordingState) { session.togglePause() }
+                LiveSessionClock(session: session)
                 Button { session.togglePause() } label: {
                     Label(session.recordingState == .paused ? "Resume" : "Pause", systemImage: session.recordingState == .paused ? "play.fill" : "pause.fill")
                 }
@@ -190,7 +196,7 @@ struct SessionToolbar: ToolbarContent {
                 .help("Stop… (⌘.)")
                 .popover(isPresented: $session.showStopConfirmation, arrowEdge: .bottom) { StopPopover(session: session) }
             } else {
-                StatsCapsule(duration: session.session.duration, takeaways: session.settledTakeaways.count, score: session.quizScore)
+                StatsCapsule(duration: session.session.duration, takeaways: session.settledTakeaways.count, score: session.quizScore, sessionID: session.id)
             }
         }
         ToolbarSpacer(.fixed)
@@ -206,7 +212,7 @@ struct SessionToolbar: ToolbarContent {
                     Button("Markdown Notes…") { ExportCoordinator.exportMarkdown(session: session.session, course: session.course) }
                     Button("PDF…") { ExportCoordinator.exportPDF(session: session.session, course: session.course) }
                     Divider()
-                    Button("Copy Summary") { session.copySummary() }.keyboardShortcut("c", modifiers: [.command, .shift])
+                    Button("Copy Summary") { session.copySummary() }
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -221,7 +227,7 @@ struct SessionToolbar: ToolbarContent {
                 .help("Toggle inspector (⌘⌥I)")
                 .disabled(tier == .single)
             Menu {
-                Button(session.showSlides ? "Hide Slides" : "Show Slides") { withAnimation(DS.Motion.settle) { session.showSlides.toggle() } }.keyboardShortcut("s", modifiers: [.command, .option])
+                Button(session.showSlides ? "Hide Slides" : "Show Slides") { withAnimation(DS.Motion.settle) { session.showSlides.toggle() } }
                 if session.isLive {
                     Toggle("Follow Slides", isOn: Binding(get: { session.followSlides }, set: { if $0 { session.resumeFollowing() } else { session.selectSlide(session.displayedSlide ?? 1) } }))
                     Menu("Quiz Frequency") {
@@ -239,6 +245,15 @@ struct SessionToolbar: ToolbarContent {
                 Label("More", systemImage: "ellipsis.circle")
             }
         }
+    }
+}
+
+/// The toolbar clock, split out so the once-a-second `elapsed` tick re-renders only the clock
+/// and not the whole toolbar.
+private struct LiveSessionClock: View {
+    var session: LiveSessionModel
+    var body: some View {
+        SessionClock(elapsed: session.elapsed, state: session.recordingState) { session.togglePause() }
     }
 }
 
@@ -338,10 +353,8 @@ struct TitleEditor: View {
             .focused($focused)
             .onSubmit { session.setTitle(draft); session.isEditingTitle = false }
             .onKeyPress(.escape) { session.isEditingTitle = false; return .handled }
-            .onAppear {
-                draft = session.title
-                Task { @MainActor in await Task.yield(); try? await Task.sleep(for: .milliseconds(60)); focused = true }
-            }
+            .onAppear { draft = session.title }
+            .task { try? await Task.sleep(for: .milliseconds(120)); focused = true }
             .accessibilityLabel("Lecture title")
     }
 }

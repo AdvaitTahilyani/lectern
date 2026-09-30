@@ -19,15 +19,6 @@ struct ZipEntryReader: Sendable {
         }
     }
 
-    /// Entry names in the archive.
-    func entryNames() throws -> [String] {
-        let (status, output, error) = try Self.run(["-Z1", archive.path])
-        guard status == 0 else {
-            throw ImportError.invalidPresentation(String(decoding: error, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return String(decoding: output, as: UTF8.self).split(separator: "\n").map(String.init)
-    }
-
     private static func escapeGlob(_ name: String) -> String {
         var escaped = ""
         for character in name {

@@ -8,14 +8,24 @@ struct GenerationProfile: Sendable, Hashable {
     var maxTokens: Int
     var temperature: Double
     var reasoning: ReasoningEffort = .off
+    /// Background work (rolling takeaways, quiz questions) yields a shared device to calls
+    /// someone is waiting on.
+    var priority: RequestPriority = .interactive
 
-    static let segmentation = GenerationProfile(maxTokens: 320, temperature: 0.3)
+    static let segmentation = GenerationProfile(maxTokens: 320, temperature: 0.3, priority: .background)
     static let detail = GenerationProfile(maxTokens: 700, temperature: 0.5)
     static let recap = GenerationProfile(maxTokens: 350, temperature: 0.3)
-    static let quizQuestion = GenerationProfile(maxTokens: 450, temperature: 0.7)
+    static let lectureSummary = GenerationProfile(maxTokens: 800, temperature: 0.3)
+    static let quizQuestion = GenerationProfile(maxTokens: 450, temperature: 0.7, priority: .background)
     static let feedback = GenerationProfile(maxTokens: 200, temperature: 0.3)
     static let grading = GenerationProfile(maxTokens: 300, temperature: 0.2)
     static let answer = GenerationProfile(maxTokens: 800, temperature: 0.5)
+
+    /// The request for `messages` with these settings.
+    func request(_ messages: [LLMMessage], format: ResponseFormat = .text) -> LLMRequest {
+        LLMRequest(messages: messages, maxTokens: maxTokens, temperature: temperature,
+                   responseFormat: format, reasoning: reasoning, priority: priority)
+    }
 }
 
 /// A reply that parsed but doesn't make sense (e.g. an empty summary). `reason` is fed back to the
@@ -38,9 +48,12 @@ enum StructuredGeneration {
         let first = try await complete(provider, messages, profile, schema: R.schema)
         let failure: String
         do {
-            return try parse(R.self, first, validate)
+            // A cut-off reply is repaired only as a last resort: first ask for a complete one.
+            return try parse(R.self, first, rejectingTruncated: true, validate)
         } catch let rejected as ReplyRejected {
             failure = rejected.reason
+        } catch JSONExtractionError.truncated {
+            failure = "It was cut off. Reply with a complete, shorter JSON object."
         } catch {
             failure = "It was not valid JSON."
         }
@@ -48,7 +61,7 @@ enum StructuredGeneration {
         let repair = messages + [.assistant(first), .user(Prompts.repair(shape: R.shape, problem: failure))]
         let second = try await complete(provider, repair, profile, schema: R.schema)
         do {
-            return try parse(R.self, second, validate)
+            return try parse(R.self, second, rejectingTruncated: false, validate)
         } catch let rejected as ReplyRejected {
             throw BrainError.unusableReply(rejected.reason)
         } catch {
@@ -56,18 +69,13 @@ enum StructuredGeneration {
         }
     }
 
-    private static func parse<R: ModelReply, Output>(_ type: R.Type, _ text: String, _ validate: (R) throws -> Output) throws -> Output {
-        try validate(try JSONExtractor.decode(R.self, from: text))
+    private static func parse<R: ModelReply, Output>(_ type: R.Type, _ text: String, rejectingTruncated: Bool,
+                                                     _ validate: (R) throws -> Output) throws -> Output {
+        try validate(try JSONExtractor.decode(R.self, from: text, rejectingTruncated: rejectingTruncated))
     }
 
     private static func complete(_ provider: any LLMProvider, _ messages: [LLMMessage], _ profile: GenerationProfile, schema: String) async throws -> String {
-        let request = LLMRequest(
-            messages: messages,
-            maxTokens: profile.maxTokens,
-            temperature: profile.temperature,
-            responseFormat: .json(schema: schema),
-            reasoning: profile.reasoning
-        )
+        let request = profile.request(messages, format: .json(schema: schema))
         return try await provider.complete(request).text
     }
 }

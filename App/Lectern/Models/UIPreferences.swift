@@ -26,13 +26,13 @@ nonisolated struct UIPreferences: Codable, Sendable, Hashable {
     var sidebarVisible = true
     var inspectorVisible = true
     var slidesVisible = true
+    /// Top-left corner of the Focus panel in screen coordinates.
     var focusPanelOrigin: CGPoint?
 }
 
 /// Sidebar/detail model status shown by `ModelStatusBadge`.
 nonisolated enum ModelStatus: Sendable, Hashable {
     case ready(engine: String)
-    case warming
     case downloading(progress: Double)
     case cloud(provider: String)
     case unavailable(reason: String)

@@ -28,6 +28,9 @@ public actor AudioCapture {
     private var requestedDeviceUID: String?
     private var isStarting = false
     private var isRestarting = false
+    /// Bumped by every `start` and `stop`, so a restart that outlives its session (it sleeps
+    /// between attempts) can tell that the session it was repairing is gone.
+    private var generation = 0
 
     public init() {}
 
@@ -41,6 +44,7 @@ public actor AudioCapture {
 
         let (stream, continuation) = AsyncThrowingStream<AudioCaptureEvent, Error>.makeStream(bufferingPolicy: .unbounded)
         requestedDeviceUID = deviceID
+        generation += 1
         do {
             try startEngine(deviceUID: deviceID, continuation: continuation)
         } catch {
@@ -61,6 +65,7 @@ public actor AudioCapture {
 
     /// Stops capturing and finishes the event stream.
     public func stop() {
+        generation += 1
         if let observer = configurationObserver { NotificationCenter.default.removeObserver(observer) }
         configurationObserver = nil
         teardownEngine()
@@ -147,6 +152,7 @@ public actor AudioCapture {
         guard let continuation, !isRestarting, let engine, changed == ObjectIdentifier(engine) else { return }
         isRestarting = true
         defer { isRestarting = false }
+        let session = generation
 
         let gapStart = ContinuousClock.now
         teardownEngine()
@@ -154,7 +160,7 @@ public actor AudioCapture {
         var deviceUID = requestedDeviceUID
         var lastError: Error = TranscriptionError.audioEngineFailed("The audio engine could not be restarted.")
         for attempt in 1...4 {
-            guard self.continuation != nil else { return }   // stopped while restarting
+            guard generation == session else { return }   // stopped (or restarted) while waiting to retry
             do {
                 try startEngine(deviceUID: deviceUID, continuation: continuation)
                 let gap = ContinuousClock.now - gapStart
@@ -172,6 +178,7 @@ public actor AudioCapture {
                 try? await Task.sleep(for: .milliseconds(250 * attempt))
             }
         }
+        guard generation == session else { return }
         continuation.finish(throwing: lastError)
         stop()
     }

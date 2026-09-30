@@ -5,7 +5,8 @@ import Testing
 
 @Suite struct GranularityTests {
     @Test func splitPressureEscalatesPastTheFiveMinuteTarget() {
-        #expect(Prompts.splitPressure(title: "t", duration: 3 * 60).isEmpty)
+        #expect(Prompts.splitPressure(title: "t", duration: 3 * 60).contains("not a new topic"))
+        #expect(!Prompts.splitPressure(title: "t", duration: 3 * 60).contains("has run"))
         #expect(Prompts.splitPressure(title: "t", duration: 5 * 60).contains("typically last about 5"))
         let strong = Prompts.splitPressure(title: "t", duration: 9 * 60)
         #expect(strong.contains("has run 9 min") && strong.contains("reply \"new_topic\""))

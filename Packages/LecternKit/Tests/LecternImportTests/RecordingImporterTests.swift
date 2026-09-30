@@ -144,6 +144,44 @@ private func workDirectories(in scratch: URL) -> [String] {
         #expect(workDirectories(in: scratch).isEmpty)
     }
 
+    @Test func unreadableCaptionsFallBackToTranscribingTheAudio() async throws {
+        let scratch = try makeTemporaryDirectory("scratch")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let directory = try makeTemporaryDirectory("fixture")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mp4 = try Data(contentsOf: SpeechFixture.make(AudioExtractorTests.sentence, format: "mp4", in: directory))
+        let server = StubServer { url in
+            if url.path.hasSuffix("/action/list") { return .text("<html>not json</html>") }
+            if url.path.hasSuffix("/a.m3u8") { return .text(KalturaClientTests.masterPlaylist) }
+            if url.path.hasSuffix("/a.mp4") { return .data(mp4) }
+            return .notFound
+        }
+        let engine = Self.engine()
+        let warnings = ProgressLog2()
+        let importer = RecordingImporter(
+            makeEngine: { engine }, makeBrain: { _ in FakeBrain() }, kaltura: KalturaClient(session: server.session),
+            scratchDirectory: scratch, onWarning: { warnings.append($0) }
+        )
+        let source = MediaSpaceSource(partnerID: "1329972", entryID: "1_oj3ppr67", ks: "djJ8KS-token_==", title: nil, pageURL: nil)
+
+        let result = try await importer.importRecording(.mediaSpace(source, preferCaptions: true), into: LectureSession(title: "Lecture"), progress: { _ in })
+
+        #expect(engine.files.count == 1)
+        #expect(result.source == .mediaSpace(entryID: "1_oj3ppr67", pageURL: nil, usedCaptions: false))
+        #expect(warnings.values.contains { $0.contains("captions couldn't be read") })
+    }
+
+    @Test func anExpiredSessionStopsTheImportInsteadOfFallingBack() async throws {
+        let server = StubServer { _ in StubResponse(status: 403) }
+        let engine = FakeEngine()
+        let importer = RecordingImporter(makeEngine: { engine }, makeBrain: { _ in FakeBrain() }, kaltura: KalturaClient(session: server.session))
+        let source = MediaSpaceSource(partnerID: "1329972", entryID: "1_oj3ppr67", ks: "djJ8KS-token_==", title: nil, pageURL: nil)
+        await #expect(throws: ImportError.sessionExpired) {
+            try await importer.importRecording(.mediaSpace(source, preferCaptions: true), into: LectureSession(title: "x"), progress: { _ in })
+        }
+        #expect(engine.files.isEmpty)
+    }
+
     @Test func aSilentRecordingIsReportedNotSummarized() async throws {
         let directory = try makeTemporaryDirectory("fixture")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -220,6 +258,7 @@ private actor NeverIdleBrain: LectureIntelligence {
     func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {}
     func tick(sessionTime: TimeInterval) {}
     func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap { throw CancellationError() }
+    func lectureSummary() async throws -> LectureSummary { throw CancellationError() }
     func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
     func setCurrentSlide(_ page: Int) {}
 }

@@ -14,25 +14,18 @@ nonisolated struct TranscriptParagraph: Identifiable, Hashable, Sendable {
 
     var text: String { segments.map(\.text).joined(separator: " ") }
 
+    /// A pause marker's id follows its time, so rebuilding the paragraphs (a late speaker label)
+    /// keeps the same identity and the list does not recreate the row.
+    static func pauseID(at time: TimeInterval) -> UUID {
+        var bits = time.bitPattern.bigEndian
+        return withUnsafeBytes(of: &bits) { raw in
+            UUID(uuid: (0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]))
+        }
+    }
+
     /// Segmentation rules: new paragraph after a pause > 1.5 s or once ~420 characters are reached.
     static let maxCharacters = 420
     static let breakGap: TimeInterval = 1.5
-}
-
-/// Conventions layered over `LectureSession` without changing the core contract.
-nonisolated enum SessionConventions {
-    /// The post-lecture summary is stored as a takeaway with a deterministic id derived from the
-    /// session id, so it can be told apart from topic takeaways.
-    static func summaryID(for sessionID: UUID) -> UUID {
-        let hex = sessionID.uuidString.replacingOccurrences(of: "-", with: "").suffix(12)
-        return UUID(uuidString: "00000000-0000-4000-8000-\(hex)") ?? UUID()
-    }
-
-    static func isSummary(_ takeaway: Takeaway, sessionID: UUID) -> Bool {
-        takeaway.id == summaryID(for: sessionID)
-    }
-
-    static func summaryTitle(sessionID: UUID) -> String { "Lecture summary" }
 }
 
 /// Non-fatal, dismissible notice shown as a glass banner at the top of a column.
@@ -60,13 +53,14 @@ nonisolated enum InspectorTab: String, CaseIterable, Hashable, Sendable, Identif
 }
 
 nonisolated enum SessionPane: String, CaseIterable, Hashable, Sendable, Identifiable {
-    case takeaways, transcript, slides
+    case takeaways, transcript, slides, ask
     var id: String { rawValue }
     var label: String {
         switch self {
         case .takeaways: "Takeaways"
         case .transcript: "Transcript"
         case .slides: "Slides"
+        case .ask: "Ask"
         }
     }
 }

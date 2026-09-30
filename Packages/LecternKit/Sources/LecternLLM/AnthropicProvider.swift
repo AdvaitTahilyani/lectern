@@ -12,7 +12,8 @@ import LecternCore
 /// - Reasoning: `.off` never enables thinking (on models where thinking is always on it maps to the
 ///   lowest setting). `.low` / `.medium` use a token budget on Claude 4.5-and-earlier models
 ///   (Haiku 4.5) and adaptive thinking with `output_config.effort` on newer ones.
-/// - `LLMUsage.inputTokens` is the whole prompt, i.e. fresh plus cache-read plus cache-write tokens.
+/// - `LLMUsage.inputTokens` is the whole prompt, i.e. fresh plus cache-read plus cache-write tokens;
+///   `cachedInputTokens` / `cacheWriteTokens` are the cache-read / cache-write parts of it.
 public struct AnthropicProvider: LLMProvider {
     public static let baseURL = URL(string: "https://api.anthropic.com/v1")!
     public static let apiVersion = "2023-06-01"
@@ -23,6 +24,8 @@ public struct AnthropicProvider: LLMProvider {
 
     static let truncatedMessage =
         "The model ran out of output tokens before producing an answer (thinking may have used the budget)."
+    /// Newer models decline some requests with HTTP 200 and `stop_reason: "refusal"`.
+    static let refusedMessage = "The model declined to answer this request."
     static let jsonInstruction = "Respond with a single valid JSON object and nothing else: no prose, no code fences."
 
     public let model: String
@@ -61,13 +64,13 @@ public struct AnthropicProvider: LLMProvider {
             throw LLMError.invalidResponse("Couldn't decode the message: \(String(decoding: data.prefix(200), as: UTF8.self))")
         }
         let text = ThinkStripper.strip((message.content ?? []).filter { $0.type == "text" }.compactMap(\.text).joined())
+        if message.stopReason == "refusal" {
+            throw LLMError.invalidResponse(Self.refusedMessage)
+        }
         if text.isEmpty && message.stopReason == "max_tokens" {
             throw LLMError.invalidResponse(Self.truncatedMessage)
         }
-        let usage = message.usage.flatMap { u in
-            u.totalInput.map { LLMUsage(inputTokens: $0, outputTokens: u.outputTokens ?? 0) }
-        }
-        return LLMResponse(text: text, usage: usage)
+        return LLMResponse(text: text, usage: message.usage?.llmUsage)
     }
 
     public func stream(_ request: LLMRequest) -> AsyncThrowingStream<LLMStreamEvent, Error> {

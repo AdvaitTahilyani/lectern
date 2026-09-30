@@ -16,15 +16,27 @@ enum SessionRunner {
     /// How far the recognizer may run ahead of speaker diarization when transcribing a file.
     private static let fileLeadSeconds: TimeInterval = 10
 
-    /// Consumes microphone events until capture ends, then flushes.
+    /// Consumes microphone events until capture ends, then flushes. If capture itself fails (the
+    /// microphone disappeared and could not be replaced), the words already heard are still
+    /// flushed before the stream ends with that error.
     static func runLive(
         audio: AsyncThrowingStream<AudioCaptureEvent, Error>,
         recognizer: any SessionRecognizer,
         diarization: DiarizationFeed?,
         sink: EventSink
     ) async {
+        var captureFailure: Error?
         do {
-            for try await event in audio {
+            var events = audio.makeAsyncIterator()
+            capture: while true {
+                let event: AudioCaptureEvent
+                do {
+                    guard let next = try await events.next() else { break capture }
+                    event = next
+                } catch {
+                    captureFailure = error
+                    break capture
+                }
                 switch event {
                 case .samples(let samples):
                     diarization?.feed(samples)
@@ -35,11 +47,11 @@ enum SessionRunner {
             }
             try await recognizer.finish()
             await diarization?.finish(sink: sink)
-            sink.finish()
+            sink.finish(throwing: captureFailure)
         } catch {
             diarization?.cancel()
             await recognizer.cancel()
-            sink.finish(throwing: error)
+            sink.finish(throwing: captureFailure ?? error)   // the microphone dying is the root cause of a failed flush
         }
     }
 

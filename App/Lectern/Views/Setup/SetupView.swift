@@ -16,7 +16,14 @@ struct SetupView: View {
         ScrollView {
             VStack(spacing: DS.Space.xl) {
                 courseAndTitle
-                DeckDropZone(setup: setup, namespace: namespace) { showChooser = true }
+                DeckDropZone(
+                    setup: setup,
+                    namespace: namespace,
+                    courseCode: app.course(id: setup.courseID)?.code,
+                    hasSlidesFolder: app.course(id: setup.courseID)?.slidesFolder != nil,
+                    onChooseFolder: { if let id = setup.courseID { app.chooseSlidesFolder(for: id) } },
+                    onChoose: { showChooser = true }
+                )
                 if setup.deck == nil, setup.indexing == nil {
                     Text("No deck — slide following and slide citations will be off")
                         .font(DS.Typo.footnote).foregroundStyle(.secondary)
@@ -41,6 +48,7 @@ struct SetupView: View {
         .onChange(of: app.courses.count) { old, new in
             if new > old, let last = app.courses.last { setup.courseID = last.id }
         }
+        .onChange(of: setup.courseID) { _, _ in app.refreshDeckSuggestions() }
     }
 
     private var allowedTypes: [UTType] {

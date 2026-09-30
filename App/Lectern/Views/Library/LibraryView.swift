@@ -11,6 +11,14 @@ struct LibraryView: View {
     @State private var showNoResults = false
     @FocusState private var searchFocused: Bool
     @State private var noResultsTask: Task<Void, Never>?
+    /// The lecture a Delete/Discard is waiting on the user's confirmation for.
+    @State private var pendingRemoval: PendingRemoval?
+
+    private struct PendingRemoval: Identifiable {
+        var session: LectureSession
+        var verb: String
+        var id: UUID { session.id }
+    }
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: DS.Space.l)]
 
@@ -18,7 +26,7 @@ struct LibraryView: View {
         @Bindable var app = app
         Group {
             if let error = app.libraryError, app.sessions.isEmpty {
-                EmptyStateView(symbol: "externaldrive.badge.exclamationmark", title: "Can't read the library", message: error, action: ("Choose a different location", { NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory())) }))
+                EmptyStateView(symbol: "externaldrive.badge.exclamationmark", title: "Can't read the library", message: error, action: ("Try Again", { Task { await app.loadLibrary() } }))
             } else if !app.searchText.trimmingCharacters(in: .whitespaces).isEmpty, app.searchText.count >= 2 {
                 searchResults
             } else if visibleSessions.isEmpty, app.isLibraryLoaded {
@@ -28,6 +36,20 @@ struct LibraryView: View {
             }
         }
         .background(DS.Colors.canvas)
+        .safeAreaInset(edge: .top, spacing: 0) { notices }
+        // A standard dialog (the Library is not a live session). Lectures go to the Trash, so
+        // they can be put back from there.
+        .confirmationDialog(
+            pendingRemoval.map { "\($0.verb) “\($0.session.title)”?" } ?? "",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { removal in
+            Button("Move to Trash", role: .destructive) { app.deleteSession(removal.session.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { removal in
+            Text("\(removal.verb == "Discard" ? "Its recording and transcript" : "The lecture, with its transcript, takeaways and slides,") will be moved to the Trash.")
+        }
         .overlay {
             RoundedRectangle(cornerRadius: DS.Radius.float, style: .continuous)
                 .strokeBorder(DS.Colors.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
@@ -62,7 +84,7 @@ struct LibraryView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("Import Recording…") { app.showImport() }.keyboardShortcut("i", modifiers: [.command, .shift])
+                    Button("Import Recording…") { app.showImport() }
                 } label: {
                     Label("New Lecture", systemImage: "plus")
                 } primaryAction: {
@@ -77,6 +99,27 @@ struct LibraryView: View {
                     .help("Ask about this course (⌘⌥K)")
                     .disabled(app.contextCourseID == nil)
             }
+        }
+    }
+
+    // MARK: Notices
+
+    /// Non-modal banners: a failed save/delete (the error state covers an empty library) and
+    /// session files that could not be read.
+    @ViewBuilder private var notices: some View {
+        let failure = app.sessions.isEmpty ? nil : app.libraryError
+        let skipped = app.skippedLectureCount
+        if failure != nil || skipped > 0 {
+            VStack(spacing: DS.Space.s) {
+                if let failure {
+                    NoticeBanner(notice: Notice(id: "library-error", kind: .warning, symbol: "exclamationmark.triangle", title: failure, placement: .takeaways, actionLabel: nil), onClose: { app.libraryError = nil })
+                }
+                if skipped > 0 {
+                    NoticeBanner(notice: Notice(id: "skipped-lectures", kind: .warning, symbol: "exclamationmark.triangle", title: "\(skipped) \(skipped == 1 ? "lecture" : "lectures") couldn't be read and \(skipped == 1 ? "was" : "were") left out. The files are untouched.", placement: .takeaways, actionLabel: nil), onClose: { app.skippedLectureCount = 0 })
+                }
+            }
+            .padding(.horizontal, DS.Space.xxl)
+            .padding(.top, DS.Space.m)
         }
     }
 
@@ -163,11 +206,11 @@ struct LibraryView: View {
         return Group {
             if let job {
                 ImportProgressCard(session: s, job: job, course: app.course(id: s.courseID), onCancel: { app.cancelImport(s.id) }, onDismiss: { app.dismissFailedImport(s.id) })
-            } else if app.isInterrupted(s.id) {
+            } else if app.isInterrupted(s) {
                 InterruptedCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s),
-                                onResume: { app.resumeInterrupted(s.id) }, onFinish: { app.finishInterrupted(s.id) }, onDiscard: { app.discardInterrupted(s.id) })
+                                onResume: { app.resumeInterrupted(s.id) }, onFinish: { app.finishInterrupted(s.id) }, onDiscard: { pendingRemoval = PendingRemoval(session: s, verb: "Discard") })
             } else {
-                LectureCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s), isSelected: selectedSession == s.id, isLive: isLive, liveElapsed: app.liveSession?.elapsed ?? 0)
+                LectureCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s), isSelected: selectedSession == s.id, isLive: isLive, liveElapsed: isLive ? app.liveSession?.elapsed ?? 0 : 0)
                     .onTapGesture(count: 2) { app.openSession(s.id) }
                     .onTapGesture { selectedSession = s.id }
                     .focusable()
@@ -185,7 +228,7 @@ struct LibraryView: View {
                             ForEach(app.courses) { c in Button(c.code) { app.moveSession(s.id, to: c.id) }.disabled(c.id == s.courseID) }
                         }
                         Divider()
-                        Button("Delete…", role: .destructive) { app.deleteSession(s.id) }
+                        Button("Delete…", role: .destructive) { pendingRemoval = PendingRemoval(session: s, verb: "Delete") }
                     }
             }
         }
@@ -411,7 +454,8 @@ struct InterruptedCard: View {
     }
 }
 
-/// Save panels for exports.
+/// Save panels for exports. Rendering runs off the main actor (a long lecture's PDF takes seconds)
+/// and a failed write is reported through the app model, never dropped.
 @MainActor
 enum ExportCoordinator {
     static func exportMarkdown(session: LectureSession, course: Course?) {
@@ -420,7 +464,7 @@ enum ExportCoordinator {
         panel.nameFieldStringValue = "\(session.title).md"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            try? MarkdownExporter.document(session: session, course: course).write(to: url, atomically: true, encoding: .utf8)
+            write(kind: "Markdown notes") { try MarkdownExporter.document(session: session, course: course).write(to: url, atomically: true, encoding: .utf8) }
         }
     }
 
@@ -430,7 +474,17 @@ enum ExportCoordinator {
         panel.nameFieldStringValue = "\(session.title).pdf"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            try? PDFExporter.write(session: session, course: course, to: url)
+            write(kind: "PDF") { try PDFExporter.write(session: session, course: course, to: url) }
+        }
+    }
+
+    private static func write(kind: String, _ work: @escaping @Sendable () throws -> Void) {
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated, operation: work).value
+            } catch {
+                AppModelActivation.shared?.exportFailed(kind, error: error)
+            }
         }
     }
 }

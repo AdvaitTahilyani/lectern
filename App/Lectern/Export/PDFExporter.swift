@@ -81,16 +81,24 @@ nonisolated enum PDFExporter {
         add(meta.joined(separator: "  ·  "), font: body, color: gray, style: para(18))
         flush()
 
-        let summaryID = SessionConventions.summaryID(for: session.id)
-        if let summary = session.takeaways.first(where: { $0.id == summaryID }) {
+        if let summary = session.summary, !summary.isEmpty {
             add("Summary", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
-            add(summary.summary, font: body, style: para(8))
-            if let terms = summary.detail?.keyTerms, !terms.isEmpty {
-                add("Key terms: " + terms.map(\.term).joined(separator: ", "), font: body, color: gray, style: para(16))
+            add(summary.overview, font: body, style: para(8))
+            func list(_ title: String, _ items: [String]) {
+                guard !items.isEmpty else { return }
+                add(title, font: .systemFont(ofSize: 11, weight: .semibold), style: para(2))
+                for item in items { add("•  \(item)", font: body, style: para(1, indent: 12, headIndent: 24)) }
+                add("", font: body, style: para(4))
+            }
+            list("Key concepts", summary.keyConcepts.map { "\($0.term) — \($0.definition)" })
+            list("Review these", summary.reviewThese)
+            list("Flagged in the lecture", summary.flagged)
+            if !summary.slides.isEmpty {
+                add("Worth revisiting: slides " + summary.slides.map(String.init).joined(separator: ", "), font: mono, color: gray, style: para(16))
             }
             flush()
         }
-        let takeaways = session.takeaways.filter { $0.id != summaryID && !$0.isLive }
+        let takeaways = session.takeaways.filter { !$0.isLive }
         if !takeaways.isEmpty {
             add("Takeaways", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
             for t in takeaways {

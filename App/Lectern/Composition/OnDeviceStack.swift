@@ -23,6 +23,15 @@ nonisolated final class OnDeviceStack: Sendable {
         return MLXProvider(model: model, role: role)
     }
 
+    /// The on-device model cloud roles fall back to once the monthly API cap is reached: the default
+    /// model if it's downloaded, else any downloaded language model. Nil when none is.
+    func fallbackProvider(role: LLMRole?) -> (any LLMProvider)? {
+        let manager = MLXModelHost.shared.modelManager
+        let candidates = [AppSettings.defaultOnDeviceModel] + manager.catalog.map(\.id)
+        guard let model = candidates.first(where: { manager.isDownloaded($0) }) else { return nil }
+        return MLXProvider(model: model, role: role)
+    }
+
     /// Loads the on-device model(s) a session will use and pre-compiles the brain's JSON grammars
     /// in the background, so the first takeaway doesn't pay ~10 s of load + setup. No-op when every
     /// role uses a server or cloud provider, or the model isn't downloaded yet.

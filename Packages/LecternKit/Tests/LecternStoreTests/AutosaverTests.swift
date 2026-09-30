@@ -114,6 +114,22 @@ import Testing
         #expect(await store.saved.isEmpty)
     }
 
+    @Test func discardWaitsForAWriteInFlightSoADeleteCannotBeUndone() async throws {
+        let store = RecordingStore()
+        await store.setSaveDelay(.milliseconds(300))
+        let autosaver = autosaver(store, interval: .milliseconds(20))
+        await autosaver.update(session("in flight"))
+        try await Task.sleep(for: .milliseconds(120))    // timer fired, write running
+        #expect(await store.saved.isEmpty)
+        await autosaver.discard()
+        // The running write has finished by now; nothing else follows it.
+        #expect(await store.saved.map(\.title) == ["in flight"])
+        await autosaver.update(session("late"))          // a straggler after the discard...
+        await autosaver.discard()                        // ...is dropped by the next one
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(await store.saved.map(\.title) == ["in flight"])
+    }
+
     @Test func worksAgainstTheRealStore() async throws {
         let store = FileSessionStore(root: Fixtures.temporaryRoot())
         let autosaver = SessionAutosaver(store: store, interval: .milliseconds(50), onError: { _ in })

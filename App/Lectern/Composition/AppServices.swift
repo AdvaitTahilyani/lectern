@@ -1,5 +1,6 @@
 import Foundation
 import LecternCore
+import LecternSlides
 
 /// Composition root. Views and models depend only on `LecternCore` contracts plus the small
 /// app-side protocols declared in this folder; concrete backends are injected here.
@@ -32,12 +33,17 @@ nonisolated struct AppServices: Sendable {
     // MARK: Slides
 
     var slideIngestor: any SlideIngesting
-    /// Builds retrieval over an ingested deck. Returns nil when retrieval is unavailable.
-    var makeSlideIndex: @Sendable (SlideDeck) -> (any SlideSearching)?
+    /// Builds retrieval over an ingested deck. Returns nil when retrieval is unavailable. Async
+    /// because indexing embeds every page (seconds for a long deck): never call it on the main actor
+    /// synchronously.
+    var makeSlideIndex: @Sendable (SlideDeck) async -> (any SlideSearching)?
 
     // MARK: Persistence
 
     var store: any SessionStoring
+    /// Reads the library and reports the session files that had to be skipped. Nil falls back to
+    /// `store.loadSessions()` (no report).
+    var readLibrary: (@Sendable () async throws -> LibraryLoad)? = nil
 
     // MARK: Providers & models
 
@@ -50,8 +56,9 @@ nonisolated struct AppServices: Sendable {
 
     // MARK: Search
 
-    /// Full-text search over stored lectures. Implementations may back this with FTS5.
-    var search: @Sendable (String, LibrarySearchScope) async throws -> [LibrarySearchHit]
+    /// Full-text search over the given lectures (the app's in-memory library; nothing is re-read
+    /// from disk per query).
+    var search: @Sendable (String, LibrarySearchScope, [LectureSession]) async throws -> [LibrarySearchHit]
 
     /// Optional sample deck offered in Setup (demo only; nil in production).
     var sampleDeckURL: @Sendable () async throws -> URL? = { nil }
@@ -66,9 +73,92 @@ nonisolated struct AppServices: Sendable {
     var presentationConverter: (any PresentationConverting)?
     /// Creates the course-wide assistant over a course's lectures.
     var makeCourseAssistant: @Sendable ([CourseLecture]) -> any CourseAssisting
+
+    // MARK: Slides folder, jargon correction, API cost
+
+    /// Ranks the decks in a course's slides folder for the next lecture: `(folder, deck file names
+    /// used by earlier sessions of the course, accepted extensions)`. Throws when the folder can't
+    /// be read. The demo has no folder support.
+    var suggestDecks: @Sendable (URL, Set<String>, Set<String>) throws -> SuggestedDecks = { _, _, _ in .none }
+    /// Builds a corrector that fixes misheard course jargon from an ingested deck. Nil disables it.
+    var makeTranscriptCorrector: @Sendable (SlideDeck) -> (any TranscriptCorrecting)? = { _ in nil }
+    /// Cloud API spending (this month, per lecture). Nil when nothing is metered (demo).
+    var usage: (any UsageReporting)? = nil
 }
 
 // MARK: - App-side contracts (small, defined here so the lead can implement them in modules)
+
+/// The sessions found on disk, plus how many session files were unreadable and left untouched.
+nonisolated struct LibraryLoad: Sendable {
+    var sessions: [LectureSession]
+    var skipped: Int
+}
+
+/// Ordered, throttled saving of one session (`LecternStore.SessionAutosaver`).
+nonisolated protocol SessionAutosaving: Sendable {
+    /// Records the newest state; it is written at most once per interval, never out of order.
+    func update(_ session: LectureSession) async
+    /// Writes the newest state now and waits for every write in flight.
+    func flush() async throws
+    /// Drops pending work and waits for a running write, so a delete can't be undone by a late save.
+    func discard() async
+}
+
+extension AppServices {
+    /// The library from disk, with the number of skipped session files when the store reports it.
+    func loadLibrary() async throws -> LibraryLoad {
+        if let readLibrary { return try await readLibrary() }
+        return LibraryLoad(sessions: try await store.loadSessions(), skipped: 0)
+    }
+}
+
+/// The deck Setup offers for the next lecture of a course, plus the rest of its slides folder.
+nonisolated struct SuggestedDecks: Sendable, Hashable {
+    /// The one prominent suggestion ("Use lec9-ir-gen.pdf").
+    var primary: URL?
+    /// Every other deck in the folder, in lecture order.
+    var others: [URL]
+
+    static let none = SuggestedDecks(primary: nil, others: [])
+    var isEmpty: Bool { primary == nil && others.isEmpty }
+}
+
+/// Cloud API spending, from the usage ledger (Settings › Models and Review).
+nonisolated protocol UsageReporting: Sendable {
+    /// This calendar month's spending, per provider and model.
+    func currentMonth() async -> UsageMonthSummary
+    /// Total API cost attributed to one lecture, in US dollars.
+    func cost(forSession id: UUID) async -> Double
+    /// Emits whenever a call is recorded (and once immediately), so views can refresh.
+    func changes() async -> AsyncStream<Void>
+    /// Emits when the monthly cap first stops cloud calls this month (at most once per month).
+    func capNotices() async -> AsyncStream<UsageCapNotice>
+}
+
+nonisolated struct UsageMonthSummary: Sendable, Hashable {
+    struct Line: Sendable, Hashable, Identifiable {
+        var id: String { "\(provider.rawValue)/\(model)" }
+        var provider: ProviderKind
+        var model: String
+        var calls: Int
+        var inputTokens: Int
+        var outputTokens: Int
+        var cachedInputTokens: Int
+        var costUSD: Double
+    }
+    /// e.g. "September 2026".
+    var monthName: String
+    var totalUSD: Double
+    var lines: [Line]
+
+    static let empty = UsageMonthSummary(monthName: "", totalUSD: 0, lines: [])
+}
+
+/// The monthly cap was reached: cloud calls now run on-device (`fellBack`) or fail.
+nonisolated struct UsageCapNotice: Sendable, Hashable {
+    var capUSD: Double
+    var fellBack: Bool
+}
 
 /// Streams smoothed RMS input level 0…1 (≈20 Hz) for level meters outside a transcription session.
 nonisolated protocol AudioLevelMonitoring: AnyObject, Sendable {
@@ -183,7 +273,7 @@ extension AppServices {
             requestMicrophoneAccess: { true },
             makeBrain: { context, settings, _ in DemoBrain(context: context, settings: settings, speed: DemoConfiguration.current.speed) },
             slideIngestor: PDFSlideIngestor(),
-            makeSlideIndex: { deck in SimpleSlideIndex(deck: deck) },
+            makeSlideIndex: { deck in await SlideIndex.build(deck: deck, useSemanticSimilarity: false) },
             store: demoStore,
             providerHealthCheck: { config, key in
                 try await Task.sleep(for: .milliseconds(650))
@@ -198,7 +288,7 @@ extension AppServices {
             },
             onDeviceModels: models,
             keychain: InMemoryAPIKeyStore(),
-            search: { query, scope in await demoStore.search(query, scope: scope) },
+            search: { query, scope, _ in await demoStore.search(query, scope: scope) },
             sampleDeckURL: { try await demoStore.sampleDeckURL() },
             recordingImporter: DemoRecordingImporter(speed: DemoConfiguration.current.speed),
             mediaSpaceBrowser: DemoMediaSpaceBrowser(),

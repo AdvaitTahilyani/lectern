@@ -3,131 +3,6 @@ import LecternCore
 import Testing
 @testable import LecternStore
 
-@Suite struct MarkdownExporterTests {
-    static let exporter = MarkdownExporter(
-        locale: Locale(identifier: "en_US_POSIX"), timeZone: TimeZone(identifier: "UTC")!
-    )
-
-    @Test func exportsAFinishedLectureAsStudyNotes() {
-        let markdown = Self.exporter.markdown(for: Fixtures.session(), course: Fixtures.course())
-        #expect(markdown == """
-        # Top-Down Parsing
-
-        - **Course:** CS 421 \u{2014} Programming Languages & Compilers
-        - **Date:** September 21, 2026
-        - **Duration:** 52:10
-        - **Slides:** Lecture 9: Top-Down Parsing (2 slides)
-
-        ## Takeaways
-
-        ### 1. Recursive descent
-        *0:30\u{2013}3:20 \u{00B7} Slide 2*
-
-        One procedure per nonterminal.
-
-        **Slide notes**
-
-        - Slide 2: Mention backtracking cost; show the call stack.
-
-        ### 2. FIRST sets
-        *6:30\u{2013}8:40 \u{00B7} Slides 4\u{2013}6, 9*
-
-        FIRST(X) collects the terminals that can start a string derived from X.
-
-        - Terminals map to themselves.
-        - Add \u{03B5} when X can vanish.
-
-        **Key terms**
-
-        - **nullable**: Can derive the empty string.
-
-        **Example.** FIRST(E') = { +, \u{03B5} }
-
-        ## Quiz results
-
-        **Score:** 1 of 2 correct (50%) \u{00B7} 1 skipped
-
-        ### Missed concepts
-
-        #### FIRST sets
-
-        **Q:** Define FIRST(X).
-        **Your answer:** Terminals in the follow position
-        **Correct answer:** Terminals that can begin strings derived from X.
-        **Explanation:** FIRST is about what a string can begin with, not what comes after.
-
-        ## Transcript
-
-        **[00:02]** Welcome back, today is top-down parsing.
-
-        **[06:35]** The FIRST set of a nonterminal is the set of terminals that can begin its strings.
-
-        **[06:43]** **Student:** Does FIRST include epsilon?
-
-        **[1:02:05]** We put the end marker in FOLLOW of the start symbol.
-
-        """)
-    }
-
-    @Test func optionalSectionsAreOmittedAndTranscriptCanBeLeftOut() {
-        let bare = LectureSession(title: "Untitled\nLecture", createdAt: Fixtures.date(), status: .draft)
-        let markdown = Self.exporter.markdown(for: bare)
-        #expect(markdown == "# Untitled Lecture\n\n- **Date:** September 21, 2026\n")
-
-        let noTranscript = MarkdownExporter(locale: Locale(identifier: "en_US_POSIX"), timeZone: .gmt, includesTranscript: false)
-            .markdown(for: Fixtures.session())
-        #expect(!noTranscript.contains("## Transcript"))
-        #expect(noTranscript.contains("## Takeaways"))
-    }
-
-    @Test func multipleChoiceMistakesShowLettersNotIndices() {
-        var session = Fixtures.session()
-        session.quiz = [QuizRecord(
-            question: QuizQuestion(
-                prompt: "Which set fills M[A, a]?",
-                kind: .multipleChoice(options: ["FOLLOW", "FIRST", "LAST"], correctIndex: 1),
-                concept: "Parse tables"
-            ),
-            answer: "2", grade: QuizGrade(isCorrect: false, feedback: "LAST is not a thing here."),
-            outcome: .incorrect, askedAt: 10
-        )]
-        let markdown = Self.exporter.markdown(for: session)
-        #expect(markdown.contains("**Your answer:** C. LAST"))
-        #expect(markdown.contains("**Correct answer:** B. FIRST"))
-        #expect(markdown.contains("**Score:** 0 of 1 correct (0%)"))
-    }
-
-    @Test func volatileTranscriptSegmentsAreNotExported() {
-        let markdown = Self.exporter.markdown(for: Fixtures.session())
-        #expect(!markdown.contains("still being revised"))
-    }
-
-    @Test func transcriptTimestampsHaveHoursOnlyWhenNeeded() {
-        var session = LectureSession(title: "T", createdAt: Fixtures.date())
-        session.transcript = [
-            TranscriptSegment(text: "a", start: 59.9, end: 60, isFinal: true),
-            TranscriptSegment(text: "b", start: 3599, end: 3600, isFinal: true),
-            TranscriptSegment(text: "c", start: 7384, end: 7390, isFinal: true),
-        ]
-        let markdown = Self.exporter.markdown(for: session)
-        #expect(markdown.contains("**[00:59]** a"))
-        #expect(markdown.contains("**[59:59]** b"))
-        #expect(markdown.contains("**[2:03:04]** c"))
-    }
-
-    @Test func fileNamesAreSafe() {
-        var session = Fixtures.session(title: "Parsing: LL(1)/LR \"basics\"?")
-        session.startedAt = Fixtures.date()
-        let name = Self.exporter.suggestedFileName(for: session, course: Fixtures.course())
-        #expect(name == "CS 421 - Parsing LL(1) LR basics - 2026-09-21.md")
-        #expect(!name.contains("/") && !name.contains(":"))
-    }
-
-    @Test func searchIsAlsoAvailableOnTheExporter() {
-        #expect(Self.exporter.search("recursive descent", in: [Fixtures.session()]).first?.kind == .takeaway)
-    }
-}
-
 @Suite struct LibrarySearchTests {
     let parsing = Fixtures.session(title: "Top-Down Parsing", startedAt: 0)
     let codegen: LectureSession = {
@@ -209,6 +84,30 @@ import Testing
         var noisy = LectureSession(title: "T", createdAt: Fixtures.date())
         noisy.transcript = (0..<100).map { TranscriptSegment(text: "again and again \($0)", start: Double($0), end: Double($0) + 1, isFinal: true) }
         #expect(LibrarySearch.search("again", in: [noisy]).count == LibrarySearch.transcriptHitsPerSession)
+    }
+
+    /// Plain-ASCII segments take a bytewise fast path; accented ones must still match an unaccented query.
+    @Test func asciiQueriesFindAccentedAndMixedCaseSegments() {
+        var session = LectureSession(title: "T", createdAt: Fixtures.date())
+        session.transcript = [
+            TranscriptSegment(text: "we grab a CAF\u{00C9} after class", start: 1, end: 2, isFinal: true),
+            TranscriptSegment(text: "no match here", start: 3, end: 4, isFinal: true),
+            TranscriptSegment(text: "a Cafe Latte", start: 5, end: 6, isFinal: true),
+            TranscriptSegment(text: "short", start: 7, end: 8, isFinal: true),
+        ]
+        #expect(LibrarySearch.search("cafe", in: [session]).map(\.time) == [1, 5])
+        #expect(LibrarySearch.search("cafe latte", in: [session]).map(\.time) == [5])
+        #expect(LibrarySearch.search("shorter", in: [session]).isEmpty)
+    }
+
+    @Test func titlesOfLaterSessionsSurviveTheLimitEvenWhenEarlierTranscriptsFillIt() {
+        var chatty = LectureSession(title: "Other", createdAt: Fixtures.date())
+        chatty.transcript = (0..<50).map { TranscriptSegment(text: "again \($0)", start: Double($0), end: Double($0) + 1, isFinal: true) }
+        let titled = LectureSession(title: "Again and again", createdAt: Fixtures.date())
+        let hits = LibrarySearch.search("again", in: [chatty, titled], limit: 3)
+        #expect(hits.count == 3)
+        #expect(hits[0].kind == .title && hits[0].sessionID == titled.id)
+        #expect(hits.dropFirst().allSatisfy { $0.kind == .transcript && $0.sessionID == chatty.id })
     }
 
     @Test func volatileSegmentsAreNotSearched() {

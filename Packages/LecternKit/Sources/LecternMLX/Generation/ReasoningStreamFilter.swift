@@ -28,9 +28,6 @@ struct ReasoningStreamFilter {
         self.awaitingClose = pendingClose
     }
 
-    /// Whether the stream is currently inside a reasoning block.
-    var isInsideReasoning: Bool { awaitingClose != nil }
-
     /// Feeds a raw chunk; returns the newly visible text (possibly empty).
     mutating func consume(_ chunk: String) -> String {
         buffer += chunk

@@ -73,6 +73,26 @@ struct SegmentationReply: ModelReply, Equatable {
     static let shape = #"{"new_lines_about":"…","new_lines_kind":"same_concept"|"new_concept"|"admin_or_chat","action":"continue"|"new_topic","boundary_quote":"…","closed_summary":"…","title":"…","summary":"…","slides":[1,2]}"#
 }
 
+// MARK: - Quiz option check
+
+/// Which options of a multiple-choice question the model judges correct.
+struct OptionCheckReply: ModelReply {
+    var correctOptions: [Int]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: NormalizedKey.self)
+        correctOptions = c.ints("correctoptions")
+    }
+
+    static let schema = """
+    {"type":"object","additionalProperties":false,"properties":{\
+    "correct_options":{"type":"array","items":{"type":"integer"}}},\
+    "required":["correct_options"]}
+    """
+
+    static let shape = #"{"correct_options":[0]}"#
+}
+
 // MARK: - Opening recap card
 
 /// Title and summary for a card written after the fact (the lecture's opening recap).
@@ -111,8 +131,8 @@ struct DetailReply: ModelReply {
         example = ex.isEmpty || ["none", "n/a", "null"].contains(ex.lowercased()) ? nil : ex
     }
 
-    private static func decodeTerms(_ c: KeyedDecodingContainer<NormalizedKey>) -> [LenientKeyTerm] {
-        let key = NormalizedKey(stringValue: "keyterms")
+    static func decodeTerms(_ c: KeyedDecodingContainer<NormalizedKey>, key name: String = "keyterms") -> [LenientKeyTerm] {
+        let key = NormalizedKey(stringValue: name)
         if let list = try? c.decode([LenientKeyTerm].self, forKey: key) { return list.filter(\.isUsable) }
         if let map = try? c.decode([String: String].self, forKey: key) {
             return map.sorted { $0.key < $1.key }.map { LenientKeyTerm(term: $0.key, definition: $0.value) }
@@ -191,6 +211,41 @@ struct RecapReply: ModelReply {
     """
 
     static let shape = #"{"headline":"…","bullets":["…","…"],"flagged":[],"slides":[3]}"#
+}
+
+// MARK: - Lecture summary
+
+struct LectureSummaryReply: ModelReply {
+    var overview: String
+    var keyConcepts: [LenientKeyTerm]
+    var reviewThese: [String]
+    var flagged: [String]
+    var slides: [Int]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: NormalizedKey.self)
+        let o = c.string("overview")
+        overview = o.isEmpty ? c.string("summary") : o
+        let concepts = DetailReply.decodeTerms(c, key: "keyconcepts")
+        keyConcepts = concepts.isEmpty ? DetailReply.decodeTerms(c) : concepts
+        let review = c.strings("reviewthese")
+        reviewThese = review.isEmpty ? c.strings("review") : review
+        flagged = c.strings("flagged")
+        slides = c.ints("slides")
+    }
+
+    static let schema = """
+    {"type":"object","additionalProperties":false,"properties":{\
+    "overview":{"type":"string"},\
+    "key_concepts":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{\
+    "term":{"type":"string"},"definition":{"type":"string"}},"required":["term","definition"]}},\
+    "review_these":{"type":"array","items":{"type":"string"}},\
+    "flagged":{"type":"array","items":{"type":"string"}},\
+    "slides":{"type":"array","items":{"type":"integer"}}},\
+    "required":["overview","key_concepts","review_these","flagged","slides"]}
+    """
+
+    static let shape = #"{"overview":"…","key_concepts":[{"term":"…","definition":"…"}],"review_these":["Concept — why"],"flagged":[],"slides":[3,7]}"#
 }
 
 // MARK: - Quiz
@@ -282,7 +337,7 @@ extension LectureBrain {
     /// Every JSON schema the brain sends, so an on-device host can compile their grammars ahead of
     /// the first real call (a schema's first use otherwise pays a one-time setup cost).
     public static let jsonSchemas: [String] = [
-        SegmentationReply.schema, DetailReply.schema, RecapReply.schema,
+        SegmentationReply.schema, DetailReply.schema, RecapReply.schema, LectureSummaryReply.schema,
         MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema,
     ]
 }

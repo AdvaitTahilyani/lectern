@@ -56,14 +56,31 @@ nonisolated struct DemoScript: Sendable {
         let titles = picked.map { beats[$0].title }
         let headline = titles.count == 1 ? titles[0] : "\(titles.first!) → \(titles.last!.lowercasedFirstLetter)"
         let bullets = Array(picked.map { beats[$0].summary }.prefix(4))
+        return Recap(from: from, to: to, headline: headline, bullets: bullets, flagged: flagged(inBeats: picked), slides: picked.flatMap { beats[$0].slidePages })
+    }
+
+    /// What the lecturer flagged (exam hints, deadlines, reading) in the given beats.
+    func flagged(inBeats indices: [Int]) -> [String] {
         var flagged: [String] = []
-        for i in picked {
+        for i in indices {
             for line in beats[i].sentences where line.lowercased().contains("midterm") || line.lowercased().contains("exam") || line.lowercased().contains("due") {
                 flagged.append(line.contains("midterm") ? "The LL(1) condition will be on the midterm" : line)
             }
             if beats[i].sentences.contains(where: { $0.contains("Dragon Book") }) { flagged.append("Reading: Dragon Book §4.4–4.5 before next lecture") }
         }
-        return Recap(from: from, to: to, headline: headline, bullets: bullets, flagged: flagged, slides: picked.flatMap { beats[$0].slidePages })
+        return flagged
+    }
+
+    /// The Review summary for the whole scripted lecture; `quiz` supplies the missed concepts.
+    func lectureSummary(quiz: [QuizRecord]) -> LectureSummary {
+        var review: [String] = []
+        for record in quiz where record.outcome == .incorrect && !review.contains(where: { $0.hasPrefix(record.question.concept) }) {
+            let beat = beats.first { $0.quiz?.question.concept == record.question.concept || $0.quiz?.followUp.concept == record.question.concept }
+            let why = beat.map { $0.summary.split(separator: ";").first.map(String.init) ?? $0.summary } ?? "revisit the definition and the worked example"
+            review.append("\(record.question.concept) — \(why.trimmingCharacters(in: CharacterSet(charactersIn: ". ")))." )
+        }
+        return LectureSummary(overview: summary, keyConcepts: keyTerms, reviewThese: review,
+                              flagged: flagged(inBeats: Array(beats.indices)), slides: [7, 9, 11, 12])
     }
 
     static let compilers = DemoScript(

@@ -24,6 +24,8 @@ public struct OpenAICompatibleProvider: LLMProvider {
     static let truncatedMessage =
         "The model ran out of output tokens before producing an answer (reasoning may have used the budget)."
 
+    static func refusedMessage(_ reason: String) -> String { "The model declined to answer: \(reason)" }
+
     public let flavor: Flavor
     public let baseURL: URL
     public let model: String
@@ -93,6 +95,9 @@ public struct OpenAICompatibleProvider: LLMProvider {
             throw LLMError.invalidResponse("The response contained no choices.")
         }
         let text = ThinkStripper.strip(choice.message?.content ?? "")
+        if text.isEmpty, let refusal = choice.message?.refusal, !refusal.isEmpty {
+            throw LLMError.invalidResponse(Self.refusedMessage(refusal))
+        }
         if text.isEmpty && choice.finishReason == "length" {
             throw LLMError.invalidResponse(Self.truncatedMessage)
         }
@@ -175,7 +180,7 @@ public struct OpenAICompatibleProvider: LLMProvider {
         case .openAI:
             let traits = OpenAIModelTraits(model: model)
             body["max_completion_tokens"] = request.maxTokens
-            if traits.isReasoning { body["reasoning_effort"] = traits.effort(for: request.reasoning) }
+            if traits.acceptsEffort { body["reasoning_effort"] = traits.effort(for: request.reasoning) }
             if traits.acceptsTemperature(at: request.reasoning) { body["temperature"] = request.temperature }
         case .localServer:
             body["max_tokens"] = request.maxTokens

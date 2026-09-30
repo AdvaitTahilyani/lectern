@@ -8,9 +8,9 @@ import LecternCore
 /// that changes (times, counters, the current topic) goes there. Per-call material follows in the
 /// user message, ordered from most to least stable: the rolling-takeaways transcript block is
 /// append-only while a topic lasts, and the task-specific instruction comes last. The summaries
-/// role's system message is shared by rolling updates, "Expand" and recaps; the quizzes role's by
-/// question writing, grading and follow-ups. Course-wide Ask has no deck digest (several decks);
-/// its stable prefix is the instructions plus a one-line-per-lecture index.
+/// role's system message is shared by rolling updates, "Expand", recaps and the lecture summary;
+/// the quizzes role's by question writing, grading and follow-ups. Course-wide Ask has no deck
+/// digest (several decks); its stable prefix is the instructions plus a one-line-per-lecture index.
 ///
 /// **Style.** Instructions are short, explicit and imperative, because small local models follow
 /// those best. One compact example reply is included where it measurably reduced malformed or
@@ -89,6 +89,10 @@ enum Prompts {
       Good: "On a page fault the OS picks a victim frame, writes it back if dirty, loads the missing page and restarts the instruction."
     - Lines starting with "Student:" are from the audience. Never state a student's guess as fact. \
     A good student question and the lecturer's answer to it may be part of the summary.
+    - Say only what the lecturer said in the transcript. Slides help with terms and spelling only: \
+    never add a fact that appears only on a slide. If the lecturer raised a question and deferred \
+    the answer, say it was deferred; don't answer it yourself.
+    - When the lecturer works an example, name it (for example "4 + a + 2").
     - slides: the numbers of the slides this topic covers, from the SLIDES list; [] if unsure.
     - Plain text only: no LaTeX, no Markdown, no "$". Write symbols directly: α, ε, →, ∈.
     - Reply with one JSON object only.
@@ -117,6 +121,10 @@ enum Prompts {
         var slidesInNewLines: String?
         var slides: String?
         var isFinal: Bool
+        /// "S25–S34": deck pages the lecture hasn't reached, whose content must not be presented as taught.
+        var unshownSlides: String? = nil
+        /// When the lecturer closed the class (later lines are after-class conversation).
+        var classEndedAt: TimeInterval? = nil
     }
 
     static func segmentation(_ input: SegmentationInput) -> [LLMMessage] {
@@ -138,6 +146,12 @@ enum Prompts {
             tail.append("SLIDES SHOWN DURING NEW LINES: " + shown + " (a slide with a new concept often starts a new topic)")
         }
         if let slides = input.slides { tail.append("RELEVANT SLIDES:\n" + slides) }
+        if let unshown = input.unshownSlides {
+            tail.append("SLIDES NOT YET SHOWN: \(unshown). The lecture has not covered them: never present their content as taught.")
+        }
+        if let ended = input.classEndedAt {
+            tail.append("CLASS ENDED at [\(TimeFormat.clock(ended))]. Later lines are after-class conversation: a student's question and the lecturer's answer can be a \"Q&A: …\" topic; students chatting among themselves is admin_or_chat and must not appear in any summary.")
+        }
 
         let task: String
         switch (input.liveTitle, input.newLinesFrom, input.isFinal) {
@@ -181,12 +195,33 @@ enum Prompts {
         let minutes = Int((duration / 60).rounded())
         switch duration {
         case ..<(4 * 60):
-            return ""
+            return " A worked example or a student question about the current concept is not a new topic."
         case ..<(7 * 60):
             return " \"\(title)\" has run \(minutes) min; topics in this lecture typically last about 5."
         default:
             return " \"\(title)\" has run \(minutes) min, longer than a typical topic (about 5). Unless the new lines are clearly still the same single idea, reply \"new_topic\" at the first point where a new concept, step or slide section begins."
         }
+    }
+
+    /// A card for announcements or Q&A that the rolling updates filed as admin. Shares the
+    /// summaries role's prefix.
+    static func asideCard(lecture: Lecture, digest: String, transcript: String, questions: Bool) -> [LLMMessage] {
+        let user = """
+        TRANSCRIPT:
+        \(transcript)
+
+        =====
+        TASK: These lines are \(questions ? "questions and answers" : "announcements and course logistics") that a \
+        student needs even though they are not a lecture topic. Write one card for them.
+        - title: "\(questions ? "Q&A: " : "Announcements: ")" followed by 2-6 words.
+        - summary: 1-2 sentences, at most 220 characters, with the concrete facts: dates, deadlines, \
+        exam or assignment format, grading rules, or the question and the lecturer's answer. Leave out \
+        small talk and anything students say among themselves.
+        If the lines are only small talk (the class ending, students chatting, no facts a student \
+        needs), reply {"title": "", "summary": ""}.
+        Reply with one JSON object: {"title": "...", "summary": "..."}. Reply with JSON only.
+        """
+        return [system(summariesInstructions, lecture: lecture, digest: digest), .user(user)]
     }
 
     /// A card for opening lines the rolling updates skipped (recap or correction of earlier
@@ -230,7 +265,9 @@ enum Prompts {
         Reply with one JSON object:
         - bullets: 4-7 bullets. Each is one or two plain sentences (no markdown), specific and \
         technical: definitions, the steps of the algorithm, conditions and edge cases, pitfalls the \
-        lecturer stressed. Skip admin and chit-chat.
+        lecturer stressed. Say only what the lecturer said; slides help with terms only. Skip \
+        chit-chat, but if the lecturer announced something a student must act on (a deadline, the \
+        exam format, grading), add one bullet "Announcement: …".
         - key_terms: 2-5 terms used in this topic, each with a one-line definition (at most 20 words).
         - example: a small worked example or intuition from the lecture in 2-4 sentences, or "" if \
         the lecture gave none.
@@ -249,6 +286,8 @@ enum Prompts {
         var transcript: String
         var topics: String?
         var announcements: String?
+        /// "[S21] Title; [S22–S23] Title": the slides on screen during the stretch.
+        var slidesShown: String? = nil
     }
 
     /// "While you were away": summaries-role prefix, then the missed stretch, then the task.
@@ -257,6 +296,7 @@ enum Prompts {
         var parts = ["TRANSCRIPT \(span):\n" + input.transcript]
         if let topics = input.topics { parts.append("TOPICS IN THIS STRETCH:\n" + topics) }
         if let announcements = input.announcements { parts.append("POSSIBLE ANNOUNCEMENTS:\n" + announcements) }
+        if let shown = input.slidesShown { parts.append("SLIDES SHOWN IN THIS STRETCH: " + shown) }
         let task = """
         =====
         TASK: The student looked away from \(span). Catch them up in a few seconds of reading.
@@ -265,8 +305,71 @@ enum Prompts {
         - bullets: 2-4 short bullets of what was covered, most important first. Specific and technical.
         - flagged: things the lecturer flagged in this stretch: exam hints ("this will be on the exam"), \
         deadlines, announcements, "this is important". Only what was actually said; [] if none.
-        - slides: numbers of the slides covered; [] if unsure.
+        - slides: numbers of the slides covered, only from SLIDES SHOWN IN THIS STRETCH; [] if unsure.
         Reply with JSON only.
+        """
+        return [system(summariesInstructions, lecture: input.lecture, digest: input.digest),
+                .user(parts.joined(separator: "\n\n") + "\n\n" + task)]
+    }
+
+    struct LectureSummaryInput: Sendable {
+        var lecture: Lecture
+        var digest: String
+        /// "[m:ss–m:ss] Title [S#]: summary" lines, with detail bullets and key terms where known.
+        var topics: String?
+        /// The transcript, when no topic notes exist (a very short lecture).
+        var transcript: String?
+        /// Transcript lines that may be announcements or emphasis.
+        var announcements: String?
+        /// Items flagged by "While you were away" recaps during the lecture.
+        var recapFlags: [String]
+        /// Missed quiz questions, grouped by concept.
+        var quizMisses: String?
+        var hasDeck: Bool
+    }
+
+    /// Review's lecture summary. Summaries-role prefix, then (most to least stable) the topic notes,
+    /// possible announcements, quiz misses, and the task last.
+    static func lectureSummary(_ input: LectureSummaryInput) -> [LLMMessage] {
+        var parts: [String] = []
+        if let topics = input.topics { parts.append("TOPICS OF THE LECTURE, IN ORDER:\n" + topics) }
+        if let transcript = input.transcript { parts.append("TRANSCRIPT (no topic notes were written):\n" + transcript) }
+        var flaggedSources: [String] = []
+        if let announcements = input.announcements { flaggedSources.append(announcements) }
+        if !input.recapFlags.isEmpty { flaggedSources.append(input.recapFlags.map { "- \($0)" }.joined(separator: "\n")) }
+        if !flaggedSources.isEmpty { parts.append("POSSIBLE ANNOUNCEMENTS:\n" + flaggedSources.joined(separator: "\n")) }
+        if let misses = input.quizMisses { parts.append("QUIZ QUESTIONS THE STUDENT GOT WRONG:\n" + misses) }
+
+        let review = input.quizMisses == nil
+            ? "- review_these: the student missed no quiz questions, so reply []."
+            : """
+            - review_these: one item per concept in QUIZ QUESTIONS THE STUDENT GOT WRONG, written \
+            "Concept — why": the concept's name, then one line stating the idea the student got wrong, \
+            so they know what to re-read.
+            """
+        let flagged = flaggedSources.isEmpty
+            ? "- flagged: nothing was flagged, so reply []."
+            : """
+            - flagged: exam hints ("this will be on the exam"), deadlines, assignments and "this is \
+            important" that the lecturer actually said in POSSIBLE ANNOUNCEMENTS, each one short \
+            sentence. Skip ordinary lecture content and anything a student said. [] if none.
+            """
+        let slides = input.hasDeck
+            ? "- slides: numbers of the 3-6 slides most worth revisiting; [] if unsure."
+            : "- slides: there is no deck, so reply []."
+        let task = """
+        =====
+        TASK: The lecture is over. Write the summary the student will review before the exam.
+        Reply with one JSON object:
+        - overview: 3-5 whole sentences, at most 110 words, on what the lecture taught, in the order \
+        it was taught. State the technical content itself: definitions, rules, how the algorithms \
+        work, how the ideas connect. Never write "the lecture covered" or "the professor explained".
+        - key_concepts: the 4-8 most important terms or ideas, each with a one-line definition (at \
+        most 20 words). Use the slides' spelling.
+        \(review)
+        \(flagged)
+        \(slides)
+        Plain text only: no LaTeX, no Markdown. Reply with JSON only.
         """
         return [system(summariesInstructions, lecture: input.lecture, digest: input.digest),
                 .user(parts.joined(separator: "\n\n") + "\n\n" + task)]
@@ -306,6 +409,8 @@ enum Prompts {
         var summary: String
         var slides: String?
         var transcript: String
+        /// The slide pages whose text was requested for `slides` (persisted as the question's grounding).
+        var pages: [Int] = []
 
         var block: String {
             """
@@ -322,9 +427,13 @@ enum Prompts {
         format: QuizPlanner.Format,
         difficulty: QuizSettings.Difficulty,
         avoid: [String],
-        followUp: (question: QuizQuestion, answer: String?)?
+        followUp: (question: QuizQuestion, answer: String?)?,
+        unshownSlides: String? = nil
     ) -> [LLMMessage] {
         var task: [String] = []
+        if let unshownSlides {
+            task.append("SLIDES NOT YET SHOWN: \(unshownSlides). Never ask about their content or cite them: only what the lecturer taught counts.")
+        }
         if let followUp {
             var lines = [
                 "The student got this question wrong:",
@@ -354,9 +463,10 @@ enum Prompts {
             - concept: the idea tested, 2-5 words.
             - question: the question.
             - correct_answer: the correct option.
-            - distractors: exactly 3 wrong options that a student who half-understood might pick. \
-            Similar length and style to the correct answer, each clearly wrong. No "all of the above" \
-            or "none of the above".
+            - distractors: exactly 3 wrong options. Each must be false according to the material and \
+            must not be something the lecturer said is true; none may overlap the correct answer. At \
+            least two should be misconceptions of this specific idea, not other topics of the lecture. \
+            Similar length and style to the correct answer. No "all of the above" or "none of the above".
             - explanation: 1-2 sentences on why the correct answer is right.
             - slides: numbers of the slides where the answer is taught; [] if none.
             """)
@@ -371,6 +481,25 @@ enum Prompts {
         }
         task.append("Reply with JSON only.")
         let user = material.block + "\n\n=====\nTASK: " + task.joined(separator: "\n\n")
+        return [system(quizInstructions, lecture: material.lecture, digest: material.digest), .user(user)]
+    }
+
+    /// Asks which options are correct, to catch an ambiguous question (a distractor that is also
+    /// true, or two options saying the same). Same prefix as question writing.
+    static func optionCheck(_ material: QuizMaterial, question: String, options: [String]) -> [LLMMessage] {
+        let listed = options.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let user = """
+        \(material.block)
+
+        =====
+        QUESTION: \(question)
+        OPTIONS:
+        \(listed)
+
+        TASK: According to the material above, which options are correct? List every option number \
+        that is true or that a careful student could defend. Reply with one JSON object: \
+        {"correct_options": [numbers]}. Reply with JSON only.
+        """
         return [system(quizInstructions, lecture: material.lecture, digest: material.digest), .user(user)]
     }
 
@@ -451,6 +580,8 @@ enum Prompts {
         var excerpts: String?
         var recent: String?
         var question: String
+        /// "S25–S34": deck pages the lecture hasn't reached yet.
+        var unshownSlides: String? = nil
     }
 
     static func ask(_ context: AskContext, history: [LLMMessage]) -> [LLMMessage] {
@@ -461,6 +592,9 @@ enum Prompts {
         if let recent = context.recent { parts.append("MOST RECENT TRANSCRIPT:\n" + recent) }
         if context.slides == nil, context.excerpts == nil, context.recent == nil {
             parts.append("(No slides or transcript matched this question.)")
+        }
+        if let unshown = context.unshownSlides {
+            parts.append("SLIDES NOT YET SHOWN: \(unshown). If you use them, say the lecture hasn't reached them yet.")
         }
         parts.append("=====\nQUESTION: " + context.question)
         return [system(askInstructions, lecture: context.lecture, digest: context.digest)] + history + [.user(parts.joined(separator: "\n\n"))]

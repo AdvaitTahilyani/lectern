@@ -59,7 +59,7 @@ import Testing
         let session = Fixtures.session()
         for _ in 0..<3 { try await store.save(session) }
         let names = try FileManager.default.contentsOfDirectory(atPath: sessionFile(session.id).deletingLastPathComponent().path)
-        #expect(names == ["session.json"])
+        #expect(names.sorted() == ["session.json", "session.json.bak"])   // no .tmp leftovers
     }
 
     @Test func loadSessionsIsNewestFirst() async throws {
@@ -183,6 +183,105 @@ import Testing
         await #expect(throws: StoreError.self) { try await store().loadCourses() }
     }
 
+    /// Callers carry on with no courses after a failed load, so the next save would destroy the file.
+    @Test func anUnreadableCoursesFileSurvivesTheNextSave() async throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let coursesFile = root.appending(path: "courses.json")
+        let future = #"{"schemaVersion":99,"courses":[]}"#
+        try future.write(to: coursesFile, atomically: true, encoding: .utf8)
+        let store = store()
+        await #expect(throws: StoreError.self) { try await store.loadCourses() }
+        try await store.saveCourses([Fixtures.course()])
+        #expect(try await store.loadCourses().count == 1)
+        #expect(try String(contentsOf: root.appending(path: "courses.json.unreadable"), encoding: .utf8) == future)
+    }
+
+    // MARK: Durability and repair
+
+    @Test func everySaveKeepsThePreviousVersionAsABackup() async throws {
+        let store = store()
+        var session = Fixtures.session(title: "First")
+        try await store.save(session)
+        #expect(!FileManager.default.fileExists(atPath: sessionFile(session.id).appendingPathExtension("bak").path))
+        session.title = "Second"
+        try await store.save(session)
+        let backup = try Data(contentsOf: sessionFile(session.id).appendingPathExtension("bak"))
+        #expect(String(decoding: backup, as: UTF8.self).contains("\"First\""))
+        #expect(try await store.loadSession(id: session.id).title == "Second")
+    }
+
+    @Test func anEmptyMainFileIsRestoredFromTheBackupAndReported() async throws {
+        let store = store()
+        var session = Fixtures.session(title: "First")
+        try await store.save(session)
+        session.title = "Second"
+        try await store.save(session)
+        try Data().write(to: sessionFile(session.id))   // what a power cut can leave behind
+
+        let library = try await store.loadLibrary()
+        #expect(library.sessions.map(\.title) == ["First"])   // the last good copy
+        #expect(library.issues.count == 1)
+        #expect(library.issues[0].message.contains("restored from the last good copy"))
+        // The main file is whole again, and the empty one was kept.
+        #expect(try await store.loadSession(id: session.id).title == "First")
+        #expect(try await store.loadLibrary().issues.isEmpty)
+        #expect(try Data(contentsOf: sessionFile(session.id).appendingPathExtension("unreadable")).isEmpty)
+    }
+
+    @Test func aCorruptMainFileWithACorruptBackupIsSkipped() async throws {
+        let store = store()
+        let session = Fixtures.session()
+        try await store.save(session)
+        try await store.save(session)
+        try "{ nope".write(to: sessionFile(session.id), atomically: true, encoding: .utf8)
+        try "{ nope".write(to: sessionFile(session.id).appendingPathExtension("bak"), atomically: true, encoding: .utf8)
+        let library = try await store.loadLibrary()
+        #expect(library.sessions.isEmpty && library.issues.count == 1)
+    }
+
+    @Test func anEmptyFileNeverReplacesAGoodBackup() async throws {
+        let store = store()
+        var session = Fixtures.session(title: "First")
+        try await store.save(session)
+        session.title = "Second"
+        try await store.save(session)          // backup = First
+        try Data().write(to: sessionFile(session.id))
+        session.title = "Third"
+        try await store.save(session)          // saving over the empty file
+        let backup = try Data(contentsOf: sessionFile(session.id).appendingPathExtension("bak"))
+        #expect(String(decoding: backup, as: UTF8.self).contains("\"First\""))
+        #expect(try await store.loadSession(id: session.id).title == "Third")
+    }
+
+    @Test func droppedElementsAreReportedAndTheOriginalKeptBeforeTheNextSave() async throws {
+        let id = UUID()
+        let original = """
+        {"schemaVersion":1,"session":{"id":"\(id.uuidString)","title":"Partly damaged","transcript":[
+          {"id":"\(UUID().uuidString)","text":"good","start":1,"end":2,"isFinal":true},
+          {"text":"damaged"}]}}
+        """
+        try write(original, for: id)
+        let store = store()
+        let library = try await store.loadLibrary()
+        #expect(library.sessions.first?.transcript.count == 1)
+        #expect(library.issues.count == 1 && library.issues[0].message.contains("1 damaged part"))
+
+        try await store.save(library.sessions[0])   // makes the loss permanent in session.json...
+        let kept = try String(contentsOf: sessionFile(id).appendingPathExtension("unreadable"), encoding: .utf8)
+        #expect(kept == original)                    // ...but the original is still on disk
+        #expect(try await store.loadLibrary().issues.isEmpty)
+    }
+
+    @Test func aCleanLoadHasNoIssuesAndLeavesNoExtraFiles() async throws {
+        let store = store()
+        let session = Fixtures.session()
+        try await store.save(session)
+        let library = try await store.loadLibrary()
+        #expect(library.issues.isEmpty)
+        let names = try FileManager.default.contentsOfDirectory(atPath: sessionFile(session.id).deletingLastPathComponent().path)
+        #expect(names == ["session.json"])
+    }
+
     @Test func missingSessionThrowsNotFound() async {
         let id = UUID()
         do {
@@ -239,6 +338,20 @@ import Testing
         #expect(try await store.loadSessions().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: sessionFile(session.id).deletingLastPathComponent().path))
         try await store.delete(sessionID: session.id)   // deleting again is a no-op
+    }
+
+    @Test func deleteCanMoveTheFolderToTheTrashInstead() async throws {
+        let store = FileSessionStore(root: root, movesDeletedToTrash: true)
+        let session = Fixtures.session()
+        try await store.save(session)
+        try await store.delete(sessionID: session.id)
+        #expect(try await store.loadSessions().isEmpty)
+        // Recoverable: the folder is now in the Trash. Clean it up so tests leave nothing behind.
+        let trash = try FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        let trashed = trash.appending(path: session.id.uuidString)
+        let existed = FileManager.default.fileExists(atPath: trashed.appending(path: "session.json").path)
+        try? FileManager.default.removeItem(at: trashed)
+        #expect(existed)
     }
 
     @Test func defaultRootIsUnderApplicationSupport() {
@@ -310,27 +423,5 @@ import Testing
         let session = try await FileSessionStore(root: root).loadSession(id: id)
         #expect(session.title == "Podcast")
         #expect(session.source == nil)
-    }
-
-    @Test func interruptedSessionsAreThoseLeftLiveOrImporting() async throws {
-        let store = FileSessionStore(root: root)
-        var live = Fixtures.session(title: "Live when the app died", startedAt: 300)
-        live.status = .live
-        var importing = Fixtures.session(title: "Half imported", startedAt: 200)
-        importing.status = .importing
-        var paused = Fixtures.session(title: "Paused", startedAt: 100)
-        paused.status = .paused
-        let finished = Fixtures.session(title: "Finished", startedAt: 0)
-        for session in [finished, paused, importing, live] { try await store.save(session) }
-
-        #expect(try await store.interruptedSessions().map(\.title) == ["Live when the app died", "Half imported"])
-        #expect(try await store.loadSessions().count == 4)
-    }
-
-    @Test func noInterruptedSessionsInAnEmptyOrCleanLibrary() async throws {
-        let store = FileSessionStore(root: root)
-        #expect(try await store.interruptedSessions().isEmpty)
-        try await store.save(Fixtures.session())
-        #expect(try await store.interruptedSessions().isEmpty)
     }
 }

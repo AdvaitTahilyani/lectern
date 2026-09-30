@@ -24,7 +24,7 @@ struct CourseAskView: View {
             Divider()
             CourseAskThread(model: model, onOpen: { app.open(courseCitation: $0) })
             Divider()
-            AskComposer(text: Binding(get: { model.draft }, set: { model.draft = $0 }), isAnswering: model.isAnswering, placeholder: "Ask about \(course?.code ?? "this course")…", focused: $composerFocused, onSend: { model.ask(model.draft) }, onCancel: { })
+            AskComposer(text: Binding(get: { model.draft }, set: { model.draft = $0 }), isAnswering: model.isAnswering, placeholder: "Ask about \(course?.code ?? "this course")…", focused: $composerFocused, onSend: { model.ask(model.draft) }, onCancel: { model.cancel() })
                 .padding(DS.Space.m)
             Text("Answers cite lectures, slides and timestamps across the course").font(DS.Typo.footnote).foregroundStyle(.secondary).padding(.bottom, DS.Space.s)
         }
@@ -68,35 +68,24 @@ struct CourseAskThread: View {
         }
     }
 
-    private var suggestions: some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
-            Text("Try").font(DS.Typo.caption).foregroundStyle(.secondary)
-            ForEach(["What did he say about FIRST sets last week?", "What's most likely on the midterm?", "Catch me up on the last two lectures"], id: \.self) { s in
-                Button(s) { model.ask(s) }
-                    .buttonStyle(.plain)
-                    .font(DS.Typo.subheadline)
-                    .padding(.horizontal, DS.Space.m).padding(.vertical, DS.Space.xs)
-                    .lecternGlass(.regular.interactive(), in: .capsule)
+    @ViewBuilder private var suggestions: some View {
+        if !model.suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Space.s) {
+                Text("Try").font(DS.Typo.caption).foregroundStyle(.secondary)
+                ForEach(model.suggestions, id: \.self) { s in
+                    Button(s) { model.ask(s) }
+                        .buttonStyle(.plain)
+                        .font(DS.Typo.subheadline)
+                        .padding(.horizontal, DS.Space.m).padding(.vertical, DS.Space.xs)
+                        .lecternGlass(.regular.interactive(), in: .capsule)
+                }
             }
         }
     }
 
     private func answerView(text: String, citations: [CourseCitation], streaming: Bool) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            let attributed = CourseAnswerFormatter.attributed(text, ordinals: model.ordinals)
-            // One plain-string accessibility element over link-bearing text (see C1 in AskView).
-            if streaming {
-                HStack(alignment: .lastTextBaseline, spacing: 0) {
-                    Text(attributed)
-                    Caret(animating: true)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(CourseAnswerFormatter.plainText(text))
-            } else {
-                Text(attributed).textSelection(.enabled)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(CourseAnswerFormatter.plainText(text))
-            }
+            CourseAnswerText(text: text, ordinals: model.ordinals, streaming: streaming).equatable()
             if !citations.isEmpty {
                 Divider()
                 FlowLayout(spacing: DS.Space.s) {
@@ -113,6 +102,30 @@ struct CourseAskThread: View {
             onOpen(c)
             return .handled
         })
+    }
+}
+
+/// One course answer, re-parsed only when its text changes (the thread re-renders per streamed token).
+private struct CourseAnswerText: View, Equatable {
+    var text: String
+    var ordinals: [Int: UUID]
+    var streaming: Bool
+
+    var body: some View {
+        let attributed = CourseAnswerFormatter.attributed(text, ordinals: ordinals)
+        // One plain-string accessibility element over link-bearing text (see C1 in AskView).
+        if streaming {
+            HStack(alignment: .lastTextBaseline, spacing: 0) {
+                Text(attributed)
+                Caret(animating: true)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(CourseAnswerFormatter.plainText(text))
+        } else {
+            Text(attributed).textSelection(.enabled)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(CourseAnswerFormatter.plainText(text))
+        }
     }
 }
 

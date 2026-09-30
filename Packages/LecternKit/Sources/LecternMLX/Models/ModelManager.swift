@@ -46,15 +46,37 @@ public actor ModelManager {
     /// Files needed to run a model with mlx-swift-lm.
     static let downloadPatterns = ["*.safetensors", "*.json", "*.jinja"]
 
-    private let client: HubClient
+    /// Downloads a model snapshot into the cache, reporting byte progress. Injectable for tests.
+    typealias SnapshotDownloader =
+        @Sendable (Repo.ID, @escaping @Sendable (ModelDownloadProgress) -> Void) async throws -> Void
+
     private let cache: HubCache
+    private let downloader: SnapshotDownloader
     private var downloads: [String: ActiveDownload] = [:]
+    /// Tasks of cancelled downloads that may still be winding down, by model id. A new download
+    /// of the same model waits for them so two transfers never write the same partial file.
+    private var cancelled: [String: Task<Void, Never>] = [:]
 
     /// Creates a manager over the default hub cache, or over `cacheDirectory` when given.
     public init(cacheDirectory: URL? = nil) {
         let cache = cacheDirectory.map { HubCache(cacheDirectory: $0) } ?? .default
+        let client = HubClient(cache: cache)
         self.cache = cache
-        self.client = HubClient(cache: cache)
+        self.downloader = { repo, report in
+            _ = try await client.downloadSnapshot(
+                of: repo, kind: .model, revision: "main",
+                matching: ModelManager.downloadPatterns,
+                progressHandler: { @MainActor progress in
+                    let total = progress.totalUnitCount
+                    let done = Int64(progress.fractionCompleted * Double(total))
+                    report(ModelDownloadProgress(completedBytes: done, totalBytes: total))
+                })
+        }
+    }
+
+    init(cacheDirectory: URL, downloader: @escaping SnapshotDownloader) {
+        self.cache = HubCache(cacheDirectory: cacheDirectory)
+        self.downloader = downloader
     }
 
     /// Root folder that holds downloaded models.
@@ -95,35 +117,10 @@ public actor ModelManager {
         }
     }
 
-    /// Ids of curated models that are fully downloaded.
-    public nonisolated func downloadedModels() -> [String] {
-        catalog.map(\.id).filter(isDownloaded)
-    }
-
     // MARK: - Downloads
 
     /// Whether a download of `id` is in progress.
     public func isDownloading(_ id: String) -> Bool { downloads[id] != nil }
-
-    /// Latest progress of an in-progress download of `id`.
-    public func currentProgress(of id: String) -> ModelDownloadProgress? {
-        downloads[id]?.fanOut.latest
-    }
-
-    /// Progress of the in-progress download of `id`; finishes when the download ends (or at
-    /// once if none is running). Lets any view mirror a download another view started.
-    public func progressUpdates(of id: String) -> AsyncStream<ModelDownloadProgress> {
-        let (stream, continuation) = AsyncStream<ModelDownloadProgress>.makeStream(
-            bufferingPolicy: .bufferingNewest(1))
-        guard let active = downloads[id] else {
-            continuation.finish()
-            return stream
-        }
-        let token = UUID()
-        active.fanOut.add(token, onFinish: { continuation.finish() }) { continuation.yield($0) }
-        continuation.onTermination = { [fanOut = active.fanOut] _ in fanOut.remove(token) }
-        return stream
-    }
 
     /// Downloads `id` (or joins the download already in progress) and returns its local folder.
     ///
@@ -160,14 +157,14 @@ public actor ModelManager {
 
     /// Stops an in-progress download. Partial files are kept so a later download resumes.
     public func cancelDownload(_ id: String) {
-        downloads[id]?.task?.cancel()
+        abandonDownload(id)
     }
 
     /// Deletes all local files of `id` (cancelling a download in progress). Unload the model
     /// from ``MLXModelHost`` first if it is loaded.
     public func delete(_ id: String) throws {
         guard let repo = Repo.ID(rawValue: id) else { throw ModelManagerError.invalidModelID(id) }
-        downloads[id]?.task?.cancel()
+        abandonDownload(id)
         let folder = cache.repoDirectory(repo: repo, kind: .model)
         if FileManager.default.fileExists(atPath: folder.path) {
             try FileManager.default.removeItem(at: folder)
@@ -179,19 +176,15 @@ public actor ModelManager {
     private func start(id: String, repo: Repo.ID) -> ActiveDownload {
         let active = ActiveDownload()
         downloads[id] = active
-        let client = self.client
+        let downloader = self.downloader
         let fanOut = active.fanOut
+        let previous = cancelled.removeValue(forKey: id)
         active.task = Task {
+            await previous?.value
             let result: Result<URL, Error>
             do {
-                _ = try await client.downloadSnapshot(
-                    of: repo, kind: .model, revision: "main",
-                    matching: Self.downloadPatterns,
-                    progressHandler: { @MainActor progress in
-                        let total = progress.totalUnitCount
-                        let done = Int64(progress.fractionCompleted * Double(total))
-                        fanOut.publish(ModelDownloadProgress(completedBytes: done, totalBytes: total))
-                    })
+                try Task.checkCancellation()
+                try await downloader(repo) { fanOut.publish($0) }
                 if let local = self.localDirectory(for: id) {
                     result = .success(local)
                 } else {
@@ -200,22 +193,34 @@ public actor ModelManager {
             } catch {
                 result = .failure(error)
             }
-            self.finish(id: id, result: result)
+            self.finish(id: id, active: active, result: result)
         }
         return active
     }
 
-    private func finish(id: String, result: Result<URL, Error>) {
-        guard let active = downloads.removeValue(forKey: id) else { return }
+    /// Cancels the transfer of `id` and ends it for everyone now, instead of when the transfer
+    /// notices the cancellation. Otherwise a download started right after would join the dying
+    /// one and fail with `CancellationError`.
+    private func abandonDownload(_ id: String) {
+        guard let active = downloads[id] else { return }
+        active.task?.cancel()
+        cancelled[id] = active.task
+        finish(id: id, active: active, result: .failure(CancellationError()))
+    }
+
+    /// Ends `active` (a no-op if it already ended) and tells its observers and waiters.
+    private func finish(id: String, active: ActiveDownload, result: Result<URL, Error>) {
+        if downloads[id] === active { downloads.removeValue(forKey: id) }
         if case .success = result, let latest = active.fanOut.latest {
             active.fanOut.publish(
                 ModelDownloadProgress(completedBytes: latest.totalBytes, totalBytes: latest.totalBytes))
         }
-        active.fanOut.finishAll()
-        for continuation in active.waiters.values {
+        active.fanOut.removeAll()
+        let waiters = active.waiters
+        active.waiters.removeAll()
+        for continuation in waiters.values {
             continuation.resume(with: result)
         }
-        active.waiters.removeAll()
     }
 
     private func stopWaiting(id: String, token: UUID) {

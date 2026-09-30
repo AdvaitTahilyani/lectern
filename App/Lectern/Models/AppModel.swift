@@ -36,6 +36,8 @@ final class AppModel {
     private(set) var sessions: [LectureSession] = []
     private(set) var isLibraryLoaded = false
     var libraryError: String?
+    /// Session files that could not be read at launch (kept on disk untouched); shown as a notice.
+    var skippedLectureCount = 0
 
     // MARK: Navigation
     var sidebarSelection: SidebarItem? = .all
@@ -84,6 +86,7 @@ final class AppModel {
 
     private var searchTask: Task<Void, Never>?
     private var modelTask: Task<Void, Never>?
+    private var usageTask: Task<Void, Never>?
     private var restoredVisibility: NavigationSplitViewVisibility = .all
 
     private static let settingsKey = "LecternSettings"
@@ -104,6 +107,7 @@ final class AppModel {
         columnVisibility = loadedPreferences.sidebarVisible ? .all : .detailOnly
         observeModels()
         observeActivation()
+        observeUsageCap()
     }
 
     // MARK: - App activation (for "While you were away")
@@ -135,9 +139,11 @@ final class AppModel {
     func loadLibrary() async {
         do {
             async let c = services.store.loadCourses()
-            async let s = services.store.loadSessions()
+            async let l = services.loadLibrary()
             courses = try await c
-            sessions = try await s
+            let library = try await l
+            sessions = library.sessions
+            skippedLectureCount = library.skipped
             isLibraryLoaded = true
             libraryError = nil
             if setup.courseID == nil { setup.courseID = defaultCourseID() }
@@ -154,6 +160,38 @@ final class AppModel {
                 guard let self else { return }
                 self.modelStates = states
             }
+        }
+    }
+
+    // MARK: - API cost cap
+
+    /// Shows the monthly-cap notice (posted at most once a month) in the lecture on screen.
+    private func observeUsageCap() {
+        guard let usage = services.usage else { return }
+        usageTask = Task { [weak self] in
+            for await notice in await usage.capNotices() {
+                self?.showCapNotice(notice)
+            }
+        }
+    }
+
+    private func showCapNotice(_ notice: UsageCapNotice) {
+        let cap = notice.capUSD.formatted(.currency(code: "USD"))
+        let title = notice.fellBack
+            ? "This month's \(cap) API cap is reached. Cloud roles now use the on-device model."
+            : "This month's \(cap) API cap is reached. Cloud roles are paused; raise the cap in Settings › Models."
+        let visible: LiveSessionModel? = if case .session(let id) = path.last { openSessions[id] } else { nil }
+        (liveSession ?? visible)?.showNotice(Notice(id: "usage-cap", kind: .info, symbol: "dollarsign.circle", title: title, placement: .takeaways, actionLabel: nil))
+    }
+
+    /// An export failed: shown as a banner in the lecture on screen, or in the Library.
+    func exportFailed(_ kind: String, error: Error) {
+        let message = "Couldn't export the \(kind): \(error.localizedDescription)"
+        let visible: LiveSessionModel? = if case .session(let id) = path.last { openSessions[id] } else { nil }
+        if let target = visible ?? liveSession {
+            target.showNotice(Notice(id: "export", kind: .warning, symbol: "exclamationmark.triangle", title: message, placement: .takeaways, actionLabel: nil))
+        } else {
+            libraryError = message
         }
     }
 
@@ -201,11 +239,33 @@ final class AppModel {
     }
 
     @discardableResult
-    func addCourse(code: String, name: String, colorHex: String?) -> Course {
-        let course = Course(code: code, name: name, colorHex: colorHex)
+    func addCourse(code: String, name: String, colorHex: String?, slidesFolder: URL? = nil) -> Course {
+        let course = Course(code: code, name: name, colorHex: colorHex, slidesFolder: slidesFolder)
         courses.append(course)
         persistCourses()
         return course
+    }
+
+    /// Sets (or clears) the folder where the course's slide decks live; Setup suggests from it.
+    func setSlidesFolder(_ folder: URL?, for id: UUID) {
+        guard let i = courses.firstIndex(where: { $0.id == id }), courses[i].slidesFolder != folder else { return }
+        courses[i].slidesFolder = folder
+        persistCourses()
+        if setup.courseID == id { refreshDeckSuggestions() }
+    }
+
+    /// Asks for the course's slides folder with an open panel.
+    func chooseSlidesFolder(for id: UUID) {
+        guard let course = course(id: id), let folder = SlidesFolderPanel.choose(for: course) else { return }
+        setSlidesFolder(folder, for: id)
+    }
+
+    /// Re-scans the Setup course's slides folder. Decks of the course's earlier lectures count as
+    /// used, so the suggestion moves on to the next one.
+    func refreshDeckSuggestions() {
+        let course = course(id: setup.courseID)
+        let used = Set(sessions.filter { $0.courseID != nil && $0.courseID == course?.id }.compactMap { $0.deck?.originalFileName })
+        setup.refreshDeckSuggestions(folder: course?.slidesFolder, usedFileNames: used)
     }
 
     func renameCourse(_ id: UUID, code: String, name: String) {
@@ -251,10 +311,28 @@ final class AppModel {
 
     func deleteSession(_ id: UUID) {
         sessions.removeAll { $0.id == id }
-        openSessions[id] = nil
+        let model = openSessions.removeValue(forKey: id)
         Task { [services] in
+            // A save still in flight must finish (and pending ones be dropped) before the folder
+            // goes, or it would write the lecture back.
+            await model?.discardPendingSave()
             do { try await services.store.delete(sessionID: id) } catch { self.libraryError = error.localizedDescription }
         }
+    }
+
+    /// Closes review lectures that have left the screen and have nothing running. Each open
+    /// lecture keeps a brain (holding its transcript) and a set of tasks alive, so without this
+    /// every lecture ever opened stays in memory until quit.
+    private func closeIdleSessions(except keep: UUID?) {
+        for (id, model) in openSessions where id != keep && model.isIdle {
+            openSessions[id] = nil
+            Task { await model.close() }
+        }
+    }
+
+    /// Writes every open lecture's newest state (quit, or before the app goes away).
+    func flushSessions() async {
+        for model in Array(openSessions.values) { await model.flush() }
     }
 
     func moveSession(_ id: UUID, to courseID: UUID) {
@@ -262,7 +340,9 @@ final class AppModel {
         sessions[i].courseID = courseID
         let snapshot = sessions[i]
         openSessions[id]?.setCourse(course(id: courseID))
-        Task { [services] in try? await services.store.save(snapshot) }
+        Task { [services] in
+            do { try await services.store.save(snapshot) } catch { self.libraryError = error.localizedDescription }
+        }
     }
 
     /// Reflects a session model's changes into the library list (called by autosave).
@@ -281,7 +361,15 @@ final class AppModel {
         if setup.courseID == nil { setup.courseID = defaultCourseID() }
         if case .course(let id) = sidebarSelection, setup.deck == nil, setup.title.isEmpty { setup.courseID = id }
         setup.beginMonitoring()
+        refreshDeckSuggestions()
         if path.last != .setup { path.append(.setup) }
+        closeIdleSessions(except: nil)
+    }
+
+    /// Returns to the Library (the detail column shows one screen at a time).
+    func goBack() {
+        withAnimation(DS.Motion.reduced) { path = [] }
+        closeIdleSessions(except: nil)
     }
 
     func showSetup(droppedPDF url: URL) {
@@ -298,6 +386,7 @@ final class AppModel {
             openSessions[id] = model
         }
         path = [.session(id)]
+        closeIdleSessions(except: id)
     }
 
     func session(for id: UUID) -> LiveSessionModel? { openSessions[id] }
@@ -346,9 +435,12 @@ final class AppModel {
         }
         isSearching = true
         let scope = searchScope
+        let library = sessions
         searchTask = Task { [services] in
             do {
-                let hits = try await services.search(query, scope)
+                // Wait for a pause in typing: a search scans every transcript.
+                try await Task.sleep(for: .milliseconds(200))
+                let hits = try await services.search(query, scope, library)
                 guard !Task.isCancelled else { return }
                 self.searchResults = hits
             } catch {
@@ -362,13 +454,11 @@ final class AppModel {
     // MARK: - Interrupted sessions (crash recovery)
 
     /// Sessions left `.live`/`.paused`/`.importing` by a previous run and not active now.
-    var interruptedSessions: [LectureSession] {
-        sessions.filter { s in
-            (s.status == .live || s.status == .paused || s.status == .importing) && liveSession?.id != s.id && imports[s.id] == nil
-        }
-    }
+    var interruptedSessions: [LectureSession] { sessions.filter(isInterrupted) }
 
-    func isInterrupted(_ id: UUID) -> Bool { interruptedSessions.contains { $0.id == id } }
+    func isInterrupted(_ s: LectureSession) -> Bool {
+        (s.status == .live || s.status == .paused || s.status == .importing) && liveSession?.id != s.id && imports[s.id] == nil
+    }
 
     /// Picks recording back up on a session that was live when the app last quit.
     func resumeInterrupted(_ id: UUID) {
@@ -403,8 +493,6 @@ final class AppModel {
         model.finishWithoutRecording()
         path = [.session(id)]
     }
-
-    func discardInterrupted(_ id: UUID) { deleteSession(id) }
 
     // MARK: - Import a recording
 
@@ -441,25 +529,32 @@ final class AppModel {
         case .mediaSpace(let ms, let captions): session.source = .mediaSpace(entryID: ms.entryID, pageURL: ms.pageURL, usedCaptions: captions)
         }
         let deckURL = importDraft.deckURL
+        let fixingJargon = settings.fixesJargonFromSlides
         let job = ImportJob(session: session)
         imports[session.id] = job
         libraryDidUpdate(session)
         showImportSheet = false
         importDraft.reset()
-        Task { [services] in
+        Task { [weak self, services] in
             var draft = session
             if let deckURL {
-                if let deck = try? await services.slideIngestor.ingest(pdfAt: deckURL, progress: { _ in }) {
-                    var stored = deck
-                    stored.fileName = (try? await services.store.importSlides(from: deckURL, into: session.id)) ?? deck.fileName
+                do {
+                    var stored = try await services.slideIngestor.ingest(pdfAt: deckURL, progress: { _ in })
+                    do {
+                        stored.fileName = try await services.store.importSlides(from: deckURL, into: session.id)
+                    } catch {
+                        self?.libraryError = "Couldn't copy the slide deck for “\(session.title)” into the library: \(error.localizedDescription)"
+                    }
                     draft.deck = stored
+                } catch {
+                    self?.libraryError = "Couldn't read the slide deck for “\(session.title)”: \(error.localizedDescription) It is being imported without slides."
                 }
             }
-            try? await services.store.save(draft)
-            job.start(source: source, services: services) { [weak self] result in
+            do { try await services.store.save(draft) } catch { self?.libraryError = error.localizedDescription }
+            job.start(source: source, services: services, fixingJargon: fixingJargon) { [weak self] result in
                 guard let self else { return }
                 self.libraryDidUpdate(result)
-                Task { try? await services.store.save(result) }
+                Task { do { try await services.store.save(result) } catch { self.libraryError = error.localizedDescription } }
                 self.imports[result.id] = nil
                 self.openSession(result.id)
             } onFailed: { [weak self] _ in

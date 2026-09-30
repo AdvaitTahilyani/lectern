@@ -10,6 +10,18 @@ struct ReasoningTokens: Sendable, Hashable {
     let budget: Int
 }
 
+extension MLXArray {
+    /// A 1-D array padded with zeros (or cut) to `dimension` entries. Tokenizers and `lm_head`
+    /// often disagree on the vocabulary size (padded output layers), and a per-token bias only
+    /// applies when it matches the logits.
+    func fitted(to dimension: Int) -> MLXArray {
+        let count = dim(0)
+        if count == dimension { return self }
+        if count > dimension { return self[..<dimension] }
+        return concatenated([self, MLXArray.zeros([dimension - count], dtype: dtype)])
+    }
+}
+
 /// Expands xgrammar's packed token bitmasks into boolean masks over the logits, on the GPU.
 final class GrammarMaskExpander {
     let logitDimension: Int
@@ -25,15 +37,15 @@ final class GrammarMaskExpander {
         let lastWord = Int32(max(0, (grammarVocabularySize - 1) / 32))
         positions = ids
         wordIndex = minimum(floorDivide(ids, Int32(32)), lastWord).asType(.int32)
-        bitShift = (ids % Int32(32)).asType(.uint32)
+        bitShift = ids % Int32(32)
         inVocabulary = ids .< Int32(grammarVocabularySize)
     }
 
     /// `true` where the grammar allows the token.
     func allowed(_ bitmask: [Int32]) -> MLXArray {
-        let words = MLXArray(bitmask.map { UInt32(bitPattern: $0) })
-        let bits = (words.take(wordIndex) >> bitShift) & UInt32(1)
-        return (bits .== UInt32(1)) .&& inVocabulary
+        // Signed words are fine: an arithmetic shift followed by `& 1` still isolates bit `s`.
+        let bits = (MLXArray(bitmask).take(wordIndex) >> bitShift) & Int32(1)
+        return (bits .== Int32(1)) .&& inVocabulary
     }
 }
 
@@ -125,12 +137,6 @@ struct ConstrainedDecodingProcessor: LogitProcessor {
     /// First grammar or bookkeeping error; generation must stop when set.
     var failure: Error? { state.failure }
 
-    /// Whether the model is currently inside its reasoning block.
-    var isReasoning: Bool {
-        if case .reasoning = state.phase { return true }
-        return false
-    }
-
     mutating func prompt(_ prompt: MLXArray) {}
 
     func process(logits: MLXArray) -> MLXArray {
@@ -148,14 +154,10 @@ struct ConstrainedDecodingProcessor: LogitProcessor {
         case .constrained:
             guard let allowed = grammarMask() else { return logits }
             var result = masked(logits, allowed: allowed)
-            if let bias = whitespaceBias, state.whitespace?.isActive == true,
-                bias.dim(0) == result.dim(-1)
-            {
+            if let bias = whitespaceBias, state.whitespace?.isActive == true {
                 result = result + bias.asType(result.dtype)
             }
-            if let closing, state.sampledTokens >= closing.startsAfter,
-                closing.bias.dim(0) == result.dim(-1)
-            {
+            if let closing, state.sampledTokens >= closing.startsAfter {
                 result = result + closing.bias.asType(result.dtype)
             }
             return result

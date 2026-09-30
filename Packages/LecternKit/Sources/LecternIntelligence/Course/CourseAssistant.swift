@@ -30,10 +30,13 @@ public actor CourseAssistant: CourseAssisting {
         let query = question + " " + (history.last?.question ?? "")
         let messages = Prompts.courseAsk(courseName: courseName, lectureIndex: lectureIndex, material: index.material(for: query),
                                          question: question, history: Self.historyMessages(history))
-        let request = LLMRequest(messages: messages, maxTokens: GenerationProfile.answer.maxTokens,
-                                 temperature: GenerationProfile.answer.temperature, responseFormat: .text,
-                                 reasoning: GenerationProfile.answer.reasoning)
-        await gate.acquire()
+        let request = GenerationProfile.answer.request(messages)
+        do {
+            try await gate.acquire()
+        } catch {
+            continuation.finish(throwing: error)
+            return
+        }
         var full = ""
         var failure: Error?
         do {

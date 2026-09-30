@@ -62,6 +62,7 @@ struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+        .task { await model.refreshStorage() }
     }
 }
 
@@ -116,6 +117,13 @@ struct TranscriptionSettings: View {
                 Toggle("Voice isolation", isOn: Binding(get: { model.preferences.voiceIsolation }, set: { v in model.updatePreferences { $0.voiceIsolation = v } }))
             }
             Section {
+                Toggle("Fix course jargon from slides", isOn: Binding(get: { model.settings.fixesJargonFromSlides }, set: { model.setFixesJargon($0) }))
+                Text("When the lecture's deck uses a term, misheard versions of it are corrected, like “gen expression” → genExpr or “L are” → LR. Corrected words are underlined with dots in the transcript; hover to see what was heard.")
+                    .font(DS.Typo.footnote).foregroundStyle(.secondary)
+            } header: {
+                Text("Slides")
+            }
+            Section {
                 List(selection: $model.selectedVocabulary) {
                     ForEach(model.settings.vocabulary, id: \.self) { term in Text(term).tag(term) }
                         .onDelete { model.removeVocabulary(at: $0) }
@@ -152,6 +160,7 @@ struct ModelsSettings: View {
                 ForEach(LLMRole.allCases) { role in roleRow(role) }
                 Text("Each role can use a different provider. On-device keeps everything private.").font(DS.Typo.footnote).foregroundStyle(.secondary)
             } header: { Text("Roles") }
+            if model.isMeteringUsage { spendingSection }
             Section("Providers") {
                 DisclosureGroup(isExpanded: binding(.onDevice)) { onDeviceGroup } label: { Text("On-device (MLX)") }
                 DisclosureGroup(isExpanded: binding(.localServer)) { localServerGroup } label: { Text("Local server (Ollama / LM Studio)") }
@@ -160,7 +169,70 @@ struct ModelsSettings: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { openGroups = Set(model.settings.providers.values.map(\.kind)) }
+        .onAppear {
+            openGroups = Set(model.settings.providers.values.map(\.kind))
+            model.startUsageUpdates()
+        }
+        .onDisappear { model.stopUsageUpdates() }
+    }
+
+    // MARK: Cloud spending
+
+    private var spendingSection: some View {
+        Section {
+            LabeledContent(model.usage.monthName.isEmpty ? "This month" : model.usage.monthName) {
+                Text(model.usage.totalUSD, format: .currency(code: "USD"))
+                    .font(DS.Typo.mono)
+                    .contentTransition(.numericText())
+            }
+            ForEach(model.usage.lines) { line in
+                LabeledContent {
+                    Text(line.costUSD, format: .currency(code: "USD")).font(DS.Typo.mono).foregroundStyle(.secondary)
+                } label: {
+                    VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                        Text("\(line.provider.displayName) · \(line.model)")
+                        Text(usageDetail(line)).font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            LabeledContent("Monthly cap") {
+                HStack(spacing: DS.Space.s) {
+                    if model.monthlyCap != nil {
+                        TextField("Cap", value: Binding(get: { model.monthlyCap ?? 10 }, set: { model.setMonthlyCap($0) }), format: .currency(code: "USD"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                            .accessibilityLabel("Monthly cap in dollars")
+                    }
+                    Toggle("Monthly cap", isOn: Binding(get: { model.monthlyCap != nil }, set: { model.setCapEnabled($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+            }
+            if model.isCapReached {
+                Label(
+                    model.hasOnDeviceFallback ? "Cap reached. Cloud roles use the on-device model until next month." : "Cap reached. Cloud roles are paused until next month or a higher cap.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(DS.Typo.footnote)
+                .foregroundStyle(DS.Colors.warning)
+            }
+            Text("From each provider's list prices per 1M tokens; prompt-cache reads cost a tenth of fresh input (Anthropic cache writes 1.25×). On-device and local-server models are free. At the cap, cloud roles switch to the on-device model if it's downloaded.")
+                .font(DS.Typo.footnote).foregroundStyle(.secondary)
+        } header: {
+            Text("Cloud spending")
+        }
+    }
+
+    private func usageDetail(_ line: UsageMonthSummary.Line) -> String {
+        let tokens = (line.inputTokens + line.outputTokens).formatted(.number.notation(.compactName))
+        var parts = ["\(line.calls) call\(line.calls == 1 ? "" : "s")", "\(tokens) tokens"]
+        if line.inputTokens > 0, line.cachedInputTokens > 0 {
+            parts.append("\(Int((Double(line.cachedInputTokens) / Double(line.inputTokens) * 100).rounded()))% cached")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func binding(_ kind: ProviderKind) -> Binding<Bool> {
@@ -169,23 +241,25 @@ struct ModelsSettings: View {
 
     private func roleRow(_ role: LLMRole) -> some View {
         let config = model.settings.provider(for: role)
-        return LabeledContent(role.displayName) {
-            HStack(spacing: DS.Space.s) {
-                Picker("Provider", selection: Binding(get: { config.kind }, set: { model.setProvider($0, for: role) })) {
-                    ForEach(ProviderKind.allCases) { Text($0.displayName).tag($0) }
-                }
-                .labelsHidden().frame(width: 150)
-                .accessibilityLabel("\(role.displayName) provider")
-                Picker("Model", selection: Binding(get: { config.model }, set: { model.setModel($0, for: role) })) {
-                    ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
-                    if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
-                }
-                .labelsHidden().frame(width: 240)
-                .help(displayName(config.model, kind: config.kind))
-                .accessibilityLabel("\(role.displayName) model")
-                roleStatus(role, config: config)
+        // A plain row (not LabeledContent, which combines its children into one text node for
+        // accessibility): each popup stays an individual labeled control with its value (QA AX).
+        return HStack(spacing: DS.Space.s) {
+            Text(role.displayName).frame(width: 84, alignment: .leading)
+            Picker("\(role.displayName) provider", selection: Binding(get: { config.kind }, set: { model.setProvider($0, for: role) })) {
+                ForEach(ProviderKind.allCases) { Text($0.displayName).tag($0) }
             }
+            .labelsHidden().frame(width: 150)
+            .accessibilityLabel("\(role.displayName) provider")
+            Picker("\(role.displayName) model", selection: Binding(get: { config.model }, set: { model.setModel($0, for: role) })) {
+                ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
+                if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
+            }
+            .labelsHidden().frame(width: 240)
+            .help(displayName(config.model, kind: config.kind))
+            .accessibilityLabel("\(role.displayName) model")
+            roleStatus(role, config: config)
         }
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private func roleStatus(_ role: LLMRole, config: ProviderConfig) -> some View {

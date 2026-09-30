@@ -45,7 +45,7 @@ final class PromptCachePool {
     }
 
     /// Drops all but the `count` most recently used slots.
-    func keepMostRecent(_ count: Int) {
+    private func keepMostRecent(_ count: Int) {
         guard slots.count > count else { return }
         slots.removeLast(slots.count - max(0, count))
     }

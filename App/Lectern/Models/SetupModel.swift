@@ -67,6 +67,13 @@ final class SetupModel {
     private(set) var presenterNotes: [Int: String] = [:]
     private var convertTask: Task<Void, Never>?
 
+    /// Decks offered from the chosen course's slides folder (re-scanned whenever Setup opens or
+    /// the course changes; no folder watching).
+    private(set) var deckSuggestions: SuggestedDecks = .none
+    /// Set when the course has a slides folder that couldn't be read.
+    private(set) var deckSuggestionsError: String?
+    private var suggestTask: Task<Void, Never>?
+
     var resolvedTitle: String {
         let t = title.trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? "Lecture \(Self.dateFormatter.string(from: .now))" : t
@@ -200,6 +207,32 @@ final class SetupModel {
             } catch is CancellationError {
             } catch {
                 self.failDeck(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Re-scans `folder` (the course's slides folder, or nil) and ranks its decks for the next
+    /// lecture. `usedFileNames` are the decks of the course's earlier sessions.
+    func refreshDeckSuggestions(folder: URL?, usedFileNames: Set<String>) {
+        suggestTask?.cancel()
+        guard let folder else {
+            deckSuggestions = .none
+            deckSuggestionsError = nil
+            return
+        }
+        let accepted = acceptedExtensions
+        suggestTask = Task { [services] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try services.suggestDecks(folder, usedFileNames, accepted) }
+            }.value
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .success(let suggestions):
+                self.deckSuggestions = suggestions
+                self.deckSuggestionsError = nil
+            case .failure:
+                self.deckSuggestions = .none
+                self.deckSuggestionsError = "Couldn't open the slides folder “\(folder.lastPathComponent)”"
             }
         }
     }

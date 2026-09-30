@@ -77,4 +77,43 @@ import Testing
         let attrs = HLSParser.attributes(of: #"#X:A=1,B="x,y=z",C=ABC"#, after: "#X:")
         #expect(attrs == ["A": "1", "B": "x,y=z", "C": "ABC"])
     }
+
+    // MARK: Segment download
+
+    private static func downloadFixture() throws -> (playlist: HLSMediaPlaylist, segment: Data, directory: URL) {
+        let audio = MPEGTSAudioDemuxerTests.frames(3).reduce(Data(), +)
+        let playlist = try HLSParser.parseMedia(
+            "#EXTM3U\n#EXTINF:1,\nseg-1.ts\n#EXTINF:1,\nseg-2.ts\n#EXTINF:1,\nseg-3.ts\n#EXT-X-ENDLIST",
+            baseURL: URL(string: "https://cdn.test/a/index.m3u8")!
+        )
+        return (playlist, TSBuilder.segment(audioChunks: [audio]), try makeTemporaryDirectory("hls"))
+    }
+
+    @Test func retriesTransientServerErrorsOnASegment() async throws {
+        let (playlist, segment, directory) = try Self.downloadFixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attempts = Box(0)
+        let server = StubServer { url in
+            if url.lastPathComponent == "seg-2.ts" {
+                attempts.value += 1
+                if attempts.value == 1 { return StubResponse(status: 503) }
+            }
+            return .data(segment)
+        }
+        let file = try await HLSAudioDownloader(fetcher: HTTPFetcher(session: server.session))
+            .download(playlist, toStem: directory.appendingPathComponent("out")) { _ in }
+        #expect(attempts.value == 2)
+        #expect(try Data(contentsOf: file).count == 3 * MPEGTSAudioDemuxerTests.frames(3).reduce(0) { $0 + $1.count })
+    }
+
+    @Test func clientErrorsOnASegmentAreNotRetried() async throws {
+        let (playlist, segment, directory) = try Self.downloadFixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let server = StubServer { url in url.lastPathComponent == "seg-2.ts" ? .notFound : .data(segment) }
+        await #expect(throws: ImportError.mediaUnavailable("not found")) {
+            try await HLSAudioDownloader(fetcher: HTTPFetcher(session: server.session))
+                .download(playlist, toStem: directory.appendingPathComponent("out")) { _ in }
+        }
+        #expect(server.requests.filter { $0.lastPathComponent == "seg-2.ts" }.count == 1)
+    }
 }

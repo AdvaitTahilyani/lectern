@@ -27,6 +27,12 @@ final class SettingsModel {
     private var levelMonitor: (any AudioLevelMonitoring)?
     private var levelTask: Task<Void, Never>?
 
+    /// This month's cloud spending (Settings › Models).
+    private(set) var usage: UsageMonthSummary = .empty
+    private var usageTask: Task<Void, Never>?
+    /// The last cap the user set, restored when the cap is switched back on.
+    private var lastCap: Double = 10
+
     /// Model choices per provider shown in the pickers.
     static let cloudModels: [ProviderKind: [String]] = [
         .openAI: ["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini"],
@@ -148,6 +154,45 @@ final class SettingsModel {
 
     func testState(_ kind: ProviderKind) -> TestState { testStates[kind] ?? .idle }
 
+    // MARK: API cost
+
+    /// False in the demo, which has no cloud calls to meter.
+    var isMeteringUsage: Bool { app.services.usage != nil }
+    var monthlyCap: Double? { settings.monthlyCloudCapUSD }
+
+    func setMonthlyCap(_ cap: Double?) {
+        let value = cap.map { max(0.01, ($0 * 100).rounded() / 100) }
+        if let value { lastCap = value }
+        app.updateSettings { $0.monthlyCloudCapUSD = value }
+    }
+
+    func setCapEnabled(_ on: Bool) { setMonthlyCap(on ? (monthlyCap ?? lastCap) : nil) }
+
+    var isCapReached: Bool {
+        guard let cap = monthlyCap, cap > 0 else { return false }
+        return usage.totalUSD >= cap
+    }
+
+    /// Whether an on-device language model is downloaded for cloud roles to fall back to.
+    var hasOnDeviceFallback: Bool { catalog.contains { $0.purpose == .language && modelState($0.id).isInstalled } }
+
+    /// Keeps `usage` current while the Models tab is visible.
+    func startUsageUpdates() {
+        guard usageTask == nil, let reporter = app.services.usage else { return }
+        usageTask = Task { [weak self] in
+            for await _ in await reporter.changes() {
+                let month = await reporter.currentMonth()
+                guard let self, !Task.isCancelled else { return }
+                self.usage = month
+            }
+        }
+    }
+
+    func stopUsageUpdates() {
+        usageTask?.cancel()
+        usageTask = nil
+    }
+
     // MARK: Downloads
 
     func download(_ id: String) { app.services.onDeviceModels.download(id: id) }
@@ -158,6 +203,7 @@ final class SettingsModel {
     // MARK: Transcription
 
     func setEngine(_ engine: TranscriptionEngineID) { app.updateSettings { $0.transcriptionEngine = engine } }
+    func setFixesJargon(_ on: Bool) { app.updateSettings { $0.fixesJargonFromSlides = on } }
     func setInputDevice(_ id: String?) {
         app.updateSettings { $0.inputDeviceID = id }
         stopLevel()
@@ -224,11 +270,37 @@ final class SettingsModel {
     func updateQuiz(_ change: (inout QuizSettings) -> Void) { app.updateSettings { change(&$0.quiz) } }
     func updatePreferences(_ change: (inout UIPreferences) -> Void) { app.updatePreferences(change) }
 
+    /// Size of the lecture library on disk; nil until `refreshStorage()` has measured it.
+    private(set) var libraryBytes: Int64?
+
+    /// Measures the library folder off the main actor (a library with slide decks and kept audio
+    /// runs to gigabytes).
+    func refreshStorage() async {
+        let location = storageLocation
+        libraryBytes = await Task.detached(priority: .utility) { Self.size(of: location) }.value
+    }
+
     var storageSummary: String {
         let lectures = app.sessions.count
         let models = catalog.filter { modelState($0.id).isInstalled }
-        let bytes = models.reduce(Int64(0)) { $0 + $1.sizeBytes } + Int64(lectures) * 12_000_000
-        return "\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) · \(lectures) lectures · \(models.count) models"
+        let library = libraryBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "Measuring…"
+        var parts = ["\(library) · \(lectures) \(lectures == 1 ? "lecture" : "lectures")"]
+        if !models.isEmpty {
+            let modelBytes = models.reduce(Int64(0)) { $0 + $1.sizeBytes }
+            parts.append("\(ByteCountFormatter.string(fromByteCount: modelBytes, countStyle: .file)) in \(models.count) \(models.count == 1 ? "model" : "models")")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    nonisolated private static func size(of folder: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        guard let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in files {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            total += Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
+        }
+        return total
     }
 
     var storageLocation: URL {

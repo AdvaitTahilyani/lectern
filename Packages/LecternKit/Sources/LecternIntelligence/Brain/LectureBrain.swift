@@ -45,8 +45,13 @@ public actor LectureBrain: LectureIntelligence {
     var summaryTask: Task<Void, Never>?
     var summaryBackoff = Backoff()
     var isFinishing = false
+    var finishTask: Task<Void, Never>?
+    var retrieverCache: (count: Int, retriever: TranscriptRetriever)?
     var detailCache: [UUID: CachedDetail] = [:]
     var pendingSpeakers: [UUID: SpeakerRole] = [:]
+    /// Items flagged by recaps this session, offered to the lecture summary (not persisted: a
+    /// reopened lecture re-finds announcements in the transcript).
+    var recapFlags: [String] = []
 
     // Slides
     var currentSlide: Int?
@@ -55,6 +60,20 @@ public actor LectureBrain: LectureIntelligence {
     /// When each slide became current (transcript time), so updates processed after the fact (an
     /// import, a backlog) see the slide that was on screen for *their* stretch of transcript.
     var slideHistory: [(time: TimeInterval, page: Int)] = []
+
+    // Coverage
+    /// First segment of the current run of lines the rolling updates filed as admin while a card
+    /// was live (see `AsideStretch`).
+    var adminRunStart: Int?
+    /// Cards written by a dedicated call for an announcements/Q&A stretch, with the transcript
+    /// time their text was last written up to (rewritten when they settle having grown).
+    var asideCards: [UUID: TimeInterval] = [:]
+    /// When the lecturer closed the class, if heard.
+    var classEndedAt: TimeInterval?
+    /// A reopened lecture with no record of its slides: nothing is known to be unshown.
+    var deckProgressUnknown = false
+    /// A reopened lecture's progress through the deck, from its cards' slides and its last slide.
+    var recordedProgress: [(time: TimeInterval, page: Int)] = []
 
     // Quizzes
     var planner: QuizPlanner
@@ -110,6 +129,14 @@ public actor LectureBrain: LectureIntelligence {
         lastQuizAt = context.quizHistory.map(\.askedAt).max() ?? 0
         quizMaterialMark = context.quizHistory.compactMap(\.question.sourceEnd).max() ?? 0
 
+        // A reopened lecture: how far into the deck it got (its cards' slides, the last slide).
+        if !transcript.isEmpty {
+            recordedProgress = timeline.takeaways.compactMap { t in t.slidePages.max().map { (t.start, $0) } }
+                + (context.currentSlide.map { [(transcript.last?.end ?? 0, $0)] } ?? [])
+            deckProgressUnknown = recordedProgress.isEmpty
+            currentSlide = context.currentSlide
+            classEndedAt = transcript.first(where: AsideStretch.endsClass)?.end
+        }
         gates = Dictionary(uniqueKeysWithValues: LLMRole.allCases.map { ($0, SerialGate()) })
         for t in timeline.takeaways where !t.isLive {
             if let detail = t.detail { detailCache[t.id] = CachedDetail(fingerprint: .init(t), detail: detail) }
@@ -129,6 +156,7 @@ public actor LectureBrain: LectureIntelligence {
         if let label = pendingSpeakers.removeValue(forKey: segment.id) { segment.speaker = label }
         segments.append(segment)
         sessionTime = max(sessionTime, segment.end)
+        if classEndedAt == nil, AsideStretch.endsClass(segment) { classEndedAt = segment.end }
         trackSlide()
         scheduleSummaryIfNeeded()
     }
@@ -160,8 +188,8 @@ public actor LectureBrain: LectureIntelligence {
     public func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {
         quizSettings = quiz
         summaryInterval = max(15, summaryIntervalSeconds)
+        // Timed quizzes start only from the session clock (`tick`), never from a settings change.
         scheduleSummaryIfNeeded()
-        scheduleQuizIfDue()
     }
 
     // MARK: - Plumbing shared by the feature extensions
@@ -170,16 +198,20 @@ public actor LectureBrain: LectureIntelligence {
         continuation.yield(update)
     }
 
-    /// Runs `body` holding the role's gate, with `activity` reported while it runs.
-    func withRole<T>(_ role: LLMRole, _ activity: BrainActivity, _ body: () async throws -> T) async rethrows -> T {
-        let gate = gates[role]!
-        await gate.acquire()
+    /// Runs `body` with `activity` reported while it runs. Background work (rolling takeaways,
+    /// timed questions) holds the role's gate, so at most one such call chain per role is in
+    /// flight; interactive work (someone is waiting) never queues behind it and goes straight to
+    /// the provider, whose own scheduler serves it first (`LLMRequest.priority`).
+    func withRole<T>(_ role: LLMRole, _ activity: BrainActivity, priority: RequestPriority = .background,
+                     _ body: () async throws -> T) async throws -> T {
+        let gate = priority == .background ? gates[role]! : nil
+        try await gate?.acquire()
         let token = activities.begin(activity)
         emit(.activity(activity))
         func finish() async {
             activities.end(token)
             emit(.activity(activities.current))
-            await gate.release()
+            await gate?.release()
         }
         do {
             let result = try await body()
@@ -195,13 +227,21 @@ public actor LectureBrain: LectureIntelligence {
     func validCitations(in text: String) -> [Citation] {
         let pages = excerpts.validPages
         let latest = (segments.last?.end ?? 0) + 5
+        var times: [TimeInterval] = []
         return CitationParser.citations(in: text).filter { citation in
             switch citation {
-            case .slide(let n): pages.contains(n)
-            case .time(let t): t <= latest
+            case .slide(let n): return pages.contains(n)
+            case .time(let t):
+                // Several stamps from the same passage are one source.
+                guard t <= latest, !times.contains(where: { abs($0 - t) < Self.sameCitationSeconds }) else { return false }
+                times.append(t)
+                return true
             }
         }
     }
+
+    /// Transcript citations closer than this point at the same passage.
+    static let sameCitationSeconds: TimeInterval = 10
 
     // MARK: - Slide tracking
 
@@ -218,16 +258,45 @@ public actor LectureBrain: LectureIntelligence {
         lastSlideCheck = last.end
         let recent = segments.reversed().prefix { $0.end >= last.end - tuning.slideWindowSeconds }
         let text = recent.reversed().map(\.text).joined(separator: " ")
-        if let page = slideSearch.likelySlide(forTranscript: text, near: currentSlide), page > (currentSlide ?? 0) {
+        if let page = slideSearch.likelySlide(forTranscript: text, near: currentSlide, sessionTime: last.end), page > (currentSlide ?? 0) {
             currentSlide = page
             slideHistory.append((last.start, page))
             emit(.currentSlide(page))
             suggestBacktrack(nil)
         }
         if let current = currentSlide {
-            suggestBacktrack(slideSearch.backtrackCandidate(forTranscript: text, current: current).flatMap { $0 < current ? $0 : nil })
+            suggestBacktrack(slideSearch.backtrackCandidate(forTranscript: text, current: current, sessionTime: last.end).flatMap { $0 < current ? $0 : nil })
         }
     }
+
+    /// Pages the lecture may have shown by transcript time `time` (now by default): up to the
+    /// tracker's high-water mark then, plus a small margin for tracking lag. Nil (everything
+    /// allowed) when slides aren't tracked, or for a reopened lecture whose progress through the
+    /// deck is unknown.
+    func presentedLimit(at time: TimeInterval = .infinity) -> Int? {
+        guard slideSearch != nil, let first = excerpts.validPages.min() else { return nil }
+        let reached = (slideHistory + recordedProgress).filter { $0.time <= time }.map(\.page).max()
+        if reached == nil, deckProgressUnknown { return nil }
+        return (reached ?? first) + Self.presentedMargin
+    }
+
+    var presentedLimit: Int? { presentedLimit() }
+
+    static let presentedMargin = 1
+
+    func isPresented(_ page: Int) -> Bool { isPresented(page, at: .infinity) }
+
+    func isPresented(_ page: Int, at time: TimeInterval) -> Bool {
+        presentedLimit(at: time).map { page <= $0 } ?? true
+    }
+
+    /// "S25–S34" for the deck pages not reached by `time` (now by default), or nil.
+    func unshownSlidesLabel(at time: TimeInterval = .infinity) -> String? {
+        guard let limit = presentedLimit(at: time), let last = excerpts.validPages.max(), last > limit else { return nil }
+        return last == limit + 1 ? "S\(last)" : "S\(limit + 1)–S\(last)"
+    }
+
+    var unshownSlidesLabel: String? { unshownSlidesLabel() }
 
     /// Slides on screen during `from...to`, in order (the one current at `from` first).
     func slidesShown(from: TimeInterval, to: TimeInterval) -> [Int] {

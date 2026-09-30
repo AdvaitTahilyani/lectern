@@ -14,6 +14,13 @@ enum AnthropicWire {
             guard inputTokens != nil || cacheReadInputTokens != nil || cacheCreationInputTokens != nil else { return nil }
             return (inputTokens ?? 0) + (cacheReadInputTokens ?? 0) + (cacheCreationInputTokens ?? 0)
         }
+
+        /// The whole prompt as `inputTokens`, with the cache-read and cache-write parts broken out.
+        var llmUsage: LLMUsage? {
+            totalInput.map {
+                LLMUsage(inputTokens: $0, outputTokens: outputTokens ?? 0, cachedInputTokens: cacheReadInputTokens, cacheWriteTokens: cacheCreationInputTokens)
+            }
+        }
     }
 
     struct ErrorBody: Decodable {
@@ -69,6 +76,8 @@ enum AnthropicWire {
 struct AnthropicStreamDecoder: SSEDecoder {
     private var inputTokens: Int?
     private var outputTokens: Int?
+    private var cacheReadTokens: Int?
+    private var cacheWriteTokens: Int?
     private var stopReason: String?
     private var emittedText = false
     private var finished = false
@@ -85,10 +94,7 @@ struct AnthropicStreamDecoder: SSEDecoder {
         }
         switch parsed.type {
         case "message_start":
-            if let usage = parsed.message?.usage {
-                inputTokens = usage.totalInput ?? inputTokens
-                outputTokens = usage.outputTokens ?? outputTokens
-            }
+            if let usage = parsed.message?.usage { take(usage) }
             return []
         case "content_block_delta":
             guard parsed.delta?.type == "text_delta", var text = parsed.delta?.text else { return [] }
@@ -97,10 +103,7 @@ struct AnthropicStreamDecoder: SSEDecoder {
             emittedText = true
             return [.delta(text)]
         case "message_delta":
-            if let usage = parsed.usage {
-                inputTokens = usage.totalInput ?? inputTokens
-                outputTokens = usage.outputTokens ?? outputTokens
-            }
+            if let usage = parsed.usage { take(usage) }
             stopReason = parsed.delta?.stopReason ?? stopReason
             return []
         case "message_stop":
@@ -120,13 +123,26 @@ struct AnthropicStreamDecoder: SSEDecoder {
         return []
     }
 
+    /// Usage arrives in `message_start` and (cumulatively) in `message_delta`; later values win.
+    private mutating func take(_ usage: AnthropicWire.Usage) {
+        inputTokens = usage.totalInput ?? inputTokens
+        outputTokens = usage.outputTokens ?? outputTokens
+        cacheReadTokens = usage.cacheReadInputTokens ?? cacheReadTokens
+        cacheWriteTokens = usage.cacheCreationInputTokens ?? cacheWriteTokens
+    }
+
     private mutating func finishStream() throws -> [LLMStreamEvent] {
         guard !finished else { return [] }
         finished = true
+        if stopReason == "refusal" {
+            throw LLMError.invalidResponse(AnthropicProvider.refusedMessage)
+        }
         if !emittedText && stopReason == "max_tokens" {
             throw LLMError.invalidResponse(AnthropicProvider.truncatedMessage)
         }
-        let usage = inputTokens.flatMap { input in outputTokens.map { LLMUsage(inputTokens: input, outputTokens: $0) } }
+        let usage = inputTokens.flatMap { input in
+            outputTokens.map { LLMUsage(inputTokens: input, outputTokens: $0, cachedInputTokens: cacheReadTokens, cacheWriteTokens: cacheWriteTokens) }
+        }
         return [.done(usage)]
     }
 }

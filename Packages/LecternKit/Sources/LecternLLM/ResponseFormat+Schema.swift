@@ -38,18 +38,56 @@ enum VerbatimJSON {
     }
 
     /// Replaces every serialized placeholder (a quoted string) in `data` with its original JSON text.
+    ///
+    /// Works on bytes: request bodies carry the whole prompt (hundreds of KB), and scanning that
+    /// as a `String` with a regex is far slower than a byte search. A placeholder is only
+    /// recognised in value position (after `:`, `[` or `,`), so message text that merely contains
+    /// a quoted lookalike (its quotes are escaped on the wire) is never rewritten.
     static func splice(into data: Data) -> Data {
-        guard var text = String(data: data, encoding: .utf8), text.contains(prefix) else { return data }
-        let pattern = try! Regex(#""__lectern_verbatim_json__:([A-Za-z0-9_\-=]+)""#)
-        text.replace(pattern) { match in
-            let encoded = String(match.output[1].substring ?? "")
-                .replacingOccurrences(of: "-", with: "+")
-                .replacingOccurrences(of: "_", with: "/")
-            guard let raw = Data(base64Encoded: encoded), let json = String(data: raw, encoding: .utf8) else {
-                return String(match.output[0].substring ?? "")
+        let marker = Data(("\"" + prefix).utf8)
+        guard data.range(of: marker) != nil else { return data }
+        let structural: Set<UInt8> = [UInt8(ascii: ":"), UInt8(ascii: "["), UInt8(ascii: ",")]
+
+        var out = Data()
+        out.reserveCapacity(data.count)
+        var cursor = data.startIndex
+        while let match = data.range(of: marker, in: cursor ..< data.endIndex) {
+            var end = match.upperBound
+            while end < data.endIndex, isBase64URL(data[end]) { end += 1 }
+            let atValue = match.lowerBound > data.startIndex && structural.contains(data[match.lowerBound - 1])
+            let decoded =
+                atValue && end < data.endIndex && data[end] == UInt8(ascii: "\"")
+                ? decode(data[match.upperBound ..< end]) : nil
+            if let decoded {
+                out.append(data[cursor ..< match.lowerBound])
+                out.append(decoded)
+                cursor = end + 1
+            } else {
+                out.append(data[cursor ..< match.upperBound])
+                cursor = match.upperBound
             }
-            return json
         }
-        return Data(text.utf8)
+        out.append(data[cursor...])
+        return out
+    }
+
+    private static func isBase64URL(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: "A") ... UInt8(ascii: "Z"), UInt8(ascii: "a") ... UInt8(ascii: "z"),
+            UInt8(ascii: "0") ... UInt8(ascii: "9"), UInt8(ascii: "-"), UInt8(ascii: "_"), UInt8(ascii: "="):
+            true
+        default:
+            false
+        }
+    }
+
+    private static func decode(_ base64url: Data) -> Data? {
+        guard
+            let encoded = String(data: base64url, encoding: .ascii)?
+                .replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/"),
+            let raw = Data(base64Encoded: encoded), String(data: raw, encoding: .utf8) != nil
+        else { return nil }
+        return raw
     }
 }

@@ -18,7 +18,15 @@ enum JSONRepairScanner {
     /// Repaired text of the object starting at `start` (which must be `{`), or nil if the scan
     /// never produced a closed top-level object. The result may still be invalid JSON; callers
     /// validate it.
-    static func repairObject(_ s: [Unicode.Scalar], from start: Int) -> String? {
+    /// A repaired object: its strict JSON, the index just past it in the input, and whether the
+    /// input ended before the object did (so open strings or containers were closed for it).
+    struct Repaired {
+        var json: String
+        var end: Int
+        var truncated: Bool
+    }
+
+    static func repairObject(_ s: [Unicode.Scalar], from start: Int) -> Repaired? {
         var out = String.UnicodeScalarView()
         var stack: [Unicode.Scalar] = []
         var i = start
@@ -104,7 +112,7 @@ enum JSONRepairScanner {
                     out.append(top == "{" ? "}" : "]")
                     if top == opener { break }
                 }
-                if stack.isEmpty { return String(out) }
+                if stack.isEmpty { return Repaired(json: String(out), end: i + 1, truncated: false) }
             case ",", ":":
                 out.append(c)
             case "/" where i + 1 < s.count && s[i + 1] == "/":
@@ -131,7 +139,7 @@ enum JSONRepairScanner {
         dropTrailingComma()
         if out.last == ":" { emit("null") }
         while let top = stack.popLast() { out.append(top == "{" ? "}" : "]") }
-        return out.isEmpty ? nil : String(out)
+        return out.isEmpty ? nil : Repaired(json: String(out), end: s.count, truncated: true)
     }
 
     /// The run of ASCII letters starting at `index`.

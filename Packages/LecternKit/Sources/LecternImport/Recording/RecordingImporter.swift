@@ -62,7 +62,7 @@ public struct RecordingImporter: RecordingImporting {
             var fromCaptions: Transcript?
             if preferCaptions {
                 progress(.downloading(fraction: 0))
-                let segments = try await kaltura.captions(for: mediaSource)
+                let segments = try await captionSegments(for: mediaSource)
                 if !segments.isEmpty { fromCaptions = Transcript(segments: segments, duration: segments.last?.end ?? 0) }
             }
             if let fromCaptions {
@@ -90,6 +90,20 @@ public struct RecordingImporter: RecordingImporting {
     }
 
     // MARK: - Transcript
+
+    /// The MediaSpace caption track, or nothing when it can't be had for any reason other than an
+    /// expired session: captions are only preferred, so the audio is transcribed instead.
+    private func captionSegments(for source: MediaSpaceSource) async throws -> [TranscriptSegment] {
+        do {
+            return try await kaltura.captions(for: source)
+        } catch ImportError.sessionExpired {
+            throw ImportError.sessionExpired
+        } catch {
+            try Task.checkCancellation()
+            onWarning("The lecture's captions couldn't be read (\(error.localizedDescription)); transcribing the audio instead.")
+            return []
+        }
+    }
 
     private struct Transcript {
         var segments: [TranscriptSegment]
@@ -154,7 +168,7 @@ public struct RecordingImporter: RecordingImporting {
         session: LectureSession,
         progress: @escaping @Sendable (ImportStage) -> Void
     ) async throws -> [Takeaway] {
-        let context = BrainContext(sessionTitle: session.title, courseName: nil, deck: session.deck, transcript: [], takeaways: [], quizHistory: [])
+        let context = BrainContext(sessionTitle: session.title, courseName: nil, deck: session.deck, transcript: [], takeaways: [], quizHistory: [], sessionID: session.id)
         let brain = await makeBrain(context)
         let latest = LatestTakeaways()
         let duration = max(transcript.duration, 1)

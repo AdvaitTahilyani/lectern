@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import LecternCore
-import NaturalLanguage
 import SwiftUI
 
 /// Owns one `LectureSession` (live or review): consumes transcription events and brain updates,
@@ -68,7 +67,6 @@ final class LiveSessionModel {
         var concepts: [MissedConcept]
         var index = 0
         var freshQuestion: QuizQuestion?
-        var freshAnswer: String = ""
         var freshSelected: Int?
         var freshGrade: QuizGrade?
         var isGrading = false
@@ -134,6 +132,12 @@ final class LiveSessionModel {
     /// "Add Deck…" chooser; presented from the session root so tier changes never remove it.
     var showDeckChooser = false
     var focusAskRequest = 0
+    /// Bumped when the session root should take keyboard focus back (after leaving Ask, citations).
+    var focusRootRequest = 0
+    /// Bumped to open the slide viewer popover in the two-column tier (⌘3).
+    var slideViewerRequest = 0
+    /// Current responsive tier, mirrored from the view so pane/inspector commands can respect it.
+    var layoutTier: LayoutTier = .three
 
     var onSessionChanged: ((LectureSession) -> Void)?
     var onFinished: (() -> Void)?
@@ -145,6 +149,7 @@ final class LiveSessionModel {
     private var brain: (any LectureIntelligence)?
     private var slideIndex: (any SlideSearching)?
     private var engineTask: Task<Void, Never>?
+    private var engineStop: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var askTask: Task<Void, Never>?
@@ -154,6 +159,16 @@ final class LiveSessionModel {
     private var deferredQuizTask: Task<Void, Never>?
     private var highlightTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    /// Set while the deck's slide index is being built: the brain is created when it finishes.
+    private var brainStartTask: Task<Void, Never>?
+    /// Hand-offs to the autosaver are chained so it always sees snapshots in order.
+    private var handoff: Task<Void, Never>?
+    private var libraryPublishTask: Task<Void, Never>?
+    /// The lecture was deleted: nothing may be saved or reported to the library any more.
+    private var isDiscarded = false
+    @ObservationIgnored private lazy var autosaver: any SessionAutosaving = services.makeAutosaver { [weak self] error in
+        Task { @MainActor in self?.saveFailed(error) }
+    }
     private var accumulated: TimeInterval
     private var resumedAt: Date?
     private var lastAudioAt = Date.now
@@ -186,6 +201,7 @@ final class LiveSessionModel {
         if mode == .review {
             summaryState = summary == nil ? .none : .ready
             Task { await self.loadSlideImages() }
+            writeMissingSummary()
         }
     }
 
@@ -193,17 +209,16 @@ final class LiveSessionModel {
 
     var title: String { session.title }
     var transcript: [TranscriptSegment] { session.transcript }
-    var takeaways: [Takeaway] { session.takeaways.filter { !SessionConventions.isSummary($0, sessionID: id) } }
+    var takeaways: [Takeaway] { session.takeaways }
     var settledTakeaways: [Takeaway] { takeaways.filter { !$0.isLive } }
     var liveTakeaway: Takeaway? { takeaways.first { $0.isLive } }
-    var summary: Takeaway? { session.takeaways.first { SessionConventions.isSummary($0, sessionID: id) } }
+    var summary: LectureSummary? { session.summary }
     var deck: SlideDeck? { session.deck }
     var pageCount: Int { session.deck?.pages.count ?? slideImages?.pageCount ?? 0 }
     var displayedSlide: Int? { followSlides ? detectedSlide : (manualSlide ?? detectedSlide) }
     var chat: [ChatMessage] { session.chat }
     var quizRecords: [QuizRecord] { session.quiz }
     var isLive: Bool { mode == .live }
-    var isRecording: Bool { recordingState == .recording }
     var courseLabel: String { course?.code ?? "No course" }
     var startedAt: Date { session.startedAt ?? session.createdAt }
     var quizScore: (correct: Int, total: Int) {
@@ -212,8 +227,24 @@ final class LiveSessionModel {
     }
     var missedConcepts: [MissedConcept] {
         session.quiz.filter { ($0.outcome == .incorrect || $0.outcome == .skipped) && $0.question.followUpOf == nil }.map { r in
-            MissedConcept(record: r, takeaway: takeaway(covering: r.askedAt) ?? takeaways.first { !$0.slidePages.isEmpty && !Set($0.slidePages).isDisjoint(with: r.question.sourceSlides) })
+            MissedConcept(record: r, takeaway: takeaway(for: r.question))
         }
+    }
+
+    /// The takeaway a question is about. `askedAt` is deliberately not used: a ping is offered
+    /// after the *next* topic has started, which mapped every concept to the wrong card (QA N2).
+    func takeaway(for question: QuizQuestion) -> Takeaway? {
+        let settled = settledTakeaways
+        if let g = question.grounding {
+            if let t = settled.first(where: { $0.title.caseInsensitiveCompare(g.topic) == .orderedSame }) { return t }
+            if !g.slides.isEmpty, let t = settled.max(by: { Set($0.slidePages).intersection(g.slides).count < Set($1.slidePages).intersection(g.slides).count }),
+               !Set(t.slidePages).isDisjoint(with: g.slides) { return t }
+        }
+        if let s = question.sourceStart, let t = settled.first(where: { $0.start <= s && s < $0.end }) { return t }
+        if !question.sourceSlides.isEmpty, let t = settled.max(by: { Set($0.slidePages).intersection(question.sourceSlides).count < Set($1.slidePages).intersection(question.sourceSlides).count }),
+           !Set(t.slidePages).isDisjoint(with: question.sourceSlides) { return t }
+        let concept = question.concept.lowercased()
+        return settled.first { $0.title.lowercased().contains(concept) || $0.summary.lowercased().contains(concept) }
     }
     var subtitle: String {
         "\(courseLabel) · \(Self.relativeDate(startedAt))"
@@ -223,6 +254,7 @@ final class LiveSessionModel {
         switch activity {
         case .idle: return isLive ? "Listening" : ""
         case .summarizing: return "Summarizing…"
+        case .recapping: return "Catching up…"
         case .expanding: return "Expanding…"
         case .writingQuestion: return "Writing quiz…"
         case .grading: return "Grading…"
@@ -267,7 +299,6 @@ final class LiveSessionModel {
         session.status = .live
         resumedAt = .now
         markDirty()
-        if let deck = session.deck { slideIndex = services.makeSlideIndex(deck) }
         if let deckURL {
             Task { [services, id] in
                 do {
@@ -285,9 +316,32 @@ final class LiveSessionModel {
         startClock()
     }
 
+    /// Starts the brain. With a deck, its slide index is built first (embedding every page takes
+    /// seconds, so never on the main actor); the brain appears when it is ready, seeded with the
+    /// transcript so far. Use `readyBrain()` to wait for it.
     private func startBrain() {
+        guard brain == nil, brainStartTask == nil else { return }
+        guard slideIndex == nil, let deck = session.deck else {
+            createBrain()
+            return
+        }
+        brainStartTask = Task { [services] in
+            slideIndex = await services.makeSlideIndex(deck)
+            brainStartTask = nil
+            createBrain()
+        }
+    }
+
+    /// The brain, once it exists (starting it if needed).
+    private func readyBrain() async -> (any LectureIntelligence)? {
+        startBrain()
+        await brainStartTask?.value
+        return brain
+    }
+
+    private func createBrain() {
         guard brain == nil else { return }
-        let context = BrainContext(sessionTitle: session.title, courseName: course?.name, deck: session.deck, transcript: session.transcript, takeaways: takeaways, quizHistory: session.quiz)
+        let context = BrainContext(sessionTitle: session.title, courseName: course?.name, deck: session.deck, transcript: session.transcript, takeaways: takeaways, quizHistory: session.quiz, sessionID: id, currentSlide: session.currentSlide)
         let brain = services.makeBrain(context, settings, slideIndex)
         self.brain = brain
         updatesTask = Task { [weak self] in
@@ -303,7 +357,10 @@ final class LiveSessionModel {
         self.engine = engine
         let options = TranscriptionOptions(inputDeviceID: settings.inputDeviceID, vocabulary: settings.vocabulary + session.vocabulary, timeOffset: offset)
         lastAudioAt = .now
+        // Engines are shared per kind, so a start right after a pause must wait for its stop.
+        let stopping = engineStop
         engineTask = Task { [weak self] in
+            await stopping?.value
             do {
                 let stream = try await engine.start(options: options)
                 for try await event in stream {
@@ -362,7 +419,7 @@ final class LiveSessionModel {
         appendPauseMarker(at: elapsed)
         let engine = engine
         engineTask?.cancel()
-        Task { await engine?.stop() }
+        engineStop = Task { await engine?.stop() }
         self.engine = nil
         volatile = nil
         level = 0
@@ -403,14 +460,14 @@ final class LiveSessionModel {
             summaryState = .writing
         }
         markDirty()
-        saveIfDirty()
         Task {
+            await flush()
             await engine?.stop()
-            await brain?.finish()
+            await readyBrain()?.finish()
             await writeSummary()
             recordingState = .finished
             onFinished?()
-            saveIfDirty()
+            await flush()
             announce("Finished — summary ready")
         }
     }
@@ -425,71 +482,52 @@ final class LiveSessionModel {
         mode = .review
         summaryState = .writing
         markDirty()
-        startBrain()
         Task {
-            await brain?.finish()
+            await readyBrain()?.finish()
             await writeSummary()
             recordingState = .finished
-            saveIfDirty()
+            await flush()
         }
     }
 
-    /// Builds the lecture summary from settled takeaways (expanding those without details).
+    /// Asks the brain for the lecture summary. Settled takeaways without details are expanded
+    /// first (a few), since details ground the summary's key concepts and are kept for the cards.
     private func writeSummary() async {
-        guard let brain else { summaryState = .failed("No model"); return }
+        guard let brain = await readyBrain() else { summaryState = .failed("No model"); return }
         for t in settledTakeaways.prefix(8) where t.detail == nil {
             if let detail = try? await brain.expand(takeawayID: t.id), let i = session.takeaways.firstIndex(where: { $0.id == t.id }) {
                 session.takeaways[i].detail = detail
             }
         }
-        let settled = settledTakeaways
-        guard !settled.isEmpty else {
-            withAnimation(DS.Motion.morph) { summaryState = .failed("Nothing to summarize yet") }
-            return
+        do {
+            let summary = try await brain.lectureSummary()
+            withAnimation(DS.Motion.morph) {
+                session.summary = summary
+                summaryState = .ready
+            }
+            markDirty()
+        } catch {
+            withAnimation(DS.Motion.morph) { summaryState = .failed(error.localizedDescription) }
         }
-        var words = 0
-        var sentences: [String] = []
-        for t in settled {
-            // Whole sentences only ("e.g." must not end the summary — QA F4).
-            guard let first = Self.firstSentence(of: t.summary) else { continue }
-            let count = first.split(separator: " ").count
-            if words + count > 80 { break }
-            words += count
-            sentences.append(first)
-        }
-        var terms: [KeyTerm] = []
-        for t in settled { for k in t.detail?.keyTerms ?? [] where !terms.contains(where: { $0.term.lowercased() == k.term.lowercased() }) { terms.append(k) } }
-        var summary = Takeaway(
-            id: SessionConventions.summaryID(for: id),
-            title: SessionConventions.summaryTitle(sessionID: id),
-            summary: sentences.joined(separator: " "),
-            detail: TakeawayDetail(bullets: [], keyTerms: Array(terms.prefix(8))),
-            start: 0, end: accumulated, slidePages: [], isLive: false
-        )
-        summary.updatedAt = .now
-        session.takeaways.removeAll { SessionConventions.isSummary($0, sessionID: id) }
-        session.takeaways.insert(summary, at: 0)
-        withAnimation(DS.Motion.morph) { summaryState = .ready }
-        markDirty()
     }
 
-    /// First sentence of `text` per the linguistic tokenizer, with terminal punctuation.
-    nonisolated static func firstSentence(of text: String) -> String? {
-        let tokenizer = NLTokenizer(unit: .sentence)
-        tokenizer.string = text
-        var first: String?
-        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
-            first = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return false
+    /// Review of a finished lecture that has no summary (an import, or one saved before
+    /// summaries were stored separately): write it now, once.
+    private func writeMissingSummary() {
+        guard session.summary == nil, session.status == .finished, !session.takeaways.isEmpty || !session.transcript.isEmpty else { return }
+        summaryState = .writing
+        Task {
+            await writeSummary()
+            await flush()
         }
-        guard var s = first ?? (text.isEmpty ? nil : text) else { return nil }
-        if let last = s.last, !".!?".contains(last) { s += "." }
-        return s
     }
 
     func retrySummary() {
         summaryState = .writing
-        Task { await writeSummary() }
+        Task {
+            await writeSummary()
+            await flush()
+        }
     }
 
     func applySettings(_ new: AppSettings) {
@@ -526,7 +564,9 @@ final class LiveSessionModel {
         case .volatile(let seg):
             volatile = seg
             lastAudioAt = .now
-        case .final(let seg):
+        case .final(let heard):
+            // Course jargon misheard by the recognizer is fixed from the deck before anyone sees it.
+            let seg = JargonFixer.shared.fix(heard, deck: session.deck, settings: settings, services: services)
             volatile = nil
             lastAudioAt = .now
             session.transcript.append(seg)
@@ -550,7 +590,8 @@ final class LiveSessionModel {
     private func applySpeakers(_ labels: [UUID: SpeakerRole]) {
         var changed = false
         for (id, role) in labels {
-            if let i = session.transcript.firstIndex(where: { $0.id == id }), session.transcript[i].speaker != role {
+            // Labels are almost always for the newest segments, so look from the end.
+            if let i = session.transcript.lastIndex(where: { $0.id == id }), session.transcript[i].speaker != role {
                 session.transcript[i].speaker = role
                 changed = true
             }
@@ -565,10 +606,9 @@ final class LiveSessionModel {
         switch update {
         case .takeaways(let list):
             let previousLiveID = liveTakeaway?.id
-            let summary = summary
             withAnimation(DS.Motion.settle) {
                 // A range never ends before it starts, whatever timeline the brain used (QA F3).
-                session.takeaways = (summary.map { [$0] } ?? []) + list.map { t in var t = t; t.end = max(t.end, t.start); return t }
+                session.takeaways = list.map { t in var t = t; t.end = max(t.end, t.start); return t }
             }
             if let previousLiveID, let now = list.first(where: { $0.id == previousLiveID }), !now.isLive {
                 settledCount += 1
@@ -608,7 +648,7 @@ final class LiveSessionModel {
 
     private func appendPauseMarker(at time: TimeInterval) {
         pauseMarkers.append(time)
-        paragraphs.append(TranscriptParagraph(id: UUID(), kind: .pause, start: time, end: time, segments: []))
+        paragraphs.append(TranscriptParagraph(id: TranscriptParagraph.pauseID(at: time), kind: .pause, start: time, end: time, segments: []))
     }
 
     private func rebuildParagraphs() {
@@ -627,7 +667,7 @@ final class LiveSessionModel {
         var pending = pauses.sorted()
         for seg in segments {
             while let p = pending.first, p <= seg.start {
-                result.append(TranscriptParagraph(id: UUID(), kind: .pause, start: p, end: p, segments: []))
+                result.append(TranscriptParagraph(id: TranscriptParagraph.pauseID(at: p), kind: .pause, start: p, end: p, segments: []))
                 pending.removeFirst()
             }
             if var last = result.last, canJoin(seg, to: last) {
@@ -638,7 +678,7 @@ final class LiveSessionModel {
                 result.append(TranscriptParagraph(id: seg.id, kind: .speech, start: seg.start, end: seg.end, segments: [seg]))
             }
         }
-        for p in pending { result.append(TranscriptParagraph(id: UUID(), kind: .pause, start: p, end: p, segments: [])) }
+        for p in pending { result.append(TranscriptParagraph(id: TranscriptParagraph.pauseID(at: p), kind: .pause, start: p, end: p, segments: [])) }
         return result
     }
 
@@ -713,7 +753,7 @@ final class LiveSessionModel {
                 var stored = deck
                 stored.fileName = try await services.store.importSlides(from: url, into: id)
                 self.session.deck = stored
-                self.slideIndex = services.makeSlideIndex(stored)
+                self.slideIndex = nil   // rebuilt from the new deck when a brain is next started
                 if self.detectedSlide == nil { self.detectedSlide = 1 }
                 self.markDirty()
             } catch {
@@ -741,19 +781,40 @@ final class LiveSessionModel {
         return true
     }
 
+    /// A slide citation is a manual override (DESIGN §4.4): the hero shows the cited slide, Auto
+    /// follow turns off ("Resume following" brings it back) and the brain is told (QA N1).
     func showSlide(_ n: Int) {
+        selectSlide(n)
         highlightSlide(n)
-        if !followSlides || mode == .review {
-            withAnimation(DS.Motion.quick) { manualSlide = n }
-        }
-        if pane != .takeaways { pane = .slides }
+        if layoutTier == .single { pane = .slides }
+        focusRootRequest += 1
     }
 
     func seekTranscript(to time: TimeInterval) {
-        isInspectorShown = true
-        inspectorTab = .transcript
-        pane = .transcript
+        if layoutTier == .single {
+            pane = .transcript
+        } else {
+            inspectorTab = .transcript
+            if !isInspectorShown { toggleInspector() }
+        }
         transcriptSeek = TranscriptSeek(time: time)
+        focusRootRequest += 1
+    }
+
+    /// ⌘1–4: in the single-region tier these pick the pane and never open the inspector (QA N3).
+    func selectPane(_ p: SessionPane) {
+        if layoutTier == .single {
+            pane = p
+            if p == .ask { focusAskRequest += 1 }
+            return
+        }
+        switch p {
+        case .takeaways: pane = .takeaways; focusRootRequest += 1
+        case .slides:
+            if layoutTier == .two { slideViewerRequest += 1 } else { withAnimation(DS.Motion.settle) { showSlides = true } }
+        case .transcript: inspectorTab = .transcript; if !isInspectorShown { toggleInspector() }
+        case .ask: focusAsk()
+        }
     }
 
     /// Inspector toggles never animate (see `LiveSessionView`'s `.inspector` note).
@@ -764,7 +825,13 @@ final class LiveSessionModel {
     }
 
     func focusAsk(seed: String? = nil) {
-        isInspectorShown = true
+        if layoutTier == .single {
+            pane = .ask
+            if let seed { askDraft = seed }
+            focusAskRequest += 1
+            return
+        }
+        if !isInspectorShown { toggleInspector() }
         inspectorTab = .ask
         if let seed { askDraft = seed }
         focusAskRequest += 1
@@ -775,10 +842,9 @@ final class LiveSessionModel {
     func expandTakeaway(_ takeawayID: UUID?) {
         withAnimation(DS.Motion.settle) { expandedTakeawayID = takeawayID }
         guard let takeawayID, let t = takeaways.first(where: { $0.id == takeawayID }), t.detail == nil else { return }
-        startBrain()
         Task {
             do {
-                guard let detail = try await brain?.expand(takeawayID: takeawayID) else { return }
+                guard let detail = try await readyBrain()?.expand(takeawayID: takeawayID) else { return }
                 if let i = session.takeaways.firstIndex(where: { $0.id == takeawayID }) {
                     withAnimation(DS.Motion.settle) { session.takeaways[i].detail = detail }
                     markDirty()
@@ -791,7 +857,7 @@ final class LiveSessionModel {
     }
 
     func markdown(for takeaway: Takeaway) -> String {
-        MarkdownExporter.markdown(for: takeaway, sessionID: id)
+        MarkdownExporter.markdown(for: takeaway, deck: session.deck)
     }
 
     func copyMarkdown(for takeaway: Takeaway) {
@@ -998,8 +1064,6 @@ final class LiveSessionModel {
     func ask(_ text: String) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isAnswering else { return }
-        startBrain()
-        guard let brain else { return }
         askDraft = ""
         askError = nil
         lastQuestionAsked = question
@@ -1011,6 +1075,7 @@ final class LiveSessionModel {
         askTask?.cancel()
         askTask = Task { [weak self] in
             do {
+                guard let brain = await self?.readyBrain() else { throw CancellationError() }
                 for try await event in await brain.ask(question, history: history) {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
@@ -1076,9 +1141,8 @@ final class LiveSessionModel {
 
     private func loadFreshQuestion() {
         guard let flow = reviewFlow, let current = flow.current else { return }
-        startBrain()
         Task { [weak self] in
-            let q = try? await self?.brain?.makeQuestion(followUpOf: current.record.question)
+            let q = try? await self?.readyBrain()?.makeQuestion(followUpOf: current.record.question)
             guard let self, self.reviewFlow?.current?.id == current.id else { return }
             withAnimation(DS.Motion.settle) { self.reviewFlow?.freshQuestion = q }
         }
@@ -1107,7 +1171,6 @@ final class LiveSessionModel {
         guard var flow = reviewFlow else { return }
         flow.index += 1
         flow.freshQuestion = nil
-        flow.freshAnswer = ""
         flow.freshSelected = nil
         flow.freshGrade = nil
         flow.isGrading = false
@@ -1127,9 +1190,20 @@ final class LiveSessionModel {
     }
 
     func copySummary() {
-        let text = summary?.summary ?? settledTakeaways.map { "• \($0.title): \($0.summary)" }.joined(separator: "\n")
+        let text = summary.map(Self.plainText) ?? settledTakeaways.map { "• \($0.title): \($0.summary)" }.joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// The summary as plain text for the clipboard.
+    nonisolated static func plainText(_ summary: LectureSummary) -> String {
+        var parts = [summary.overview]
+        if !summary.keyConcepts.isEmpty {
+            parts.append("Key concepts\n" + summary.keyConcepts.map { "• \($0.term): \($0.definition)" }.joined(separator: "\n"))
+        }
+        if !summary.reviewThese.isEmpty { parts.append("Review these\n" + summary.reviewThese.map { "• \($0)" }.joined(separator: "\n")) }
+        if !summary.flagged.isEmpty { parts.append("Flagged\n" + summary.flagged.map { "• \($0)" }.joined(separator: "\n")) }
+        return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     // MARK: - "While you were away"
@@ -1157,11 +1231,10 @@ final class LiveSessionModel {
 
     private func requestRecap(from: TimeInterval, to: TimeInterval) {
         recapTask?.cancel()
-        startBrain()
-        guard let brain else { return }
         withAnimation(DS.Motion.float) { recap = .loading(from: from, to: to) }
         recapTask = Task { [weak self] in
             do {
+                guard let brain = await self?.readyBrain() else { throw CancellationError() }
                 let r = try await brain.recap(from: from, to: to)
                 guard let self, !Task.isCancelled else { return }
                 withAnimation(DS.Motion.morph) { self.recap = .ready(r) }
@@ -1188,6 +1261,9 @@ final class LiveSessionModel {
         }
     }
 
+    /// A notice raised outside the session (e.g. the monthly API cap was reached).
+    func showNotice(_ notice: Notice) { push(notice) }
+
     /// One-time tip when the window gets narrow: the Focus panel keeps the essentials floating.
     func showFocusPanelTip() {
         push(Notice(id: "focus-tip", kind: .info, symbol: "rectangle.inset.topright.filled", title: "Tight on space? The Focus panel (⌘⇧F) floats the current takeaway over any app.", placement: .takeaways, actionLabel: "Open"))
@@ -1202,7 +1278,28 @@ final class LiveSessionModel {
     // MARK: - Persistence
 
     private func markDirty() {
+        guard !isDiscarded else { return }
         dirty = true
+        publishSoon()
+    }
+
+    /// Tells the library about the newest state at most once a second: every final segment marks
+    /// the session dirty, and each hand-over invalidates the library views and forces a copy of
+    /// the growing transcript. The autosaver coalesces the disk writes separately.
+    private func publishSoon() {
+        guard libraryPublishTask == nil else { return }
+        libraryPublishTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.publishNow()
+        }
+    }
+
+    /// Hands the current state to the library right away (status changes, flush).
+    private func publishNow() {
+        libraryPublishTask?.cancel()
+        libraryPublishTask = nil
+        guard !isDiscarded else { return }
         onSessionChanged?(session)
     }
 
@@ -1215,16 +1312,66 @@ final class LiveSessionModel {
         }
     }
 
+    /// Hands the newest state to the autosaver, which writes it in order and at most once a second.
     func saveIfDirty() {
-        guard dirty else { return }
+        guard dirty, !isDiscarded else { return }
         dirty = false
-        let snapshot = session
-        Task { [services] in
-            do { try await services.store.save(snapshot) } catch {
-                self.push(Notice(id: "save", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't save: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
-                self.dirty = true
-            }
+        _ = hand(session)
+    }
+
+    private func hand(_ snapshot: LectureSession) -> Task<Void, Never> {
+        let previous = handoff
+        let autosaver = autosaver
+        let task = Task {
+            await previous?.value
+            await autosaver.update(snapshot)
         }
+        handoff = task
+        return task
+    }
+
+    /// Writes the newest state now and waits for it: on stop, when the lecture is closed, at quit.
+    func flush() async {
+        guard !isDiscarded else { return }
+        publishNow()
+        if dirty {
+            dirty = false
+            await hand(session).value
+        } else {
+            await handoff?.value
+        }
+        do { try await autosaver.flush() } catch { saveFailed(error) }
+    }
+
+    /// The lecture is being deleted: drop pending saves and wait for a write in flight, so a late
+    /// save can't bring it back.
+    func discardPendingSave() async {
+        isDiscarded = true
+        saveTask?.cancel()
+        await handoff?.value
+        await autosaver.discard()
+    }
+
+    /// A finished lecture with nothing running: safe to close when it leaves the screen.
+    var isIdle: Bool {
+        mode == .review && recordingState == .finished && summaryState != .writing && !isAnswering && !isBusy
+            && recap == nil && reviewFlow == nil && !isFocusPanelOpen
+    }
+
+    /// Saves, then stops everything this model started (the brain and its update loop, timers) so
+    /// the model can be released. Called when a review lecture leaves the screen.
+    func close() async {
+        await flush()
+        for task in [askTask, recapTask, quizTimerTask, quizDismissTask, snoozedTask, deferredQuizTask, highlightTask, saveTask, updatesTask, clockTask, engineTask, brainStartTask] {
+            task?.cancel()
+        }
+        brain = nil
+    }
+
+    private func saveFailed(_ error: any Error) {
+        guard !isDiscarded else { return }
+        dirty = true
+        push(Notice(id: "save", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't save: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
     }
 
     // MARK: - Accessibility

@@ -25,7 +25,8 @@ public enum StoreError: LocalizedError {
     }
 }
 
-/// A file that was skipped while loading the library.
+/// A file that was skipped while loading the library, or that loaded only after repairs (restored
+/// from its backup, or with damaged parts dropped).
 public struct LoadIssue: Sendable, Hashable {
     public var url: URL
     public var message: String
@@ -36,7 +37,7 @@ public struct LoadIssue: Sendable, Hashable {
     }
 }
 
-/// Result of scanning the whole library: everything that loaded plus what was skipped.
+/// Result of scanning the whole library: everything that loaded plus what was skipped or repaired.
 public struct LibraryLoadResult: Sendable {
     /// Newest first.
     public var sessions: [LectureSession]

@@ -19,6 +19,8 @@ final class ScriptedProvider: LLMProvider {
         var requests: [LLMRequest] = []
         var inFlight = 0
         var maxInFlight = 0
+        var optionCheck = #"{"correct_options": [1]}"#
+        var optionChecks = 0
     }
 
     private let state = Mutex(State())
@@ -45,7 +47,19 @@ final class ScriptedProvider: LLMProvider {
         state.withLock { $0.queue.append(contentsOf: replies) }
     }
 
+    /// Replies to the brain's MCQ ambiguity check without consuming the script or being recorded
+    /// in `requests` (most tests script only the question). `optionCheckReply` overrides it.
+    static let optionCheckMarker = "which options are correct?"
+    var optionCheckReply: String {
+        get { state.withLock { $0.optionCheck } }
+        set { state.withLock { $0.optionCheck = newValue } }
+    }
+    var optionChecks: Int { state.withLock { $0.optionChecks } }
+
     func complete(_ request: LLMRequest) async throws -> LLMResponse {
+        if request.lastUser.contains(Self.optionCheckMarker) {
+            return LLMResponse(text: state.withLock { s in s.optionChecks += 1; return s.optionCheck })
+        }
         let reply = state.withLock { s -> Reply in
             s.requests.append(request)
             s.inFlight += 1

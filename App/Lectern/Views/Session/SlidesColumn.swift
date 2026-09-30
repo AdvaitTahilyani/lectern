@@ -25,8 +25,8 @@ struct SlidesColumn: View {
             VStack(spacing: DS.Space.s) {
                 if let page = session.backtrackSuggestion { BacktrackPill(page: page, thumbnail: session.slideImages?.image(page: page, width: 48), onJump: { session.acceptBacktrack() }, onDismiss: { session.dismissBacktrack() }) }
                 if !session.followSlides, session.isLive {
+                    // ⌘⇧A is the "Resume Slide Following" menu command.
                     JumpToLivePill(newCount: 0, label: "Resume following", symbol: "arrow.clockwise") { session.resumeFollowing() }
-                        .keyboardShortcut("a", modifiers: [.command, .shift])
                 }
             }
             .padding(.bottom, DS.Space.floatInset)
@@ -211,7 +211,8 @@ struct CurrentSlideChip: View {
             .background(DS.Colors.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("3", modifiers: .command)
+        // ⌘3 ("Slides" in the Lecture menu) opens this popover in the two-column tier.
+        .onChange(of: session.slideViewerRequest) { _, _ in open = true }
         .popover(isPresented: $open, arrowEdge: .bottom) {
             if let images = session.slideImages {
                 VStack(spacing: DS.Space.m) {

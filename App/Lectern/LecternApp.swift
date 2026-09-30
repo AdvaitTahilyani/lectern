@@ -66,6 +66,24 @@ struct LecternApp: App {
 
 final class LecternAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    private var terminationReplied = false
+
+    /// Quitting waits (up to 5 s) for open lectures to be written, so the last seconds of a
+    /// recording survive.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let app = AppModelActivation.shared, !app.openSessions.isEmpty else { return .terminateNow }
+        terminationReplied = false
+        Task { await app.flushSessions(); replyToTermination() }
+        Task { try? await Task.sleep(for: .seconds(5)); replyToTermination() }
+        return .terminateLater
+    }
+
+    private func replyToTermination() {
+        guard !terminationReplied else { return }
+        terminationReplied = true
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
 }
 
 // MARK: - Menu bar extra
@@ -142,10 +160,10 @@ struct LecternCommands: Commands {
             Button("Toggle Slides") { currentSession?.showSlides.toggle() }.keyboardShortcut("s", modifiers: [.command, .option]).disabled(currentSession == nil)
             Button("Resume Slide Following") { currentSession?.resumeFollowing() }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(currentSession == nil)
             Divider()
-            Button("Takeaways") { currentSession?.pane = .takeaways }.keyboardShortcut("1", modifiers: .command).disabled(currentSession == nil)
-            Button("Transcript") { currentSession?.pane = .transcript; currentSession?.inspectorTab = .transcript; currentSession?.isInspectorShown = true }.keyboardShortcut("2", modifiers: .command).disabled(currentSession == nil)
-            Button("Slides") { currentSession?.pane = .slides }.keyboardShortcut("3", modifiers: .command).disabled(currentSession == nil)
-            Button("Ask Tab") { currentSession?.focusAsk() }.keyboardShortcut("4", modifiers: .command).disabled(currentSession == nil)
+            Button("Takeaways") { currentSession?.selectPane(.takeaways) }.keyboardShortcut("1", modifiers: .command).disabled(currentSession == nil)
+            Button("Transcript") { currentSession?.selectPane(.transcript) }.keyboardShortcut("2", modifiers: .command).disabled(currentSession == nil)
+            Button("Slides") { currentSession?.selectPane(.slides) }.keyboardShortcut("3", modifiers: .command).disabled(currentSession == nil)
+            Button("Ask Tab") { currentSession?.selectPane(.ask) }.keyboardShortcut("4", modifiers: .command).disabled(currentSession == nil)
             Button("Jump to Live") { NotificationCenter.default.post(name: .lecternJumpToLive, object: nil) }.keyboardShortcut(.downArrow, modifiers: .command).disabled(currentSession == nil)
             Divider()
             Button("Export…") { NotificationCenter.default.post(name: .lecternExport, object: nil) }.keyboardShortcut("e", modifiers: .command).disabled(currentSession?.isLive != false)

@@ -60,5 +60,7 @@ import Testing
         #expect(!MediaSpaceDetector.isMediaPage(URL(string: "https://mediaspace.illinois.edu/")))
         #expect(!MediaSpaceDetector.isMediaPage(URL(string: "https://example.com/media/t/1_oj3ppr67/1")))
         #expect(!MediaSpaceDetector.isMediaPage(nil))
+        #expect(!MediaSpaceDetector.isMediaPage(URL(string: "https://evilkaltura.com/media/t/1_oj3ppr67/1")))
+        #expect(!MediaSpaceDetector.isMediaPage(URL(string: "https://notmediaspace.illinois.edu/media/t/1_oj3ppr67/1")))
     }
 }

@@ -167,8 +167,9 @@ struct CourseIndex: Sendable {
     /// when it says "last time", "last lecture", "last week", "previous lecture" or "today".
     func lectureBoosts(for question: String) -> [Int: Double] {
         var boosts: [Int: Double] = [:]
-        for match in question.matches(of: /(?i)\b(?:lecture|lec|l)\s*#?\s*(\d+)\b/) {
-            if let n = Int(match.1), lectures[n] != nil { boosts[n] = Self.explicitBoost }
+        // "lecture 8", "lec 8", "L8" (capital L only: "l1 regularization" is not a lecture).
+        for match in question.matches(of: /\b(?:[Ll]ecture|[Ll]ec)\s*#?\s*(\d+)\b|\bL(\d+)\b/) {
+            if let n = Int(match.1 ?? match.2 ?? ""), lectures[n] != nil { boosts[n] = Self.explicitBoost }
         }
         let ordinals = lectures.keys.sorted()
         if question.range(of: #"(?i)\b(last|previous|yesterday'?s?)\s+(time|lecture|class|week)\b|\btoday\b"#, options: .regularExpression) != nil {

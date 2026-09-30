@@ -140,6 +140,15 @@ struct QuizPlanner: Sendable {
         return options.firstIndex { $0.caseInsensitiveCompare(a) == .orderedSame }
     }
 
+    /// True when a distractor says the same as the correct answer: nearly the same words, or all
+    /// of the answer's words and little else.
+    static func restatesAnswer(_ distractor: String, _ answer: String) -> Bool {
+        let d = Set(Text.words(distractor)), a = Set(Text.words(answer))
+        guard !d.isEmpty, !a.isEmpty else { return false }
+        if Text.similarity(distractor, answer) >= 0.7 { return true }
+        return a.count >= 3 && a.isSubset(of: d) && Double(d.count) <= Double(a.count) * 1.5
+    }
+
     /// True when `prompt` is essentially one of `earlier` (same words).
     static func isRepeat(_ prompt: String, of earlier: [String]) -> Bool {
         earlier.contains { Text.similarity($0, prompt) >= 0.8 }

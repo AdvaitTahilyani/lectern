@@ -1,5 +1,6 @@
 import Foundation
 import LecternCore
+import Synchronization
 import Testing
 @testable import LecternIntelligence
 
@@ -125,6 +126,55 @@ import Testing
         #expect(right.isCorrect)
     }
 
+    // MARK: Reopened sessions
+
+    /// A question written, saved and reopened by a new brain (no in-memory context) is graded
+    /// against the same material and explanation the writer had.
+    @Test func gradingAfterReopenUsesPersistedGrounding() async throws {
+        let provider = ScriptedProvider(texts: [Self.mcq(), "Not quite: ε is in FIRST(A) because A derives ε [S3]."])
+        let q = try await brain(provider).makeQuestion(followUpOf: nil)
+        #expect(q.explanation == "ε is included because A derives ε [S3].")
+        #expect(q.grounding == QuizGrounding(topic: "FIRST sets", summary: "Terminals that begin derived strings.", slides: [3]))
+
+        let record = QuizRecord(question: q, askedAt: 600)
+        let saved = try JSONDecoder().decode(QuizRecord.self, from: JSONEncoder().encode(record))
+        #expect(saved == record)
+        let reopened = brain(provider, records: [saved])
+        guard case let .multipleChoice(_, correct) = saved.question.kind else { Issue.record("not MCQ"); return }
+        let grade = try await reopened.grade(saved.question, answer: String((correct + 1) % 4))
+        #expect(!grade.isCorrect)
+
+        let generation = provider.requests[0], grading = provider.requests[1]
+        #expect(grading.system == generation.system)
+        // Same material block as the question prompt (topic, summary, slides, transcript).
+        #expect(grading.lastUser.hasPrefix(generation.lastUser.components(separatedBy: "=====")[0]))
+        #expect(grading.lastUser.contains("TOPIC: FIRST sets — Terminals that begin derived strings."))
+        #expect(grading.lastUser.contains("WHY (from the question writer): ε is included because A derives ε [S3]."))
+    }
+
+    @Test func reopenedFeedbackFallbackKeepsTheExplanation() async throws {
+        let provider = ScriptedProvider([.text(Self.mcq()), .failure(.network("offline"))])
+        let q = try await brain(provider).makeQuestion(followUpOf: nil)
+        let reopened = brain(provider, records: [QuizRecord(question: q, askedAt: 600)])
+        guard case let .multipleChoice(options, correct) = q.kind else { return }
+        let grade = try await reopened.grade(q, answer: String((correct + 1) % 4))
+        #expect(grade.feedback == "The answer is: \(options[correct]). ε is included because A derives ε [S3].")
+        #expect(grade.citations == [.slide(3)])
+    }
+
+    @Test func followUpAfterReopenReusesTheOriginalMaterial() async throws {
+        let provider = ScriptedProvider(texts: [
+            Self.mcq(),
+            Self.mcq(question: "Given B -> b | ε and A -> B c, what is FIRST(A)?", answer: "{b, c}", distractors: ["{b}", "{c}", "{b, ε}"]),
+        ])
+        let original = try await brain(provider).makeQuestion(followUpOf: nil)
+        let missed = QuizRecord(question: original, answer: "1", outcome: .incorrect, askedAt: 600)
+        let follow = try await brain(provider, records: [missed]).makeQuestion(followUpOf: original)
+        let material = provider.requests[0].lastUser.components(separatedBy: "=====")[0]
+        #expect(provider.requests[1].lastUser.hasPrefix(material))
+        #expect(follow.grounding == original.grounding)
+    }
+
     @Test func feedbackFailureStillGrades() async throws {
         let provider = ScriptedProvider([.text(Self.mcq()), .failure(.network("offline"))])
         let b = brain(provider)
@@ -162,7 +212,9 @@ import Testing
     // MARK: Timer
 
     @Test func timerPingsOnceUntilRecorded() async throws {
-        let provider = ScriptedProvider(responder: { _ in .text(Self.mcq()) })
+        // A different question each time: repeats of earlier questions are rejected.
+        let counter = Counter()
+        let provider = ScriptedProvider(responder: { _ in .text(Self.mcq(question: "Which terminals are in FIRST(A), variant \(counter.next())?")) })
         let b = brain(provider)
         let log = UpdateLog(b.updates)
         // Interval not reached yet (20 min): nothing.
@@ -265,4 +317,10 @@ import Testing
         #expect(QuizPlanner.isRepeat("What is FIRST(A)?", of: ["what is first(a)"]))
         #expect(!QuizPlanner.isRepeat("Given B -> b, what is FIRST(A)?", of: ["What does FOLLOW(A) contain?"]))
     }
+}
+
+/// A thread-safe counter for responders that must vary their replies.
+final class Counter: Sendable {
+    private let value = Mutex(0)
+    func next() -> Int { value.withLock { $0 += 1; return $0 } }
 }

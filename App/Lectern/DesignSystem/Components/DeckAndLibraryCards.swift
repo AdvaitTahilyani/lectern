@@ -49,6 +49,10 @@ struct DeckFan: View {
 struct DeckDropZone: View {
     @Bindable var setup: SetupModel
     var namespace: Namespace.ID
+    /// Code of the chosen course, for the "set a slides folder" hint; nil hides the hint.
+    var courseCode: String? = nil
+    var hasSlidesFolder = false
+    var onChooseFolder: (() -> Void)? = nil
     var onChoose: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showPreview = false
@@ -106,8 +110,52 @@ struct DeckDropZone: View {
                     Button("Use sample deck") { setup.loadSampleDeck() }.buttonStyle(.link).font(DS.Typo.subheadline)
                 }
             }
+            slidesFolderRow
         }
         .padding(.vertical, DS.Space.xl)
+    }
+
+    /// The next deck from the course's slides folder (one bordered suggestion + the rest in a
+    /// menu), or a hint to set the folder. Start Lecture stays the only prominent button.
+    @ViewBuilder private var slidesFolderRow: some View {
+        let suggestions = setup.deckSuggestions
+        if !suggestions.isEmpty {
+            HStack(spacing: DS.Space.s) {
+                if let primary = suggestions.primary {
+                    Button { setup.loadDeck(url: primary) } label: {
+                        Label("Use \(primary.lastPathComponent)", systemImage: "doc.richtext")
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .help("Next deck in “\(primary.deletingLastPathComponent().lastPathComponent)”")
+                }
+                if !suggestions.others.isEmpty {
+                    Menu(suggestions.primary == nil ? "Choose from slides folder" : "Other decks") {
+                        ForEach(suggestions.others, id: \.self) { url in
+                            Button(url.lastPathComponent) { setup.loadDeck(url: url) }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("Other decks in the slides folder")
+                }
+            }
+            .padding(.top, DS.Space.s)
+        } else if let error = setup.deckSuggestionsError {
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(DS.Colors.warning)
+                Text(error).foregroundStyle(.secondary)
+                if let onChooseFolder { Button("Change…", action: onChooseFolder).buttonStyle(.link) }
+            }
+            .font(DS.Typo.footnote)
+            .padding(.top, DS.Space.s)
+        } else if let courseCode, !hasSlidesFolder, let onChooseFolder {
+            Button("Set a slides folder for \(courseCode)…", action: onChooseFolder)
+                .buttonStyle(.link)
+                .font(DS.Typo.footnote)
+                .padding(.top, DS.Space.s)
+        }
     }
 
     private func loaded(_ images: SlideImageStore) -> some View {
@@ -264,8 +312,7 @@ struct LectureCard: View {
     private var metaLine2: String {
         if isLive { return "Recording · \(TimeFormat.clock(liveElapsed))" }
         let minutes = Int((session.duration / 60).rounded())
-        let summaryID = SessionConventions.summaryID(for: session.id)
-        let takeaways = session.takeaways.filter { $0.id != summaryID }.count
+        let takeaways = session.takeaways.count
         var parts = ["\(minutes) min", "\(takeaways) takeaway\(takeaways == 1 ? "" : "s")"]
         let answered = session.quiz.filter { $0.outcome != nil && $0.question.followUpOf == nil }
         if !answered.isEmpty { parts.append("\(answered.filter { $0.outcome == .correct }.count)/\(answered.count) correct") }

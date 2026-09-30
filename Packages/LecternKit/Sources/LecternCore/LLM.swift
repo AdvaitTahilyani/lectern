@@ -96,28 +96,50 @@ public struct LLMRequest: Sendable, Hashable {
     public var temperature: Double
     public var responseFormat: ResponseFormat
     public var reasoning: ReasoningEffort
+    /// How urgently the caller needs the answer. A provider that shares one device between requests
+    /// (the on-device MLX host) serves `.interactive` ones first.
+    public var priority: RequestPriority
 
     public init(
         messages: [LLMMessage],
         maxTokens: Int = 512,
         temperature: Double = 0.3,
         responseFormat: ResponseFormat = .text,
-        reasoning: ReasoningEffort = .off
+        reasoning: ReasoningEffort = .off,
+        priority: RequestPriority = .background
     ) {
         self.messages = messages
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.responseFormat = responseFormat
         self.reasoning = reasoning
+        self.priority = priority
     }
 }
 
+/// Scheduling class of an `LLMRequest`.
+public enum RequestPriority: String, Codable, Sendable, Hashable {
+    /// Someone is waiting on screen: Ask, grading and feedback, recaps, expanding a card, the
+    /// lecture summary.
+    case interactive
+    /// Work the user doesn't wait for: rolling takeaways, timed quiz questions.
+    case background
+}
+
 public struct LLMUsage: Codable, Sendable, Hashable {
+    /// The whole prompt: fresh tokens plus any read from or written to the provider's prompt cache.
     public var inputTokens: Int
     public var outputTokens: Int
-    public init(inputTokens: Int, outputTokens: Int) {
+    /// Part of `inputTokens` served from the prompt cache (billed at a discount), when reported.
+    public var cachedInputTokens: Int?
+    /// Part of `inputTokens` written to the prompt cache (billed at a premium by Anthropic), when reported.
+    public var cacheWriteTokens: Int?
+
+    public init(inputTokens: Int, outputTokens: Int, cachedInputTokens: Int? = nil, cacheWriteTokens: Int? = nil) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cachedInputTokens = cachedInputTokens
+        self.cacheWriteTokens = cacheWriteTokens
     }
 }
 

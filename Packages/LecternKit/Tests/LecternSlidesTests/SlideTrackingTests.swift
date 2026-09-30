@@ -34,22 +34,36 @@ import Testing
 
     @Test func aBuildGroupIsEnteredAtItsFirstPageAndSteppedThroughOverTime() {
         let index = index()
-        #expect(index.likelySlide(forTranscript: Self.codeWalk, near: 2) == 3)
+        #expect(index.likelySlide(forTranscript: Self.codeWalk, near: 2, sessionTime: -15) == nil)
+        #expect(index.likelySlide(forTranscript: Self.codeWalk, near: 2, sessionTime: 0) == 3)
         var shown: [Int] = []
         var current = 3
-        for _ in 0..<(SlideIndex.Tuning.buildStepObservations * 2) {
-            if let slide = index.likelySlide(forTranscript: Self.codeWalk, near: current) { current = slide }
+        let step = SlideIndex.Tuning.buildStepSeconds
+        for t in stride(from: 10.0, through: 10 + 2 * step, by: 10) {
+            if let slide = index.likelySlide(forTranscript: Self.codeWalk, near: current, sessionTime: t) { current = slide }
             shown.append(current)
         }
         #expect(shown.first == 3)
-        #expect(current == 5, "one step per \(SlideIndex.Tuning.buildStepObservations) supporting observations")
+        #expect(current == 5, "one step per \(step) s of supporting speech")
         #expect(zip(shown, shown.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+
+    @Test func speakingALaterBuildsOwnLineJumpsToIt() {
+        // Page 5 adds "minus" (on no other page but 6): saying it moves there without waiting.
+        let index = index()
+        _ = index.likelySlide(forTranscript: Self.codeWalk, near: 2, sessionTime: -15)
+        #expect(index.likelySlide(forTranscript: Self.codeWalk, near: 2, sessionTime: 0) == 3)
+        #expect(index.likelySlide(forTranscript: Self.codeWalk + " and for minus we emit sub", near: 3, sessionTime: 10) == 5)
+        // Never backwards, even if an earlier build's line comes up again.
+        #expect(index.likelySlide(forTranscript: Self.codeWalk + " times", near: 5, sessionTime: 20).map { $0 >= 5 } ?? true)
     }
 
     @Test func leavingABuildGroupCountsFromItsLastPage() {
         // From the first build page, the mixed-types slide is 5 pages on but only 2 past the group:
         // a short step, taken without waiting.
-        #expect(index().likelySlide(forTranscript: Self.mixed, near: 3) == 8)
+        let index = index()
+        #expect(index.likelySlide(forTranscript: Self.mixed, near: 3, sessionTime: 0) == nil)
+        #expect(index.likelySlide(forTranscript: Self.mixed, near: 3, sessionTime: 15) == 8)
     }
 
     @Test func offDeckSpeechNeverMovesTheSlide() {

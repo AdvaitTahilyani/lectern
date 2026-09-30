@@ -68,4 +68,20 @@ import WebKit
         #expect(state.found == nil)
         #expect(!state.isOnMediaPage)
     }
+
+    @Test func trustsOnlyHttpsMediaSpaceAndKalturaHosts() {
+        let trusted = MediaSpaceBrowserView.Coordinator.isTrusted(scheme:host:)
+        #expect(trusted("https", "mediaspace.illinois.edu"))
+        #expect(trusted("https", "cdnapisec.kaltura.com"))
+        #expect(trusted("HTTPS", "Kaltura.com"))
+        #expect(!trusted("http", "mediaspace.illinois.edu"))
+        #expect(!trusted("https", "evilkaltura.com"))
+        #expect(!trusted("https", "kaltura.com.evil.example"))
+        #expect(!trusted("https", "notillinois.edu"))
+        #expect(!trusted("https", "login.illinois.edu"))
+        #expect(!trusted("https", "illinois.edu"))
+        #expect(!trusted("https", "www.illinois.edu"))
+        #expect(!trusted("https", "evilmediaspace.illinois.edu"))
+        #expect(!trusted("https", ""))
+    }
 }

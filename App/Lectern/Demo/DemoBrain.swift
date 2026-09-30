@@ -139,11 +139,19 @@ actor DemoBrain: LectureIntelligence {
     }
 
     func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap {
-        setActivity(.summarizing)
+        setActivity(.recapping)
         defer { setActivity(.idle) }
         try await Task.sleep(for: .seconds(1.6 / speed))
         try Task.checkCancellation()
         return script.recap(from: from, to: to, beatTimes: beatTimes)
+    }
+
+    func lectureSummary() async throws -> LectureSummary {
+        setActivity(.summarizing)
+        defer { setActivity(.idle) }
+        try await Task.sleep(for: .seconds(2.4 / speed))
+        guard !takeaways.isEmpty else { throw LLMError.invalidResponse("Nothing to summarize yet") }
+        return script.lectureSummary(quiz: quizHistory)
     }
 
     func waitUntilIdle() async {

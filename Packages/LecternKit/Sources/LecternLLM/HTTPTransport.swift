@@ -101,7 +101,11 @@ struct HTTPTransport: Sendable {
 
     /// Builds a `HTTPStatusError` from a response and its (possibly partial) body.
     static func statusError(_ response: HTTPURLResponse, body: Data) -> HTTPStatusError {
-        let retryAfter = response.value(forHTTPHeaderField: "retry-after").flatMap(TimeInterval.init)
+        // Only the delta-seconds form; a hostile or garbled value ("nan", "1e30") must neither
+        // crash `Duration.seconds` / `Int(_)` later nor be waited out.
+        let retryAfter = response.value(forHTTPHeaderField: "retry-after")
+            .flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
+            .flatMap { $0.isFinite && $0 >= 0 ? min($0, 86_400) : nil }
         return HTTPStatusError(status: response.statusCode, message: errorMessage(in: body), retryAfter: retryAfter)
     }
 
@@ -175,7 +179,10 @@ struct HTTPTransport: Sendable {
     private func retryDelay(for error: Error) -> TimeInterval? {
         switch error {
         case let error as HTTPStatusError where error.status == 429 || (500...599).contains(error.status):
-            return min(error.retryAfter ?? retryDelay, Self.maxRetryAfter)
+            // A server asking for a long pause won't be satisfied by a short one: surface the
+            // error (its message says how long to wait) instead of failing a second time.
+            let delay = error.retryAfter ?? retryDelay
+            return delay <= Self.maxRetryAfter ? delay : nil
         case let error as URLError:
             let transient: Set<URLError.Code> = [
                 .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,

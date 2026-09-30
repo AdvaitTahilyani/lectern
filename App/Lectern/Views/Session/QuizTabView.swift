@@ -160,6 +160,7 @@ struct ReviewMissedView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(DS.Motion.settle, value: flow.index)
+        .onChange(of: flow.index) { _, _ in shortAnswer = "" }
         .onKeyPress(characters: .decimalDigits) { press in
             guard let n = Int(press.characters), (1...4).contains(n), flow.freshGrade == nil, flow.freshQuestion != nil else { return .ignored }
             session.reviewSelect(n - 1)

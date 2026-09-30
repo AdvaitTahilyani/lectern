@@ -200,14 +200,12 @@ nonisolated enum DemoLibrarySeed {
             ChatMessage(role: .user, text: "What's the difference between FIRST and FOLLOW?"),
             ChatMessage(role: .assistant, text: script.answer(for: "follow", sessionTime: 1500, currentSlide: 9), citations: CitationParser.citations(in: script.answer(for: "follow", sessionTime: 1500, currentSlide: 9))),
         ]
-        let sessionID = UUID()
-        var summaryTakeaway = Takeaway(id: SessionConventions.summaryID(for: sessionID), title: SessionConventions.summaryTitle(sessionID: sessionID), summary: script.summary, start: 0, end: clock, slidePages: [], isLive: false)
-        summaryTakeaway.detail = TakeawayDetail(bullets: [], keyTerms: script.keyTerms)
         return LectureSession(
-            id: sessionID, courseID: course.id, title: script.title, createdAt: startedAt, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(clock),
+            courseID: course.id, title: script.title, createdAt: startedAt, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(clock),
             duration: clock, status: .finished,
             deck: SlideDeck(fileName: "slides.pdf", originalFileName: "lecture08-parsing2.pdf", title: script.title, pages: []),
-            transcript: transcript, takeaways: [summaryTakeaway] + takeaways, quiz: quiz, chat: chat, currentSlide: 18
+            transcript: transcript, takeaways: takeaways, quiz: quiz, chat: chat, currentSlide: 18,
+            summary: script.lectureSummary(quiz: quiz)
         )
     }
 
@@ -246,16 +244,31 @@ nonisolated enum DemoLibrarySeed {
             }
             quiz.append(QuizRecord(question: question, answer: answer, grade: grade, outcome: q.outcome, askedAt: askedAt, answeredAt: q.outcome == .skipped ? nil : startedAt.addingTimeInterval(askedAt + 15)))
         }
-        let summaryText = spec.slides.dropFirst().prefix(4).map(\.title).joined(separator: ", ") + " — " + (spec.slides.dropFirst().first?.bullets.first ?? "")
-        let sessionID = UUID()
-        var summary = Takeaway(id: SessionConventions.summaryID(for: sessionID), title: SessionConventions.summaryTitle(sessionID: sessionID), summary: summaryText + ".", start: 0, end: clock, slidePages: [], isLive: false)
-        summary.detail = TakeawayDetail(bullets: [], keyTerms: spec.slides.dropFirst().prefix(4).map { KeyTerm(term: $0.title, definition: $0.bullets.first ?? "") })
+        let topics = Array(spec.slides.dropFirst())
+        let overview = topics.prefix(4).map { "\($0.title): \($0.bullets.first ?? "")." }.joined(separator: " ")
+        let missed = quiz.filter { $0.outcome == .incorrect }.map { r in
+            "\(r.question.concept) — the answer to “\(r.question.prompt)” is “\(correctOption(r.question))”."
+        }
+        let summary = LectureSummary(
+            overview: overview,
+            keyConcepts: topics.prefix(4).map { KeyTerm(term: $0.title, definition: $0.bullets.first ?? "") },
+            reviewThese: missed,
+            slides: Array(2...min(4, max(2, spec.slides.count)))
+        )
         return LectureSession(
-            id: sessionID, courseID: course.id, title: spec.title, createdAt: startedAt, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(clock),
+            courseID: course.id, title: spec.title, createdAt: startedAt, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(clock),
             duration: clock, status: .finished,
             deck: SlideDeck(fileName: "slides.pdf", originalFileName: spec.title.lowercased().replacingOccurrences(of: " ", with: "-") + ".pdf", title: spec.title, pages: []),
-            transcript: transcript, takeaways: [summary] + takeaways, quiz: quiz, chat: [], currentSlide: spec.slides.count
+            transcript: transcript, takeaways: takeaways, quiz: quiz, chat: [], currentSlide: spec.slides.count,
+            summary: summary
         )
+    }
+
+    private static func correctOption(_ question: QuizQuestion) -> String {
+        switch question.kind {
+        case .multipleChoice(let options, let correct): options.indices.contains(correct) ? options[correct] : ""
+        case .shortAnswer(let reference): reference
+        }
     }
 
     static let catalog: [Spec] = [

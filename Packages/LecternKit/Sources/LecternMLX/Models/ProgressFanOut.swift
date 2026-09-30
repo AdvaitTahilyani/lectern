@@ -8,7 +8,6 @@ import Synchronization
 final class ProgressFanOut: Sendable {
     private struct Observer {
         let onProgress: @Sendable (ModelDownloadProgress) -> Void
-        let onFinish: (@Sendable () -> Void)?
     }
 
     private struct State {
@@ -23,25 +22,17 @@ final class ProgressFanOut: Sendable {
     var latest: ModelDownloadProgress? { state.withLock { $0.latest } }
 
     /// Registers an observer; it immediately receives the latest progress, if any.
-    func add(
-        _ token: UUID,
-        onFinish: (@Sendable () -> Void)? = nil,
-        _ onProgress: @escaping @Sendable (ModelDownloadProgress) -> Void
-    ) {
+    func add(_ token: UUID, _ onProgress: @escaping @Sendable (ModelDownloadProgress) -> Void) {
         let latest = state.withLock { state -> ModelDownloadProgress? in
-            state.observers[token] = Observer(onProgress: onProgress, onFinish: onFinish)
+            state.observers[token] = Observer(onProgress: onProgress)
             return state.latest
         }
         if let latest { onProgress(latest) }
     }
 
-    /// Notifies every observer that the download ended and removes them.
-    func finishAll() {
-        let observers = state.withLock { state in
-            defer { state.observers.removeAll() }
-            return Array(state.observers.values)
-        }
-        for observer in observers { observer.onFinish?() }
+    /// Drops every observer (the download ended).
+    func removeAll() {
+        state.withLock { $0.observers.removeAll() }
     }
 
     func remove(_ token: UUID) {

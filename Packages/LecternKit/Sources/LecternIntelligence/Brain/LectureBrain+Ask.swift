@@ -19,12 +19,10 @@ extension LectureBrain {
 
     private func answer(_ question: String, history: [ChatMessage], into continuation: AsyncThrowingStream<AskEvent, Error>.Continuation) async {
         let messages = Prompts.ask(askContext(for: question, history: history), history: Self.historyMessages(history))
-        let request = LLMRequest(messages: messages, maxTokens: GenerationProfile.answer.maxTokens,
-                                 temperature: GenerationProfile.answer.temperature, responseFormat: .text,
-                                 reasoning: GenerationProfile.answer.reasoning)
+        let request = GenerationProfile.answer.request(messages)
         let provider = providers.ask
         do {
-            let text = try await withRole(.ask, .answering) {
+            let text = try await withRole(.ask, .answering, priority: .interactive) {
                 var full = ""
                 for try await event in provider.stream(request) {
                     guard case .delta(let delta) = event else { continue }
@@ -62,7 +60,7 @@ extension LectureBrain {
         let recent = recentSegments.isEmpty ? nil : TranscriptText.renderFitting(recentSegments[...], maxTokens: recentBudget)
 
         let recentStart = recentSegments.first?.start ?? .infinity
-        let windows = TranscriptRetriever(segments: segments).search(query, limit: 5)
+        let windows = transcriptRetriever().search(query, limit: 5)
             .filter { $0.end < recentStart }
             .sorted { $0.start < $1.start }
         var excerptLines: [String] = []
@@ -82,7 +80,8 @@ extension LectureBrain {
             slides: slidesText,
             excerpts: excerptLines.isEmpty ? nil : excerptLines.joined(separator: "\n[…]\n"),
             recent: recent,
-            question: question
+            question: question,
+            unshownSlides: unshownSlidesLabel
         )
     }
 
@@ -126,5 +125,13 @@ extension LectureBrain {
             return 5 * 60
         }
         return defaultRecentSeconds
+    }
+
+    /// The transcript index, rebuilt only when segments were added since the last question.
+    func transcriptRetriever() -> TranscriptRetriever {
+        if let cached = retrieverCache, cached.count == segments.count { return cached.retriever }
+        let retriever = TranscriptRetriever(segments: segments)
+        retrieverCache = (segments.count, retriever)
+        return retriever
     }
 }

@@ -2,8 +2,10 @@ import LecternCore
 
 /// Grants exclusive use of the GPU to one generation at a time, in priority order.
 ///
-/// Waiters with higher priority go first (Ask > quizzes > summaries); equal priorities are
-/// served first-come first-served. A waiter whose task is cancelled leaves the queue at once.
+/// Interactive requests (someone is waiting: Ask, grading, recaps, expand, the lecture summary)
+/// go before background work; within background work, rolling summaries go before timed quiz
+/// questions, so takeaways never queue behind a quiz ping. Equal priorities are served
+/// first-come first-served. A waiter whose task is cancelled leaves the queue at once.
 actor GenerationScheduler {
     private struct Waiter {
         let id: UInt64
@@ -15,13 +17,16 @@ actor GenerationScheduler {
     private var waiters: [Waiter] = []
     private var nextID: UInt64 = 0
 
-    /// Scheduling priority of a role.
-    static func priority(of role: LLMRole?) -> Int {
-        switch role {
-        case .ask: 3
-        case .quizzes: 2
-        case .summaries: 1
-        case nil: 0
+    /// Scheduling priority of a request from a provider serving `role`.
+    static func priority(of role: LLMRole?, request: RequestPriority = .background) -> Int {
+        switch (request, role) {
+        case (.interactive, .ask): 6
+        case (.interactive, _): 5
+        // Background requests keep a role order for callers that don't set a priority.
+        case (.background, .ask): 4
+        case (.background, .summaries): 3
+        case (.background, .quizzes): 2
+        case (.background, nil): 1
         }
     }
 
@@ -44,6 +49,12 @@ actor GenerationScheduler {
             }
         } onCancel: {
             Task { await self.cancelWaiter(id) }
+        }
+        // `release()` handed the GPU over just as the task was cancelled: pass it on rather than
+        // return as if acquired.
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
         }
     }
 

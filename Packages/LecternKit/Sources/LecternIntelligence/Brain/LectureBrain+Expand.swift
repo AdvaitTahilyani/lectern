@@ -25,7 +25,7 @@ extension LectureBrain {
                 TranscriptText.segments(in: segments, from: takeaway.start, to: takeaway.end),
                 maxTokens: TokenBudget.detailTranscript)
         )
-        let detail = try await withRole(.summaries, .expanding(takeawayID: takeawayID)) {
+        let detail = try await withRole(.summaries, .expanding(takeawayID: takeawayID), priority: .interactive) {
             try await StructuredGeneration.generate(
                 DetailReply.self, provider: providers.summaries,
                 messages: Prompts.detail(input), profile: .detail,

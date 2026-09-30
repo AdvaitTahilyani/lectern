@@ -16,6 +16,7 @@ struct TranscriptView: View {
     @State private var hitIndex = 0
     @State private var flashID: UUID?
     @State private var popoverTime: TimeInterval?
+    @State private var hitCache = HitCache()
     @FocusState private var searchFocused: Bool
 
     private var searchShown: Bool { showSearch?.wrappedValue ?? false }
@@ -40,11 +41,7 @@ struct TranscriptView: View {
                             paragraphView(p, previous: i > 0 ? session.paragraphs[i - 1] : nil, isLast: i == session.paragraphs.count - 1)
                                 .id(p.id)
                         }
-                        if let v = session.volatile, session.paragraphs.last.map({ !Self.volatileContinues($0, v) }) ?? true {
-                            row(time: v.start, wallClock: LiveSessionModel.wallClock(session.startedAt, offset: v.start)) {
-                                StreamingText(committed: AttributedString(""), volatile: v.text, isStreaming: true, style: .transcript)
-                            }
-                        }
+                        VolatileTail(session: session, popoverTime: $popoverTime)
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .frame(maxWidth: DS.Layout.readingMaxWidth, alignment: .leading)
@@ -65,7 +62,8 @@ struct TranscriptView: View {
                     if followLive { scrollToBottomSoon(proxy) } else { newSinceUnpinned += max(0, count - lastParagraphCount) }
                     lastParagraphCount = count
                 }
-                .onChange(of: session.volatile?.text) { _, _ in if followLive { scrollToBottomSoon(proxy) } }
+                // Volatile text changes several times a second; only this small view observes it.
+                .background { VolatileGrowthTrigger(session: session) { if followLive { scrollToBottomSoon(proxy) } } }
                 .onChange(of: session.transcriptSeek) { _, seek in
                     guard let seek, let p = session.paragraph(at: seek.time) else { return }
                     followLive = false
@@ -86,8 +84,16 @@ struct TranscriptView: View {
                 .onAppear {
                     lastParagraphCount = session.paragraphs.count
                     if let seek = session.transcriptSeek, let p = session.paragraph(at: seek.time) {
+                        // The tab just switched: land on the cited moment (twice — the second pass
+                        // runs after the lazy rows exist) and stop following live (QA N1).
+                        followLive = false
+                        programmaticScrollUntil = Date.now.addingTimeInterval(1)
                         proxy.scrollSoon(to: p.id, anchor: .center)
-                        flash(p.id)
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(250))
+                            proxy.scrollTo(p.id, anchor: .center)
+                            flash(p.id)
+                        }
                     } else {
                         scrollToBottomSoon(proxy)
                     }
@@ -108,16 +114,23 @@ struct TranscriptView: View {
 
     /// The in-progress hypothesis continues the last paragraph only when it is close in time and
     /// the paragraph is the lecturer's (an unlabeled hypothesis must never extend a student turn).
-    private static func volatileContinues(_ p: TranscriptParagraph, _ v: TranscriptSegment) -> Bool {
+    fileprivate static func volatileContinues(_ p: TranscriptParagraph, _ v: TranscriptSegment) -> Bool {
         p.kind == .speech && v.start - p.end < TranscriptParagraph.breakGap && (p.segments.last?.speaker ?? .lecturer).isLecturer
     }
 
     // MARK: Search
 
+    /// Paragraphs matching the query. Memoized on (query, paragraph count, last paragraph's size):
+    /// the search bar and every highlighted row ask for it on each body pass.
     private var hits: [UUID] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2 else { return [] }
-        return session.paragraphs.filter { $0.kind == .speech && $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
+        let key = HitCache.Key(query: q, paragraphs: session.paragraphs.count, lastSegments: session.paragraphs.last?.segments.count ?? 0)
+        if hitCache.key == key { return hitCache.ids }
+        let ids = session.paragraphs.filter { $0.kind == .speech && $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
+        hitCache.key = key
+        hitCache.ids = ids
+        return ids
     }
 
     private var currentHitID: UUID? { hits.indices.contains(hitIndex) ? hits[hitIndex] : nil }
@@ -129,6 +142,7 @@ struct TranscriptView: View {
                 .textFieldStyle(.plain)
                 .frame(height: 20)
                 .focused($searchFocused)
+                .task { try? await Task.sleep(for: .milliseconds(80)); searchFocused = true }
                 .onSubmit { step(1) }
                 .onChange(of: query) { _, _ in hitIndex = 0 }
                 .onKeyPress(.upArrow) { step(-1); return .handled }
@@ -173,27 +187,14 @@ struct TranscriptView: View {
         case .speech:
             let speaker = p.segments.first?.speaker ?? .lecturer
             let afterAudience = previous?.segments.first?.speaker?.isLecturer == false
-            let volatile = isLast ? session.volatile.flatMap { v in Self.volatileContinues(p, v) ? v.text : nil } : nil
-            row(time: p.start, wallClock: LiveSessionModel.wallClock(session.startedAt, offset: p.start)) {
+            TranscriptRow(session: session, time: p.start, popoverTime: $popoverTime) {
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
                     if !speaker.isLecturer {
                         speakerLabel("Student", symbol: "person.fill")
                     } else if afterAudience {
                         speakerLabel("Lecturer", symbol: "person.wave.2.fill")
                     }
-                    Group {
-                        if volatile == nil {
-                            Text(highlighted(p)).textSelection(.enabled)
-                        } else {
-                            StreamingText(committed: highlighted(p), volatile: volatile, isStreaming: true, style: .transcript)
-                        }
-                    }
-                    .font(DS.Typo.body)
-                    .lineSpacing(DS.Typo.transcriptLineSpacing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    // Selectable text is one plain-string element (never combined with a parent label).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(Int(p.start) / 60) minutes \(Int(p.start) % 60) seconds\(speaker.isLecturer ? "" : ", student"): \(p.text)\(volatile.map { " In progress: \($0)" } ?? "")")
+                    ParagraphText(session: session, paragraph: p, committed: highlighted(p), speaker: speaker, isLast: isLast)
                 }
                 .padding(speaker.isLecturer ? 0 : DS.Space.m)
                 .background {
@@ -213,25 +214,10 @@ struct TranscriptView: View {
         Label(text, systemImage: symbol).font(DS.Typo.caption).fontWeight(.semibold).foregroundStyle(.secondary)
     }
 
-    private func row<Content: View>(time: TimeInterval, wallClock: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-            // Only the active row carries a popover modifier: hundreds of live popover
-            // presentations inside a streaming, re-laying-out list are a layout-loop risk.
-            let chip = TimestampChip(time: time, style: .gutter, tooltip: wallClock) { popoverTime = time }
-            if popoverTime == time {
-                chip.popover(isPresented: Binding(get: { popoverTime == time }, set: { if !$0 { popoverTime = nil } }), arrowEdge: .trailing) {
-                    TimestampPopover(session: session, time: time)
-                }
-            } else {
-                chip
-            }
-            content()
-        }
-    }
-
     private func highlighted(_ p: TranscriptParagraph) -> AttributedString {
         var a = AttributedString(p.text)
         a.foregroundColor = Color(nsColor: .labelColor)
+        Self.markCorrections(p, in: &a)
         let q = query.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2 else { return a }
         var searchStart = p.text.startIndex
@@ -243,6 +229,33 @@ struct TranscriptView: View {
             searchStart = r.upperBound
         }
         return a
+    }
+
+    // MARK: Jargon corrections
+
+    /// Words corrected from the slides get a subtle dotted underline (the paragraph's tooltip
+    /// says what was heard). `p.text` is the segments joined by single spaces.
+    static func markCorrections(_ p: TranscriptParagraph, in a: inout AttributedString) {
+        var offset = 0
+        for segment in p.segments {
+            for edit in segment.corrections {
+                let lower = offset + segment.text.distance(from: segment.text.startIndex, to: edit.range.lowerBound)
+                let length = segment.text.distance(from: edit.range.lowerBound, to: edit.range.upperBound)
+                guard lower + length <= a.characters.count else { continue }
+                let start = a.characters.index(a.startIndex, offsetBy: lower)
+                let end = a.characters.index(start, offsetBy: length)
+                a[start..<end].underlineStyle = Text.LineStyle(pattern: .dot, color: .secondary)
+            }
+            offset += segment.text.count + 1
+        }
+    }
+
+    /// "Corrected from the slides — heard “gen expression” as genExpr", or nil when nothing was.
+    static func correctionHelp(_ p: TranscriptParagraph) -> String? {
+        let edits = p.segments.flatMap(\.corrections)
+        guard !edits.isEmpty else { return nil }
+        let list = edits.map { "“\($0.original)” → \($0.corrected)" }.joined(separator: ", ")
+        return "Corrected from the slides. Heard: \(list)"
     }
 
     private func flash(_ id: UUID) {
@@ -260,6 +273,91 @@ struct TranscriptView: View {
         newSinceUnpinned = 0
         programmaticScrollUntil = Date.now.addingTimeInterval(0.6)
         proxy.scrollSoon(to: "bottom", anchor: .bottom, animation: motion.settle)
+    }
+}
+
+/// Memoized search hits (a reference type so `hits` can fill it from a body pass).
+private final class HitCache {
+    struct Key: Equatable { var query: String; var paragraphs: Int; var lastSegments: Int }
+    var key: Key?
+    var ids: [UUID] = []
+}
+
+/// A transcript row: timestamp gutter plus content. Only the row whose timestamp was clicked
+/// carries a popover modifier: hundreds of live popover presentations inside a streaming,
+/// re-laying-out list are a layout-loop risk.
+private struct TranscriptRow<Content: View>: View {
+    var session: LiveSessionModel
+    var time: TimeInterval
+    @Binding var popoverTime: TimeInterval?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
+            let chip = TimestampChip(time: time, style: .gutter, tooltip: LiveSessionModel.wallClock(session.startedAt, offset: time)) { popoverTime = time }
+            if popoverTime == time {
+                chip.popover(isPresented: Binding(get: { popoverTime == time }, set: { if !$0 { popoverTime = nil } }), arrowEdge: .trailing) {
+                    TimestampPopover(session: session, time: time)
+                }
+            } else {
+                chip
+            }
+            content()
+        }
+    }
+}
+
+/// The text of one paragraph. Only the last paragraph reads the in-progress hypothesis, so a
+/// volatile tick re-renders this one view instead of the whole list.
+private struct ParagraphText: View {
+    var session: LiveSessionModel
+    var paragraph: TranscriptParagraph
+    var committed: AttributedString
+    var speaker: SpeakerRole
+    var isLast: Bool
+
+    var body: some View {
+        let p = paragraph
+        let volatile = isLast ? session.volatile.flatMap { v in TranscriptView.volatileContinues(p, v) ? v.text : nil } : nil
+        Group {
+            if volatile == nil {
+                Text(committed).textSelection(.enabled)
+            } else {
+                StreamingText(committed: committed, volatile: volatile, isStreaming: true, style: .transcript)
+            }
+        }
+        .font(DS.Typo.body)
+        .lineSpacing(DS.Typo.transcriptLineSpacing)
+        .fixedSize(horizontal: false, vertical: true)
+        .modifier(CorrectionHelp(text: TranscriptView.correctionHelp(p)))
+        // Selectable text is one plain-string element (never combined with a parent label).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(Int(p.start) / 60) minutes \(Int(p.start) % 60) seconds\(speaker.isLecturer ? "" : ", student"): \(p.text)\(volatile.map { " In progress: \($0)" } ?? "")")
+    }
+}
+
+/// The in-progress hypothesis as its own row, when it doesn't continue the last paragraph.
+private struct VolatileTail: View {
+    var session: LiveSessionModel
+    @Binding var popoverTime: TimeInterval?
+
+    var body: some View {
+        if let v = session.volatile, session.paragraphs.last.map({ !TranscriptView.volatileContinues($0, v) }) ?? true {
+            TranscriptRow(session: session, time: v.start, popoverTime: $popoverTime) {
+                StreamingText(committed: AttributedString(""), volatile: v.text, isStreaming: true, style: .transcript)
+            }
+        }
+    }
+}
+
+/// Fires when the in-progress text changes, so the transcript can keep the bottom in view.
+private struct VolatileGrowthTrigger: View {
+    var session: LiveSessionModel
+    var onGrow: () -> Void
+
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0)
+            .onChange(of: session.volatile?.text) { _, _ in onGrow() }
     }
 }
 
@@ -290,5 +388,14 @@ struct TimestampPopover: View {
         }
         .padding(DS.Space.l)
         .frame(maxWidth: 360, alignment: .leading)
+    }
+}
+
+
+/// The paragraph's tooltip listing jargon corrections; no tooltip when there are none.
+private struct CorrectionHelp: ViewModifier {
+    var text: String?
+    func body(content: Content) -> some View {
+        if let text { content.help(text) } else { content }
     }
 }

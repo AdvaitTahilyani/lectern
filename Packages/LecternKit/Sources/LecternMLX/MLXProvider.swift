@@ -89,7 +89,7 @@ public struct MLXProvider: LLMProvider {
         try await mapErrors {
             try await host.generate(
                 model: model, request: request,
-                priority: GenerationScheduler.priority(of: role), onText: onText)
+                priority: GenerationScheduler.priority(of: role, request: request.priority), onText: onText)
         }
     }
 

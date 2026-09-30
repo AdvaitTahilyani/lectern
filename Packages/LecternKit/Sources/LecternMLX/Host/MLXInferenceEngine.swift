@@ -65,8 +65,8 @@ actor MLXInferenceEngine {
         let decoded = context.model(LMInput.Text(tokens: next), cache: layers, state: nil).logits
         eval(decoded)
         let (library, _) = try grammarMachinery(logitDimension: decoded.dim(-1))
-        _ = whitespaceBias()
-        _ = closingTokenBias()
+        _ = whitespaceBias(logitDimension: decoded.dim(-1))
+        _ = closingTokenBias(logitDimension: decoded.dim(-1))
 
         let messages: [LLMMessage] = [.system("You are a helpful assistant."), .user("Say ok.")]
         _ = try generate(
@@ -80,12 +80,6 @@ actor MLXInferenceEngine {
         }
         promptCaches.removeAll()
         stablePrefixes.removeAll()
-        MLX.Memory.clearCache()
-    }
-
-    /// Drops the reusable KV caches (the next call prefills from scratch).
-    func dropPromptCaches() {
-        promptCaches.removeAll()
         MLX.Memory.clearCache()
     }
 
@@ -139,13 +133,21 @@ actor MLXInferenceEngine {
             temperature: Float(max(0, request.temperature)),
             topP: Float(configuration.topP),
             topK: configuration.topK)
-        var iterator = try TokenIterator(
-            input: LMInput(tokens: MLXArray([Int32(lastPromptToken)])),
-            model: context.model,
-            cache: reuse.layers,
-            processor: processor,
-            sampler: sampling.sampler(),
-            maxTokens: max(1, request.maxTokens))
+        var iterator: TokenIterator
+        do {
+            iterator = try TokenIterator(
+                input: LMInput(tokens: MLXArray([Int32(lastPromptToken)])),
+                model: context.model,
+                cache: reuse.layers,
+                processor: processor,
+                sampler: sampling.sampler(),
+                maxTokens: max(1, request.maxTokens))
+        } catch {
+            // The iterator may have fed the last prompt token before failing; the bookkeeping
+            // (prompt minus that token) would no longer match the layers.
+            promptCache.invalidate()
+            throw error
+        }
         let prepared = clock.now
 
         var detokenizer = NaiveStreamingDetokenizer(tokenizer: context.tokenizer)
@@ -289,10 +291,10 @@ actor MLXInferenceEngine {
             expander: expander,
             reasoning: reasoning,
             startInsideReasoning: conventions.promptEndsInsideReasoning(prompt),
-            whitespace: grammar != nil ? whitespaceBias() : nil,
+            whitespace: grammar != nil ? whitespaceBias(logitDimension: logitDimension) : nil,
             closing: grammar != nil
                 ? ConstrainedDecodingProcessor.ClosingZone(
-                    bias: closingTokenBias(),
+                    bias: closingTokenBias(logitDimension: logitDimension),
                     startsAfter: request.maxTokens - min(64, max(8, request.maxTokens / 4)))
                 : nil)
     }
@@ -301,7 +303,7 @@ actor MLXInferenceEngine {
     ///
     /// Unlike `ClosingTokenBias` this leaves digits alone: favouring digits inside a string
     /// makes the model emit runs of digits instead of closing the string.
-    private func closingTokenBias() -> MLXArray {
+    private func closingTokenBias(logitDimension: Int) -> MLXArray {
         if let closingBias { return closingBias }
         let closers: Set<Character> = ["\"", "}", "]"]
         var biases: [Float] = []
@@ -313,7 +315,7 @@ actor MLXInferenceEngine {
         if conventions.grammarStopTokenID < biases.count {
             biases[conventions.grammarStopTokenID] = 200
         }
-        let computed = MLXArray(biases)
+        let computed = MLXArray(biases).fitted(to: logitDimension)
         closingBias = computed
         return computed
     }
@@ -332,9 +334,10 @@ actor MLXInferenceEngine {
         return (library, expander)
     }
 
-    private func whitespaceBias() -> (bias: MLXArray, tokenIDs: Set<Int>) {
+    private func whitespaceBias(logitDimension: Int) -> (bias: MLXArray, tokenIDs: Set<Int>) {
         if let whitespace { return whitespace }
-        let computed = WhitespaceTokenBias.compute(tokenizer: context.tokenizer)
+        var computed = WhitespaceTokenBias.compute(tokenizer: context.tokenizer)
+        computed.bias = computed.bias.fitted(to: logitDimension)
         whitespace = computed
         return computed
     }

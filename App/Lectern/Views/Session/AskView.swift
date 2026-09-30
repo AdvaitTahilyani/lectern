@@ -28,7 +28,7 @@ struct AskView: View {
                     CourseAskThread(model: model, onOpen: { app.open(courseCitation: $0) })
                         .task { model.prepare(sessions: app.sessions) }
                     Divider()
-                    AskComposer(text: Binding(get: { model.draft }, set: { model.draft = $0 }), isAnswering: model.isAnswering, placeholder: "Ask about \(session.courseLabel)…", focused: $composerFocused, onSend: { model.ask(model.draft) }, onCancel: {})
+                    AskComposer(text: Binding(get: { model.draft }, set: { model.draft = $0 }), isAnswering: model.isAnswering, placeholder: "Ask about \(session.courseLabel)…", focused: $composerFocused, onSend: { model.ask(model.draft) }, onCancel: { model.cancel() })
                         .padding(DS.Space.m)
                     Text("Answers cite lectures across the course").font(DS.Typo.footnote).foregroundStyle(.secondary).padding(.bottom, DS.Space.s)
                 }
@@ -138,18 +138,10 @@ struct AnswerView: View {
     var onOpen: (URL) -> Void
     var onRegenerate: () -> Void
     @State private var hovered = false
-    @State private var vote: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            // Selectable, link-bearing text is exposed as ONE plain-string element: resolving
-            // accessibility labels through its link runs recurses in AppKit (C1 stack overflow).
-            Text(AnswerFormatter.attributed(message.text, sessionID: sessionID))
-                .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(AnswerFormatter.plainText(message.text))
+            AnswerText(text: message.text, sessionID: sessionID).equatable()
             if !message.citations.isEmpty {
                 Divider()
                 CitationRow(citations: message.citations, sessionID: sessionID, thumbnail: thumbnail, onOpen: onOpen)
@@ -157,8 +149,6 @@ struct AnswerView: View {
             HStack(spacing: DS.Space.s) {
                 Spacer()
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy")
-                Button { vote = vote == 1 ? 0 : 1 } label: { Image(systemName: vote == 1 ? "hand.thumbsup.fill" : "hand.thumbsup") }.help("Good answer")
-                Button { vote = vote == -1 ? 0 : -1 } label: { Image(systemName: vote == -1 ? "hand.thumbsdown.fill" : "hand.thumbsdown") }.help("Poor answer")
                 if !isLive, isLast { Button(action: onRegenerate) { Image(systemName: "arrow.clockwise") }.help("Regenerate") }
             }
             .buttonStyle(.borderless).controlSize(.small).foregroundStyle(.secondary)
@@ -166,6 +156,24 @@ struct AnswerView: View {
         }
         .onHover { hovered = $0 }
         .animation(DS.Motion.hover, value: hovered)
+    }
+}
+
+/// One finished answer. Equatable so it is re-parsed only when its text changes: the Ask thread
+/// re-renders on every streamed token, and hovering an answer re-renders `AnswerView`.
+private struct AnswerText: View, Equatable {
+    var text: String
+    var sessionID: UUID
+
+    var body: some View {
+        // Selectable, link-bearing text is exposed as ONE plain-string element: resolving
+        // accessibility labels through its link runs recurses in AppKit (C1 stack overflow).
+        Text(AnswerFormatter.attributed(text, sessionID: sessionID))
+            .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(AnswerFormatter.plainText(text))
     }
 }
 

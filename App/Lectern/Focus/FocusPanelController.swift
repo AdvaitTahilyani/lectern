@@ -9,6 +9,7 @@ final class FocusPanelController {
     private var panel: NSPanel?
     private weak var session: LiveSessionModel?
     private var moveObserver: (any NSObjectProtocol)?
+    private var saveOriginTask: Task<Void, Never>?
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -41,21 +42,31 @@ final class FocusPanelController {
         panel.titlebarAppearsTransparent = true
         panel.collectionBehavior = app.preferences.focusPanelAllSpaces ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.fullScreenAuxiliary]
         panel.identifier = NSUserInterfaceItemIdentifier("focus")
-        if let origin = app.preferences.focusPanelOrigin {
-            panel.setFrameOrigin(origin)
+        // The saved position is the panel's top-left corner: its height changes with the quiz
+        // strip (and `resize` keeps the top fixed), so a bottom-left origin would reopen offset.
+        if let topLeft = app.preferences.focusPanelOrigin, NSScreen.screens.contains(where: { $0.frame.contains(CGPoint(x: topLeft.x + 20, y: topLeft.y - 20)) }) {
+            panel.setFrameTopLeftPoint(topLeft)
         } else if let screen = NSScreen.main {
             let frame = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - DS.Layout.focusPanel.width - 20, y: frame.maxY - DS.Layout.focusPanel.height - 20))
+            panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX - DS.Layout.focusPanel.width - 20, y: frame.maxY - 20))
         }
-        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak panel] _ in
+        // didMove fires for every drag step; persist the resting position once the drag settles.
+        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self, weak panel] _ in
             MainActor.assumeIsolated {
-                guard let origin = panel?.frame.origin else { return }
-                app.updatePreferences { $0.focusPanelOrigin = origin }
+                guard let self, let frame = panel?.frame else { return }
+                let topLeft = CGPoint(x: frame.minX, y: frame.maxY)
+                self.saveOriginTask?.cancel()
+                self.saveOriginTask = Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    app.updatePreferences { $0.focusPanelOrigin = topLeft }
+                }
             }
         }
-        panel.orderFrontRegardless()
+        // Assigned before the panel is shown: the hosted view asks for its size as soon as it appears.
         self.panel = panel
         self.session = session
+        panel.orderFrontRegardless()
         session.isFocusPanelOpen = true
     }
 
@@ -156,7 +167,7 @@ struct FocusPanelView: View {
     private func quizStrip(_ quiz: LiveSessionModel.ActiveQuiz) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.xs) {
-                DeadlineRing(deadline: quiz.deadline, paused: false)
+                DeadlineRing(deadline: quiz.deadline, total: app.preferences.quizTimeToAnswer, paused: false)
                 Text(quiz.question.prompt).font(DS.Typo.subheadline).lineLimit(1)
             }
             if case .multipleChoice(let options, _) = quiz.question.kind {

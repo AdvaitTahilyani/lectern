@@ -29,7 +29,7 @@ public enum SlideIngestError: LocalizedError, Equatable {
     }
 }
 
-/// Failures surfaced by `SlideThumbnailer`.
+/// Failures rendering a slide page to a bitmap (for OCR).
 public enum SlideRenderError: LocalizedError, Equatable {
     case unreadable(URL)
     case passwordProtected(URL)

@@ -18,7 +18,10 @@ enum SlideTextRecognizer {
     static func recognize(_ image: CGImage) async throws -> RecognizedPageText {
         var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
+        // Off: on the ILOC table (lec9 slide 8) correction turned `cmp_EQ` into "cmp. EQ" and `r1` into
+        // "71", and it ignores `customWords` built from the deck (same output with and without).
+        // Slides are mostly code, registers and symbols, which a dictionary pass damages.
+        request.usesLanguageCorrection = false
         let observations = try await request.perform(on: image)
 
         struct Line { var text: String; var box: CGRect }

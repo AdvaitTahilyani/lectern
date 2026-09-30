@@ -34,17 +34,19 @@ struct RealLectureTests {
         #expect(page.text.contains("ILOC: Cooper and Torczon"))
         #expect(page.text.contains("Load Operations"))
         #expect(page.text.contains("Register-to-Register"))
+        // Identifiers survive recognition (language correction turned `cmp_EQ` into "cmp. EQ").
+        #expect(page.text.contains("cmp_EQ"))
     }
 
-    /// Replays the captions in 60 s windows every 15 s (LectureBrain's cadence), starting on slide 1, and checks the slide
+    /// Replays the captions in 60 s windows at two cadences, starting on slide 1, and checks the slide
     /// shown at a handful of moments whose slide is clear from the lecture content.
-    @Test(arguments: [false, true])
-    func trackingFollowsTheLecture(useSemantic: Bool) async throws {
+    @Test(arguments: [(false, 10.0), (false, 20.0), (true, 10.0), (true, 20.0)])
+    func trackingFollowsTheLecture(useSemantic: Bool, cadence: TimeInterval) async throws {
         let deck = try await RealLecture.deck()
         let index = SlideIndex(deck: deck, useSemanticSimilarity: useSemantic)
-        let trajectory = try RealLecture.replay(through: index)
-        print("TRAJECTORY (semantic=\(useSemantic)): " + trajectory.changes.map { "\(TimeFormat.clock($0.time))=\($0.slide)" }.joined(separator: " "))
-        print("BACKTRACK SUGGESTIONS (semantic=\(useSemantic)): " + (trajectory.suggestions.isEmpty ? "none" : trajectory.suggestions.map { "\(TimeFormat.clock($0.from))-\(TimeFormat.clock($0.to)) back to \($0.page) (from \($0.current))" }.joined(separator: "; ")))
+        let trajectory = try RealLecture.replay(through: index, every: cadence)
+        print("TRAJECTORY (semantic=\(useSemantic), every \(Int(cadence)) s): " + trajectory.changes.map { "\(TimeFormat.clock($0.time))=\($0.slide)" }.joined(separator: " "))
+        print("BACKTRACK SUGGESTIONS (semantic=\(useSemantic), every \(Int(cadence)) s): " + (trajectory.suggestions.isEmpty ? "none" : trajectory.suggestions.map { "\(TimeFormat.clock($0.from))-\(TimeFormat.clock($0.to)) back to \($0.page) (from \($0.current))" }.joined(separator: "; ")))
 
         #expect(zip(trajectory.changes, trajectory.changes.dropFirst()).allSatisfy { $0.slide <= $1.slide }, "tracking moved backwards")
 
@@ -57,7 +59,9 @@ struct RealLectureTests {
             (58 * 60, 26...28, "let expressions"),
             (62 * 60, 29...30, "boolean and relational expressions"),
             (66 * 60, 29...31, "representing booleans"),
-            (74 * 60 + 40, 32...34, "short circuiting"),
+            // Class ended at 71:34: "short circuiting" at 73:42 is students chatting; S31–S34 were
+            // never presented (docs/eval-cs426.md).
+            (74 * 60 + 40, 29...31, "after class: no new slides"),
         ]
         for checkpoint in checkpoints {
             let slide = trajectory.slide(at: checkpoint.time)
@@ -119,9 +123,9 @@ enum RealLecture {
         }
     }
 
-    /// Runs `likelySlide` and `backtrackCandidate` every 15 s over the trailing 60 s of captions,
-    /// starting on slide 1 (the cadence LectureBrain uses; the trackers count observations).
-    static func replay(through index: SlideIndex) throws -> Trajectory {
+    /// Runs `likelySlide` and `backtrackCandidate` every `cadence` seconds over the trailing 60 s
+    /// of captions, starting on slide 1, with the caption time as the evidence clock.
+    static func replay(through index: SlideIndex, every cadence: TimeInterval) throws -> Trajectory {
         let segments = try transcript()
         let end = segments.map(\.end).max() ?? 0
         var current = 1
@@ -131,11 +135,11 @@ enum RealLecture {
         var time = 60.0
         while time <= end + 20 {
             let text = segments.filter { $0.end > time - 60 && $0.end <= time }.map(\.text).joined(separator: " ")
-            if let slide = index.likelySlide(forTranscript: text, near: current), slide != current {
+            if let slide = index.likelySlide(forTranscript: text, near: current, sessionTime: time), slide != current {
                 current = slide
                 changes.append((time, slide))
             }
-            if let page = index.backtrackCandidate(forTranscript: text, current: current) {
+            if let page = index.backtrackCandidate(forTranscript: text, current: current, sessionTime: time) {
                 if open?.page == page && open?.current == current { open?.to = time } else {
                     if let finished = open { suggestions.append(finished) }
                     open = Suggestion(from: time, to: time, current: current, page: page)
@@ -144,7 +148,7 @@ enum RealLecture {
                 suggestions.append(finished)
                 open = nil
             }
-            time += 15
+            time += cadence
         }
         if let finished = open { suggestions.append(finished) }
         return Trajectory(changes: changes.map { (time: $0.0, slide: $0.1) }, suggestions: suggestions)

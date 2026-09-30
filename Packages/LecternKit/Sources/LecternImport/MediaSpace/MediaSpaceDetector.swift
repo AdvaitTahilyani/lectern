@@ -24,8 +24,15 @@ struct MediaSpaceDetector: Sendable {
 
     /// Whether `url` looks like a MediaSpace lecture page (as opposed to sign-in or browse pages).
     static func isMediaPage(_ url: URL?) -> Bool {
-        guard let url, let host = url.host?.lowercased(), host.hasSuffix("mediaspace.illinois.edu") || host.hasSuffix("kaltura.com") else { return false }
+        guard let url, let host = url.host, isTrustedHost(host, domains: ["mediaspace.illinois.edu", "kaltura.com"]) else { return false }
         return MediaSpaceScraper.entryID(in: url) != nil
+    }
+
+    /// True when `host` is one of `domains` or a subdomain of one. Compared on label boundaries:
+    /// `evilkaltura.com` is not `kaltura.com`.
+    static func isTrustedHost(_ host: String, domains: [String]) -> Bool {
+        let host = host.lowercased()
+        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     /// Call when the main frame commits a new page; clears everything learned about the old one.

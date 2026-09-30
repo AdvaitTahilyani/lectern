@@ -5,20 +5,42 @@ import LecternCore
 
 extension LectureBrain {
     public func finish() async {
+        // A second call while one is running waits for it instead of interleaving with it.
+        if let running = finishTask {
+            await running.value
+            return
+        }
+        let task = Task { await self.performFinish() }
+        finishTask = task
+        await task.value
+        finishTask = nil
+    }
+
+    private func performFinish() async {
         isFinishing = true
         quizTask?.cancel()
         await summaryTask?.value
         if summarizedCount < segments.count || timeline.live != nil {
-            // Drain everything that's left (in budget-sized chunks), then a final refinement.
-            var ok = true
+            // Drain everything that's left (in budget-sized chunks), then a final refinement. A
+            // failing chunk is retried a few times: there's no later update to catch up.
+            var failures = 0
             repeat {
-                ok = await summarize(final: true)
-            } while ok && summarizedCount < segments.count
+                if await summarize(final: true) { failures = 0 } else { failures += 1 }
+            } while failures < Self.finishAttempts && summarizedCount < segments.count && !Task.isCancelled
         }
+        // Whatever still couldn't be summarized belongs to the last card rather than to no card.
+        if summarizedCount < segments.count, let last = segments.last {
+            timeline.extendLive(to: last.end)
+            summarizedCount = segments.count
+        }
+        if let live = timeline.live { try? await withRole(.summaries, .summarizing) { await rewriteAsideIfGrown(live.id) } }
         timeline.settleLive()
         emit(.takeaways(timeline.takeaways))
         isFinishing = false
     }
+
+    /// Attempts per remaining chunk in `finish()`.
+    static let finishAttempts = 3
 
     /// Whether enough new transcript has accumulated for a rolling update.
     func shouldSummarize() -> Bool {
@@ -46,7 +68,7 @@ extension LectureBrain {
     /// (already reported and backed off).
     @discardableResult
     func summarize(final: Bool) async -> Bool {
-        await withRole(.summaries, .summarizing) {
+        (try? await withRole(.summaries, .summarizing) {
             let newEnd = chunkEnd()
             let newRange = summarizedCount..<newEnd
             let live = timeline.live
@@ -57,9 +79,9 @@ extension LectureBrain {
             let newLast = newRange.isEmpty ? newStart : segments[newEnd - 1].end
             let query = segments[newRange].suffix(12).map(\.text).joined(separator: " ")
             let onScreen = slidesShown(from: newLast, to: newLast).last
-            chunk.relevantPages = Set(slidesShown(from: live?.start ?? newStart, to: newLast)
+            chunk.relevantPages = Set((slidesShown(from: live?.start ?? newStart, to: newLast)
                 + excerpts.neighbourhood(of: onScreen)
-                + (slideSearch?.search(query, limit: 3).map(\.page) ?? []))
+                + (slideSearch?.search(query, limit: 3).map(\.page) ?? [])).filter { isPresented($0, at: newLast) })
             let input = Prompts.SegmentationInput(
                 lecture: lecture,
                 digest: digest,
@@ -74,8 +96,10 @@ extension LectureBrain {
                 slidesInTopic: live.map { excerpts.titles(slidesShown(from: $0.start, to: newStart)) } ?? nil,
                 slidesInNewLines: newRange.isEmpty ? nil : excerpts.titles(slidesShown(from: newStart, to: newLast)),
                 slides: excerpts.render(pages: excerpts.neighbourhood(of: onScreen), query: query, hits: 3,
-                                        budgetTokens: TokenBudget.segmentationSlides),
-                isFinal: isLastChunk
+                                        budgetTokens: TokenBudget.segmentationSlides, allowed: { self.isPresented($0, at: newLast) }),
+                isFinal: isLastChunk,
+                unshownSlides: unshownSlidesLabel(at: newLast),
+                classEndedAt: classEndedAt.flatMap { $0 <= newLast ? $0 : nil }
             )
             do {
                 let hasLive = live != nil
@@ -84,8 +108,10 @@ extension LectureBrain {
                     messages: Prompts.segmentation(input), profile: .segmentation
                 ) { try TopicTimeline.check($0, hasLiveTopic: hasLive) }
                 if newRange.isEmpty { reply.action = .continueTopic }
-                reply.slides = slideSupport.supported(reply.slides, by: reply.title + " " + reply.summary, fallback: chunk.relevantPages)
+                reply.slides = slideSupport.supported(reply.slides.filter { isPresented($0, at: newLast) }, by: reply.title + " " + reply.summary,
+                                                      fallback: chunk.relevantPages).filter { isPresented($0, at: newLast) }
 
+                let previousLive = timeline.live
                 switch timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages) {
                 // Nothing opened yet: keep the skipped lines in the window so the first card can
                 // still claim them. A lecture often opens with something that reads like admin
@@ -96,52 +122,71 @@ extension LectureBrain {
                     if await addOpeningRecap(chunk.window) { topicWindowStart = newEnd }
                 case .opened(let boundary):
                     topicWindowStart = boundary
-                    // The first card starts at its quoted boundary; a long technical stretch
-                    // before it would otherwise belong to no card.
-                    await addOpeningRecap(chunk.window.lowerBound..<boundary)
+                    // The first card starts at its quoted boundary; the stretch before it must
+                    // still land on a card (a recap card, or the recap card written earlier).
+                    await coverBeforeFirstCard(chunk.window.lowerBound..<boundary)
                     // Opening right after a recap card on the same subject continues that card.
                     if timeline.mergeLiveIntoPreviousIfDuplicate(), let merged = timeline.live {
                         topicWindowStart = segments.firstIndex { $0.end > merged.start } ?? boundary
                     }
-                case .split(let boundary): topicWindowStart = boundary
+                case .split(let boundary):
+                    topicWindowStart = boundary
+                    if let previousLive { await rewriteAsideIfGrown(previousLive.id) }
                 case .refined: topicWindowStart = windowStart
                 }
+                await trackAdminRun(kind: reply.newLinesKind, newRange: newRange)
                 summarizedCount = max(summarizedCount, newEnd)
                 summaryBackoff.succeeded()
                 emit(.takeaways(timeline.takeaways))
                 return true
+            } catch where error.isCancellation {
+                return false
             } catch {
                 summaryBackoff.failed(at: sessionTime)
                 emit(.error("Takeaways paused: \(error.brainMessage)"))
                 return false
             }
-        }
+        }) ?? false
     }
 
     /// Writes a settled "Recap" card for skipped opening lines when they deserve one (see
     /// `OpeningStretch`). Returns whether a card was added. Failures are reported, not thrown:
     /// the rolling update itself succeeded.
     @discardableResult
-    private func addOpeningRecap(_ range: Range<Int>) async -> Bool {
+    func addOpeningRecap(_ range: Range<Int>) async -> Bool {
         let stretch = segments[range]
         guard timeline.takeaways.filter({ !$0.isLive }).isEmpty, openingStretch.deservesRecap(stretch),
-              let first = stretch.first, let last = stretch.last else { return false }
+              let first = stretch.first, let last = stretch.last,
+              let card = await writeRecapCard(stretch) else { return false }
+        timeline.insertSettled(title: card.title, summary: card.summary, start: first.start, end: last.end)
+        return true
+    }
+
+    /// Title and summary for opening lines that recap or correct earlier material, or nil (reported).
+    func writeRecapCard(_ stretch: ArraySlice<TranscriptSegment>) async -> (title: String, summary: String)? {
+        await writeCard(Prompts.openingRecap(lecture: lecture, digest: digest,
+                                             transcript: TranscriptText.renderFitting(stretch, maxTokens: TokenBudget.topicWindow)),
+                        prefix: "Recap: ", what: "the opening recap")
+    }
+
+    /// One `CardReply` call; the title gets `prefix` unless it already starts with its first word.
+    /// With `mayDecline`, an empty reply means "no card" (nil, not an error).
+    func writeCard(_ messages: [LLMMessage], prefix: String, what: String, mayDecline: Bool = false) async -> (title: String, summary: String)? {
         do {
-            let card = try await StructuredGeneration.generate(
-                CardReply.self, provider: providers.summaries,
-                messages: Prompts.openingRecap(lecture: lecture, digest: digest,
-                                               transcript: TranscriptText.renderFitting(stretch, maxTokens: TokenBudget.topicWindow)),
-                profile: .segmentation
-            ) { reply in
+            let card: (String, String)? = try await StructuredGeneration.generate(CardReply.self, provider: providers.summaries,
+                                                                                  messages: messages, profile: .segmentation) { reply in
                 let title = TopicTimeline.cleanTitle(reply.title)
+                if mayDecline, title.isEmpty, Text.collapse(reply.summary).isEmpty { return nil }
                 guard !title.isEmpty, !reply.summary.isEmpty else { throw ReplyRejected(reason: "Give a \"title\" and a \"summary\".") }
-                return (title.lowercased().hasPrefix("recap") ? title : "Recap: " + title, reply.summary)
+                let word = prefix.prefix { $0.isLetter || $0 == "&" }.lowercased()
+                return (title.lowercased().hasPrefix(word) ? title : prefix + title, reply.summary)
             }
-            timeline.insertSettled(title: card.0, summary: card.1, start: first.start, end: last.end)
-            return true
+            return card.map { (title: $0.0, summary: $0.1) }
+        } catch where error.isCancellation {
+            return nil
         } catch {
-            emit(.error("Takeaways: couldn't write the opening recap: \(error.brainMessage)"))
-            return false
+            emit(.error("Takeaways: couldn't write \(what): \(error.brainMessage)"))
+            return nil
         }
     }
 

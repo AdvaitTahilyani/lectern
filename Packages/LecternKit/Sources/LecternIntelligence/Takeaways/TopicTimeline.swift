@@ -11,6 +11,9 @@ struct TopicTimeline: Sendable {
 
     static let maxSummaryChars = 220
     static let maxTitleChars = 64
+    /// Announcements/Q&A cards (written by a dedicated call): never retitled by rolling updates.
+    var asideCards: Set<UUID> = []
+
     /// Models tend to list whole slide ranges; a card links a handful.
     static let maxSlidesPerTopic = 6
 
@@ -72,7 +75,7 @@ struct TopicTimeline: Sendable {
 
     mutating func apply(_ reply: SegmentationReply, chunk: Chunk, validPages: Set<Int>, now: Date = .now) -> Outcome {
         let title = Self.cleanTitle(reply.title)
-        let summary = Text.clampSentences(PlainMath.clean(reply.summary), maxChars: Self.maxSummaryChars)
+        let summary = Text.fitSentences(PlainMath.clean(reply.summary), maxChars: Self.maxSummaryChars)
         let listed = reply.slides.filter(validPages.contains)
         let slides = Array((listed.filter(chunk.relevantPages.contains) + listed.filter { !chunk.relevantPages.contains($0) })
             .prefix(Self.maxSlidesPerTopic))
@@ -91,9 +94,12 @@ struct TopicTimeline: Sendable {
             return .opened(boundary: boundary)
         }
 
-        let isSameTitle = title.caseInsensitiveCompare(current.title) == .orderedSame
-            || Self.isNearDuplicate(title: title, summary: summary, of: current)
-        if reply.action == .continueTopic || isSameTitle || reply.newLinesKind == .admin {
+        // Lecture content after an announcements/Q&A card always starts a new card: the aside card
+        // keeps its own text, however short it is.
+        let resumesAfterAside = asideCards.contains(current.id) && reply.newLinesKind != .admin && !title.isEmpty && !summary.isEmpty
+        let isSameTitle = !resumesAfterAside && (title.caseInsensitiveCompare(current.title) == .orderedSame
+            || Self.isNearDuplicate(title: title, summary: summary, of: current))
+        if !resumesAfterAside, reply.action == .continueTopic || isSameTitle || reply.newLinesKind == .admin {
             if reply.newLinesKind == .admin {
                 // An admin stretch is not a topic: extend the live one, keep its title and summary.
                 current.end = max(current.end, latestEnd)
@@ -108,23 +114,31 @@ struct TopicTimeline: Sendable {
         let searchable = chunk.window.lowerBound..<(chunk.new.isEmpty ? chunk.window.upperBound : chunk.new.upperBound)
         let match = locate(reply.boundaryQuote, chunk, preferFrom: chunkStart, within: searchable)
         let boundaryTime = match?.time ?? chunk.segments[chunkStart].start
-        guard boundaryTime - current.start >= minTopicSeconds else {
+        guard resumesAfterAside || boundaryTime - current.start >= minTopicSeconds else {
             // The live topic has barely started; splitting now would leave a sliver of a card (small
             // models over-split). Keep one card, described by the newer title and summary.
             refine(&current, title: title, summary: summary, slides: slides, end: latestEnd, now: now)
             return .refined
         }
 
-        let closed = Text.clampSentences(PlainMath.clean(reply.closedSummary), maxChars: Self.maxSummaryChars)
+        let closed = Text.fitSentences(PlainMath.clean(reply.closedSummary), maxChars: Self.maxSummaryChars)
         current.isLive = false
         current.end = boundaryTime
-        if !closed.isEmpty { current.summary = closed }
+        if !closed.isEmpty, !asideCards.contains(current.id) { current.summary = closed }
         current.detail = nil
         current.updatedAt = now
         replaceLive(current)
         takeaways.append(Takeaway(title: title, summary: summary, start: boundaryTime, end: max(boundaryTime, latestEnd),
                                   slidePages: Self.merge([], slides), isLive: true, updatedAt: now))
         return .split(boundary: match?.segmentIndex ?? chunkStart)
+    }
+
+    /// Extends the live card to `end` without changing its text (lines that couldn't be summarized).
+    mutating func extendLive(to end: TimeInterval, now: Date = .now) {
+        guard var current = live, end > current.end else { return }
+        current.end = end
+        current.updatedAt = now
+        replaceLive(current)
     }
 
     /// Ends the live topic (recording stopped).
@@ -168,7 +182,7 @@ struct TopicTimeline: Sendable {
     /// Adds a settled card for a stretch the rolling updates skipped (see `OpeningStretch`), in
     /// time order before any later card.
     mutating func insertSettled(title: String, summary: String, start: TimeInterval, end: TimeInterval, now: Date = .now) {
-        let card = Takeaway(title: Self.cleanTitle(title), summary: Text.clampSentences(PlainMath.clean(summary), maxChars: Self.maxSummaryChars),
+        let card = Takeaway(title: Self.cleanTitle(title), summary: Text.fitSentences(PlainMath.clean(summary), maxChars: Self.maxSummaryChars),
                             start: start, end: end, isLive: false, updatedAt: now)
         let index = takeaways.firstIndex { $0.start >= start } ?? takeaways.endIndex
         takeaways.insert(card, at: index)
@@ -185,11 +199,51 @@ struct TopicTimeline: Sendable {
     static let restatedSummaryContainment = 0.8
     static let minTermsForContainment = 4
 
+    /// Summaries that open with essentially the same sentence describe the same topic.
+    static let sameOpeningSimilarity = 0.6
+
     static func isNearDuplicate(title: String, summary: String, of card: Takeaway) -> Bool {
         let titles = similarity(title, card.title)
         return titles >= duplicateTitleSimilarity
             || (titles >= similarTitleSimilarity && similarity(summary, card.summary) >= similarSummarySimilarity)
             || containment(of: summary, in: card.summary) >= restatedSummaryContainment
+            || (terms(firstSentence(summary)).count >= minTermsForContainment
+                && similarity(firstSentence(summary), firstSentence(card.summary)) >= sameOpeningSimilarity)
+    }
+
+    private static func firstSentence(_ s: String) -> String {
+        let text = Text.collapse(s)
+        guard let end = text.firstIndex(where: { ".!?".contains($0) }) else { return text }
+        return String(text[...end])
+    }
+
+    /// Ends the live card at `time` and opens a new live card for `title`/`summary` from there to
+    /// `end` (an announcements or Q&A stretch the model filed as admin). Returns the new card's id.
+    @discardableResult
+    mutating func splitLive(at time: TimeInterval, title: String, summary: String, end: TimeInterval, now: Date = .now) -> UUID? {
+        guard var current = live, time > current.start else { return nil }
+        current.isLive = false
+        current.end = time
+        current.detail = nil
+        current.updatedAt = now
+        replaceLive(current)
+        let card = Takeaway(title: Self.cleanTitle(title), summary: Text.fitSentences(PlainMath.clean(summary), maxChars: Self.maxSummaryChars),
+                            start: time, end: max(time, end), isLive: true, updatedAt: now)
+        takeaways.append(card)
+        return card.id
+    }
+
+    /// Replaces a card's title and summary (and optionally extends it to `end`), e.g. when a
+    /// card written by a dedicated call is rewritten over its final range.
+    mutating func rewrite(_ id: UUID, title: String, summary: String, end: TimeInterval? = nil, now: Date = .now) {
+        guard let i = takeaways.firstIndex(where: { $0.id == id }) else { return }
+        let cleaned = Self.cleanTitle(title)
+        if !cleaned.isEmpty { takeaways[i].title = cleaned }
+        let text = Text.fitSentences(PlainMath.clean(summary), maxChars: Self.maxSummaryChars)
+        if !text.isEmpty { takeaways[i].summary = text }
+        if let end { takeaways[i].end = max(takeaways[i].end, end) }
+        takeaways[i].detail = nil
+        takeaways[i].updatedAt = now
     }
 
     /// Share of `a`'s content words that also occur in `b` (0 when `a` is too short to judge).

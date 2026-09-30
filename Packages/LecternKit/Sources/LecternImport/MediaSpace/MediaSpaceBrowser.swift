@@ -151,7 +151,8 @@ public struct MediaSpaceBrowserView: NSViewRepresentable {
         // MARK: Script messages
 
         public func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard Self.isTrusted(message.frameInfo.securityOrigin.host),
+            let origin = message.frameInfo.securityOrigin
+            guard Self.isTrusted(scheme: origin.protocol, host: origin.host),
                   let body = message.body as? [String: Any] else { return }
             // KVO may lag the message; make sure the title and address are current before resolving.
             if let webView = message.webView { refresh(webView) }
@@ -163,10 +164,11 @@ public struct MediaSpaceBrowserView: NSViewRepresentable {
             if let source = state.receive(signal) { onFound(source) }
         }
 
-        /// Only pages of MediaSpace itself, Kaltura, or the campus SSO may feed us identifiers.
-        private static func isTrusted(_ host: String) -> Bool {
-            let host = host.lowercased()
-            return host.hasSuffix("kaltura.com") || host.hasSuffix("illinois.edu")
+        /// Only https pages of MediaSpace itself or Kaltura may feed us identifiers (sign-in pages never need to; navigation is unrestricted).
+        /// The origin is that of the frame that posted the message, so an untrusted iframe inside a
+        /// trusted page (or the reverse) is judged by its own address.
+        static func isTrusted(scheme: String, host: String) -> Bool {
+            scheme.lowercased() == "https" && MediaSpaceDetector.isTrustedHost(host, domains: ["mediaspace.illinois.edu", "kaltura.com"])
         }
 
         // MARK: Navigation

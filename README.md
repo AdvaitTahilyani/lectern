@@ -58,7 +58,7 @@ Packages/LecternKit/
   LecternLLM             OpenAI, Anthropic, OpenAI-compatible local servers, Keychain
   LecternMLX             In-process MLX host: shared model, per-role prompt caches, downloads
   LecternSlides          PDF ingest (+ OCR), slide search, forward-only slide tracking
-  LecternStore           JSON persistence, autosave, Markdown export, library search
+  LecternStore           JSON persistence, autosave, library search
   LecternIntelligence    LectureBrain (takeaways, quizzes, Ask, recaps) and course-wide Ask
   LecternImport          Recording import (files, Illinois MediaSpace), PPTX/Keynote → PDF
 ```

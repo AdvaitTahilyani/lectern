@@ -40,15 +40,35 @@ struct Backoff: Sendable {
 /// MLX provider runs one generation at a time, and parallel calls would thrash its prompt cache).
 actor SerialGate {
     private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(id: UInt64, continuation: CheckedContinuation<Void, Error>)] = []
+    private var nextID: UInt64 = 0
 
-    func acquire() async {
+    /// Waits for the gate. Throws `CancellationError` (without holding the gate) if the task is
+    /// cancelled while waiting; every successful call must be paired with `release()`.
+    func acquire() async throws {
+        try Task.checkCancellation()
         guard busy else { busy = true; return }
-        await withCheckedContinuation { waiters.append($0) }
+        nextID += 1
+        let id = nextID
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { waiters.append((id, $0)) }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+        // Handed the gate just as the task was cancelled: pass it on.
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
+        }
     }
 
     func release() {
-        if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
+        if waiters.isEmpty { busy = false } else { waiters.removeFirst().continuation.resume() }
+    }
+
+    private func cancel(_ id: UInt64) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 }
 
@@ -78,9 +98,9 @@ struct BrainTuning: Sendable {
     /// A topic shorter than this is re-titled instead of split off (see `TopicTimeline`).
     var minTopicSeconds: TimeInterval = 150
     /// Slide tracking cadence and transcript window.
-    /// Slide trackers count observations, so this cadence (in transcript time) is part of their
-    /// tuning: `SlideIndex` expects a call every ~15–20 s.
-    var slideCheckSeconds: TimeInterval = 15
+    /// Slide-tracking cadence in transcript time (trackers measure evidence on the same clock, so
+    /// the cadence only sets how quickly a change is noticed).
+    var slideCheckSeconds: TimeInterval = 10
     var slideWindowSeconds: TimeInterval = 60
     /// Minimum new lecture material between two timed quiz questions.
     var quizNewMaterialSeconds: TimeInterval = 240

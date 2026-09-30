@@ -40,9 +40,16 @@ enum MPEGTSAudioDemuxer {
 
         segment.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
             var offset = 0
+            var lastSync = 0
             while offset + packetSize <= bytes.count {
+                guard bytes[offset] == syncByte else {
+                    // A lost or extra byte shifted the packet grid: look for the next run of aligned sync
+                    // bytes just after the last good packet, rather than skipping the rest of the segment.
+                    offset = resynchronized(in: bytes, after: lastSync)
+                    continue
+                }
+                lastSync = offset
                 defer { offset += packetSize }
-                guard bytes[offset] == syncByte else { continue }
                 let startsUnit = bytes[offset + 1] & 0x40 != 0
                 let pid = (Int(bytes[offset + 1] & 0x1F) << 8) | Int(bytes[offset + 2])
                 let adaptation = (bytes[offset + 3] >> 4) & 0x3
@@ -77,6 +84,21 @@ enum MPEGTSAudioDemuxer {
         case .aacADTS: return Audio(codec: codec, data: adtsFrames(in: elementary))
         case .mp3: return Audio(codec: codec, data: elementary)
         }
+    }
+
+    /// Offset of the first packet start after `lastSync` that is confirmed by sync bytes at the next
+    /// packet positions (as many as fit), or the end of the data if there is none.
+    private static func resynchronized(in bytes: UnsafeRawBufferPointer, after lastSync: Int) -> Int {
+        var candidate = lastSync + 1
+        while candidate + packetSize <= bytes.count {
+            if bytes[candidate] == syncByte,
+               (1...2).allSatisfy({ candidate + $0 * packetSize >= bytes.count || bytes[candidate + $0 * packetSize] == syncByte })
+            {
+                return candidate
+            }
+            candidate += 1
+        }
+        return bytes.count
     }
 
     // MARK: - Program tables

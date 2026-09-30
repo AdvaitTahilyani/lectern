@@ -79,7 +79,9 @@ final class ReusableSlidingWindowCache: KVCache, CustomDebugStringConvertible {
         if let keys, rows + n <= keys.dim(2) { return }
 
         let keep = min(rows, retainedCapacity)
-        let size = ((keep + n + step - 1) / step) * step
+        // At least `step` spare rows: an exact fit would make a saturated cache (window + slack a
+        // multiple of `step`) reallocate and copy every layer's rows on every decoded token.
+        let size = ((keep + n + step - 1) / step + 1) * step
         let (b, heads, kDim, vDim) = (k.dim(0), k.dim(1), k.dim(3), v.dim(3))
         let freshK = MLXArray.zeros([b, heads, size - keep, kDim], dtype: k.dtype)
         let freshV = MLXArray.zeros([b, heads, size - keep, vDim], dtype: v.dtype)

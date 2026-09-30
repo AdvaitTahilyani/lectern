@@ -40,10 +40,8 @@ nonisolated struct DemoRecordingImporter: RecordingImporting {
         result.deck = session.deck ?? result.deck
         result.source = session.source
         if case .mediaSpace(let entry, let page, _) = session.source { result.source = .mediaSpace(entryID: entry, pageURL: page, usedCaptions: usedCaptions) }
-        // Retarget the summary takeaway id to the caller's session id.
-        if let i = result.takeaways.firstIndex(where: { $0.title == SessionConventions.summaryTitle(sessionID: session.id) }) {
-            result.takeaways[i].id = SessionConventions.summaryID(for: session.id)
-        }
+        // Like a real import, the summary is written when the lecture is first reviewed.
+        result.summary = nil
         return result
     }
 }
@@ -201,10 +199,10 @@ nonisolated struct DemoCourseAssistant: CourseAssisting {
         }
         if q.contains("last week") || q.contains("recent") || q.contains("catch") {
             let recent = sorted.suffix(2)
-            return "Recently: " + recent.map { "**\($0.session.title)** — \($0.session.takeaways.dropFirst().first?.summary ?? "") [L\($0.ordinal) S2]" }.joined(separator: "\n\n")
+            return "Recently: " + recent.map { "**\($0.session.title)** — \($0.session.takeaways.first?.summary ?? "") [L\($0.ordinal) S2]" }.joined(separator: "\n\n")
         }
         let l = sorted.last ?? sorted.first
         let n = l?.ordinal ?? 1
-        return "The closest match in this course is **\(l?.session.title ?? "the latest lecture")** [L\(n) S1]: \(l?.session.takeaways.dropFirst().first?.summary ?? "see the summary card"). Ask about a specific topic — parsing, lexing, type inference — for a grounded answer with slide and timestamp citations."
+        return "The closest match in this course is **\(l?.session.title ?? "the latest lecture")** [L\(n) S1]: \(l?.session.takeaways.first?.summary ?? "see the summary card"). Ask about a specific topic — parsing, lexing, type inference — for a grounded answer with slide and timestamp citations."
     }
 }

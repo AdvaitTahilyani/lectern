@@ -12,7 +12,6 @@ enum ParakeetModels {
     /// Approximate download sizes in bytes, for `EngineReadiness.needsDownload`.
     static let unifiedBytes: Int64 = 620_000_000
     static let vocabularyBytes: Int64 = 100_000_000
-    static let fallbackBytes: Int64 = 600_000_000
 
     static var streamingLatency: TimeInterval { Double(streamingConfig.latencyMs) / 1000 }
 

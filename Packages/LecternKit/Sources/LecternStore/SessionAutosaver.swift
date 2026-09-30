@@ -48,8 +48,17 @@ public actor SessionAutosaver {
         try await lastWrite?.value
     }
 
-    /// Drops the pending snapshot and cancels the timer without saving (e.g. the session was deleted).
-    public func discard() {
+    /// Drops the pending snapshot and cancels the timer without saving, then waits for a write that
+    /// is already running. Call it before deleting the session: once it returns, no save can land
+    /// late and bring the deleted session back. Updates after this call are the caller's mistake,
+    /// but one that arrives while waiting is dropped too.
+    public func discard() async {
+        drop()
+        _ = await lastWrite?.result
+        drop()
+    }
+
+    private func drop() {
         timer?.cancel()
         timer = nil
         pending = nil

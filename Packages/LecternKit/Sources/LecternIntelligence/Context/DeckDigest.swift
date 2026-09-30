@@ -17,7 +17,7 @@ enum DeckDigest {
         }
         let header = "SLIDES" + (deck.title.map { " — \(Text.collapse($0))" } ?? "") + " (cite as [S#]):"
         let bodies = deck.pages.sorted { $0.number < $1.number }.map { (number: $0.number, text: pageText($0)) }
-        let budget = budgetTokens * 4 - header.count - omissionNote.count - 2
+        let budget = Int(Double(budgetTokens) * TokenBudget.charactersPerToken) - header.count - omissionNote.count - 2
         let cap = perSlideCap(lengths: bodies.map { $0.text.count + 8 }, budget: budget)
 
         var lines = [header]

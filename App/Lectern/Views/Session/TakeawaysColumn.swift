@@ -157,6 +157,7 @@ struct TakeawaysColumn: View {
                     if let quiz = session.quiz {
                         QuizCard(
                             quiz: quiz, streak: session.streak, showStreak: app.preferences.showStreaks, sessionID: session.id,
+                            timeToAnswer: app.preferences.quizTimeToAnswer,
                             thumbnail: { session.slideImages?.image(page: $0, width: 32) },
                             onSelect: { session.selectOption($0) },
                             onShortAnswerChange: { session.updateShortAnswer($0) },
@@ -168,7 +169,7 @@ struct TakeawaysColumn: View {
                         )
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
-                    nowCard
+                    NowCard(session: session, namespace: namespace)
                         .lecternGlass(.regular, in: .rect(cornerRadius: DS.Radius.float))
                 }
             }
@@ -178,23 +179,6 @@ struct TakeawaysColumn: View {
         .padding(.bottom, DS.Space.floatInset)
         .frame(maxWidth: .infinity)
         .animation(motion.float, value: session.quiz?.question.id)
-    }
-
-    @ViewBuilder private var nowCard: some View {
-        if let live = session.liveTakeaway {
-            TakeawayCard(takeaway: live, state: .live(elapsed: max(0, session.elapsed - live.start)), compact: session.quiz != nil)
-                .matchedGeometryEffect(id: live.id, in: namespace)
-        } else if session.settledTakeaways.isEmpty {
-            HStack(spacing: DS.Space.m) {
-                LiveDot(state: session.recordingState == .paused ? .paused : .recording, size: DS.Size.liveDotSmall)
-                Text(session.recordingState == .paused ? "Paused" : "Listening…").font(DS.Typo.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                LevelMeter(level: session.level, peak: session.level, width: 80)
-            }
-            .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.m)
-        } else {
-            TakeawayCard(takeaway: nil, state: .placeholder)
-        }
     }
 
     // MARK: Summary (review)
@@ -215,22 +199,47 @@ struct TakeawaysColumn: View {
             .surfaceCard()
         case .ready:
             if let s = session.summary {
-                VStack(alignment: .leading, spacing: DS.Space.s) {
+                VStack(alignment: .leading, spacing: DS.Space.m) {
                     HStack(spacing: DS.Space.s) {
                         Image(systemName: "sparkles").foregroundStyle(DS.Colors.accent)
                         Text("Lecture summary").font(DS.Typo.headline)
                         Spacer()
                         Button { session.copySummary() } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).controlSize(.small).help("Copy summary (⌘⇧C)")
                     }
-                    Text(s.summary).font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing).fixedSize(horizontal: false, vertical: true)
-                    if let terms = s.detail?.keyTerms, !terms.isEmpty {
+                    Text(s.overview).font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing).fixedSize(horizontal: false, vertical: true)
+                    if !s.keyConcepts.isEmpty {
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
                             Text("Key terms").font(DS.Typo.caption).foregroundStyle(.secondary)
                             FlowLayout(spacing: DS.Space.xs) {
-                                ForEach(terms) { k in
+                                ForEach(s.keyConcepts) { k in
                                     TermChip(term: k) {
-                                        if let t = session.takeaways.first(where: { $0.detail?.keyTerms.contains(where: { $0.term == k.term }) == true || $0.summary.localizedCaseInsensitiveContains(k.term) }) { scrollTarget = t.id }
+                                        if let t = session.takeaways.first(where: { $0.detail?.keyTerms.contains(where: { $0.term.caseInsensitiveCompare(k.term) == .orderedSame }) == true || $0.summary.localizedCaseInsensitiveContains(k.term) }) { scrollTarget = t.id }
                                     }
+                                }
+                            }
+                        }
+                    }
+                    if !s.reviewThese.isEmpty { summaryReviewList(s.reviewThese) }
+                    if !s.flagged.isEmpty {
+                        VStack(alignment: .leading, spacing: DS.Space.xs) {
+                            ForEach(Array(s.flagged.enumerated()), id: \.offset) { _, f in
+                                HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                                    Image(systemName: "flag.fill").font(.caption2).foregroundStyle(DS.Colors.warning)
+                                    Text(f).font(DS.Typo.subheadline).fontWeight(.medium).fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.horizontal, DS.Space.s).padding(.vertical, DS.Space.xs)
+                                .background(DS.Colors.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Flagged in the lecture: " + s.flagged.joined(separator: ". "))
+                    }
+                    if !s.slides.isEmpty {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                            Text("Worth revisiting").font(DS.Typo.caption).foregroundStyle(.secondary)
+                            FlowLayout(spacing: DS.Space.xs) {
+                                ForEach(Array(Self.slideRuns(s.slides).enumerated()), id: \.offset) { _, run in
+                                    SlideChip(page: run.first, endPage: run.last == run.first ? nil : run.last) { session.showSlide(run.first) }
                                 }
                             }
                         }
@@ -257,6 +266,33 @@ struct TakeawaysColumn: View {
 
     // MARK: Helpers
 
+    /// "Review these": concepts missed in quizzes, with the missed-concept marker, and a way into
+    /// the Review missed concepts flow.
+    private func summaryReviewList(_ items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            Text("Review these").font(DS.Typo.caption).foregroundStyle(.secondary)
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                    Image(systemName: "arrow.uturn.backward.circle.fill").font(.caption).foregroundStyle(DS.Colors.review)
+                    Text(item).font(DS.Typo.subheadline).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !session.missedConcepts.isEmpty {
+                Button("Review missed concepts") { session.startReviewMissed() }.buttonStyle(.link).font(DS.Typo.footnote)
+            }
+        }
+    }
+
+    /// Consecutive pages collapsed into runs, e.g. [3, 4, 5, 9] → 3–5, 9.
+    static func slideRuns(_ pages: [Int]) -> [(first: Int, last: Int)] {
+        var runs: [(first: Int, last: Int)] = []
+        for page in Set(pages).sorted() {
+            if let last = runs.last, page == last.last + 1 { runs[runs.count - 1].last = page } else { runs.append((page, page)) }
+        }
+        return runs
+    }
+
+
     private var focusedTakeaway: Takeaway? { session.settledTakeaways.first { $0.id == focusedID } }
 
     private func toggle(_ t: Takeaway) {
@@ -282,6 +318,32 @@ struct TakeawaysColumn: View {
         followLive = true
         newSinceUnpinned = 0
         scrollToBottomSoon(proxy)
+    }
+}
+
+// MARK: - Now card
+
+/// The docked "Now" card. It is its own view so the once-a-second `elapsed` tick and the
+/// audio `level` invalidate only this card, not the whole takeaway list.
+private struct NowCard: View {
+    var session: LiveSessionModel
+    var namespace: Namespace.ID
+
+    var body: some View {
+        if let live = session.liveTakeaway {
+            TakeawayCard(takeaway: live, state: .live(elapsed: max(0, session.elapsed - live.start)), compact: session.quiz != nil)
+                .matchedGeometryEffect(id: live.id, in: namespace)
+        } else if session.settledTakeaways.isEmpty {
+            HStack(spacing: DS.Space.m) {
+                LiveDot(state: session.recordingState == .paused ? .paused : .recording, size: DS.Size.liveDotSmall)
+                Text(session.recordingState == .paused ? "Paused" : "Listening…").font(DS.Typo.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                LevelMeter(level: session.level, peak: session.level, width: 80)
+            }
+            .padding(.horizontal, DS.Space.l).padding(.vertical, DS.Space.m)
+        } else {
+            TakeawayCard(takeaway: nil, state: .placeholder)
+        }
     }
 }
 

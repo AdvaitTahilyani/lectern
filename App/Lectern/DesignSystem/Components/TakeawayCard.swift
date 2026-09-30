@@ -132,6 +132,8 @@ struct TakeawayCard: View {
         .accessibilityElement(children: isExpanded ? .contain : .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(isExpanded ? "Double-tap to collapse" : "Double-tap to expand")
+        .accessibilityAction { onToggleExpand() }   // default activation = expand/collapse (QA N4)
+        .accessibilityAction(named: "Show in transcript") { if let t = takeaway { onSeek(t.start) } }
         .accessibilityAction(named: "Ask about this", onAsk)
         .accessibilityAction(named: "Copy", onCopy)
     }

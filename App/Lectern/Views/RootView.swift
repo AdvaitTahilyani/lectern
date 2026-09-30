@@ -16,20 +16,23 @@ struct RootView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: DS.Layout.sidebar.min, ideal: DS.Layout.sidebar.ideal, max: DS.Layout.sidebar.max)
         } detail: {
-            NavigationStack(path: $app.path) {
-                LibraryView()
-                    .navigationDestination(for: Route.self) { route in
-                        switch route {
-                        case .setup: SetupView()
-                        case .session(let id):
-                            if let model = app.session(for: id) {
-                                LiveSessionView(session: model)
-                            } else {
-                                EmptyStateView(symbol: "questionmark.folder", title: "Lecture not found", style: .full)
-                            }
-                        }
+            // Exactly one of Library / Setup / Session is in the hierarchy (a NavigationStack kept
+            // the Library rendered underneath a session and it bled through — QA V1).
+            ZStack {
+                switch app.path.last {
+                case nil:
+                    LibraryView().transition(.opacity)
+                case .setup:
+                    SetupView().backToLibrary(app).transition(.opacity)
+                case .session(let id):
+                    if let model = app.session(for: id) {
+                        LiveSessionView(session: model).backToLibrary(app).transition(.opacity)
+                    } else {
+                        EmptyStateView(symbol: "questionmark.folder", title: "Lecture not found", style: .full).backToLibrary(app)
                     }
+                }
             }
+            .animation(DS.Motion.reduced, value: app.path.last)
         }
         .navigationSplitViewStyle(.balanced)
         .task { await app.loadLibrary() }
@@ -79,6 +82,8 @@ struct SidebarView: View {
                         Button("Ask \(course.code)…") { app.sidebarSelection = .course(course.id); app.showCourseAsk = true }
                         Divider()
                         Button("Rename…") { editingCourse = course }
+                        Button("Slides folder…") { app.chooseSlidesFolder(for: course.id) }
+                            .help(course.slidesFolder.map { SlidesFolderPanel.displayPath($0) } ?? "Choose where this course's slide decks live")
                         Menu("Change Color") {
                             ForEach(Array(DS.Colors.course.enumerated()), id: \.offset) { i, color in
                                 Button { app.recolorCourse(course.id, hex: Self.hex(for: i)) } label: {
@@ -135,13 +140,29 @@ struct CourseEditorSheet: View {
     @State private var code = ""
     @State private var name = ""
     @State private var colorIndex = 0
+    @State private var slidesFolder: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
-            Text(course == nil ? "New Course" : "Rename Course").font(DS.Typo.title3)
+            Text(course == nil ? "New Course" : "Edit Course").font(DS.Typo.title3)
             Form {
                 TextField("Code", text: $code, prompt: Text("CS 421"))
                 TextField("Name", text: $name, prompt: Text("Programming Languages & Compilers"))
+                LabeledContent("Slides folder") {
+                    HStack(spacing: DS.Space.s) {
+                        if let slidesFolder {
+                            Label(slidesFolder.lastPathComponent, systemImage: "folder")
+                                .lineLimit(1).truncationMode(.middle)
+                                .help(SlidesFolderPanel.displayPath(slidesFolder))
+                            Button { self.slidesFolder = nil } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(.tertiary)
+                                .help("Stop suggesting decks from this folder").accessibilityLabel("Clear slides folder")
+                        } else {
+                            Text("None").foregroundStyle(.secondary)
+                        }
+                        Button("Choose…") { chooseFolder() }.controlSize(.small)
+                    }
+                }
                 if course == nil {
                     LabeledContent("Color") {
                         HStack(spacing: DS.Space.s) {
@@ -162,7 +183,12 @@ struct CourseEditorSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(course == nil ? "Create" : "Save") {
-                    if let course { app.renameCourse(course.id, code: code, name: name) } else { app.addCourse(code: code, name: name, colorHex: SidebarView.hex(for: colorIndex)) }
+                    if let course {
+                        app.renameCourse(course.id, code: code, name: name)
+                        app.setSlidesFolder(slidesFolder, for: course.id)
+                    } else {
+                        app.addCourse(code: code, name: name, colorHex: SidebarView.hex(for: colorIndex), slidesFolder: slidesFolder)
+                    }
                     dismiss()
                 }
                 .lecternProminent()
@@ -172,6 +198,23 @@ struct CourseEditorSheet: View {
         }
         .padding(DS.Space.xxl)
         .frame(width: 420)
-        .onAppear { code = course?.code ?? ""; name = course?.name ?? "" }
+        .onAppear { code = course?.code ?? ""; name = course?.name ?? ""; slidesFolder = course?.slidesFolder }
+    }
+
+    private func chooseFolder() {
+        let draft = Course(code: code.isEmpty ? "this course" : code, name: name, slidesFolder: slidesFolder)
+        if let folder = SlidesFolderPanel.choose(for: draft) { slidesFolder = folder }
+    }
+}
+
+private extension View {
+    /// Our own back affordance (there is no NavigationStack under the detail column).
+    func backToLibrary(_ app: AppModel) -> some View {
+        toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button { app.goBack() } label: { Label("Back to Library", systemImage: "chevron.left") }
+                    .help("Back to Library")
+            }
+        }
     }
 }

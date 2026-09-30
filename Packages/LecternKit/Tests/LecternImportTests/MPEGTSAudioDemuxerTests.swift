@@ -25,6 +25,16 @@ import Testing
         #expect(audio.data == frames[1..<5].reduce(Data(), +))
     }
 
+    @Test func recoversFromALostByteInsideTheTransportStream() throws {
+        let frames = Self.frames(40)
+        var segment = TSBuilder.segment(audioChunks: [frames.reduce(Data(), +)])
+        segment.remove(at: 188 * 8 + 60)      // one byte vanishes from the middle of the segment: the packet grid shifts
+        let audio = try MPEGTSAudioDemuxer.extractAudio(from: segment)
+        // Only the frames near the damage may be lost; the remaining ~30 must survive.
+        #expect(audio.data.count >= frames.prefix(28).reduce(0) { $0 + $1.count })
+        #expect(MPEGTSAudioDemuxer.adtsFrames(in: audio.data) == audio.data)
+    }
+
     @Test func resynchronizesAfterGarbage() {
         let frames = Self.frames(4)
         let stream = Data([0x12, 0x34, 0xFF, 0x00]) + frames[0] + frames[1] + frames[2]

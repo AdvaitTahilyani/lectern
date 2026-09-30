@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// A thin wrapper over `CGPDFDocument` that renders pages to bitmaps. Used for thumbnails and for
-/// feeding image-only slides to OCR.
+/// A thin wrapper over `CGPDFDocument` that renders pages to bitmaps, to feed image-only slides
+/// to OCR.
 ///
 /// `CGPDFDocument` is not annotated `Sendable`; a renderer is only ever used from one isolation
 /// domain (an actor or a single ingest task) and is never shared.
@@ -20,23 +20,8 @@ struct PDFPageRenderer {
 
     var pageCount: Int { document.numberOfPages }
 
-    /// Renders the 1-based `pageNumber` so it fits inside `maxPixels` (aspect preserved, never
-    /// upscaled beyond `maxScale` points-to-pixels), composited over white.
-    func render(page pageNumber: Int, fitting maxPixels: CGSize, maxScale: CGFloat = 4) throws -> CGImage {
-        guard pageNumber >= 1, pageNumber <= pageCount else {
-            throw SlideRenderError.pageOutOfRange(page: pageNumber, pageCount: pageCount)
-        }
-        guard let page = document.page(at: pageNumber) else { throw SlideRenderError.renderFailed(page: pageNumber) }
-        let size = Self.displaySize(of: page)
-        guard size.width > 0, size.height > 0, maxPixels.width >= 1, maxPixels.height >= 1 else {
-            throw SlideRenderError.renderFailed(page: pageNumber)
-        }
-        let scale = min(maxPixels.width / size.width, maxPixels.height / size.height, maxScale)
-        return try draw(page, size: size, scale: scale, pageNumber: pageNumber)
-    }
-
-    /// Renders the page at `scale` pixels per point (e.g. 2 for OCR), clamping the longest edge to
-    /// `maxDimension` pixels to bound memory on poster-sized pages.
+    /// Renders the 1-based `pageNumber` at `scale` pixels per point (e.g. 2 for OCR), clamping the
+    /// longest edge to `maxDimension` pixels to bound memory on poster-sized pages.
     func render(page pageNumber: Int, scale: CGFloat, maxDimension: CGFloat = 3200) throws -> CGImage {
         guard pageNumber >= 1, pageNumber <= pageCount else {
             throw SlideRenderError.pageOutOfRange(page: pageNumber, pageCount: pageCount)

@@ -13,16 +13,17 @@ struct SlideExcerpts: Sendable {
     var validPages: Set<Int> { Set(deck?.pages.map(\.number) ?? []) }
 
     /// `pages` first (in order), then up to `hits` search results for `query`.
-    func render(pages: [Int], query: String?, hits: Int, budgetTokens: Int) -> String? {
+    /// - Parameter allowed: pages that may be shown (e.g. only those the lecture has reached).
+    func render(pages: [Int], query: String?, hits: Int, budgetTokens: Int, allowed: (Int) -> Bool = { _ in true }) -> String? {
         var entries: [(page: Int, text: String)] = []
         var seen = Set<Int>()
-        for number in pages where !seen.contains(number) {
+        for number in pages where !seen.contains(number) && allowed(number) {
             guard let page = deck?.page(number) else { continue }
             seen.insert(number)
             entries.append((number, DeckDigest.pageText(page)))
         }
         if let query, !query.isEmpty, hits > 0, let search {
-            for hit in search.search(query, limit: hits) where !seen.contains(hit.page) {
+            for hit in search.search(query, limit: hits) where !seen.contains(hit.page) && allowed(hit.page) {
                 seen.insert(hit.page)
                 let text = deck?.page(hit.page).map(DeckDigest.pageText) ?? Text.collapse(hit.excerpt)
                 entries.append((hit.page, text))

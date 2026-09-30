@@ -28,6 +28,16 @@ import LecternCore
         #expect(wire.contains(schema))
     }
 
+    @Test func messageTextThatLooksLikeAPlaceholderIsNotSpliced() throws {
+        // A quoted placeholder at the very end of a string value is followed by the string's own
+        // closing quote on the wire; it must still be treated as text.
+        let lookalike = "quoted: \"" + (try #require(try ResponseFormat.json(schema: schema).schemaObject()))
+        let body: [String: Any] = ["content": lookalike, "response_format": try #require(try ResponseFormat.json(schema: schema).schemaObject())]
+        let parsed = try wireJSON(body)
+        #expect(parsed["content"] as? String == lookalike)
+        #expect((parsed["response_format"] as? [String: Any])?["type"] as? String == "object")
+    }
+
     @Test func schemaWithSlashesAndUnicodeSurvives() throws {
         let tricky = #"{"type":"object","description":"a/b → ε","properties":{"z":{"type":"string"},"a":{"type":"string"}}}"#
         let placeholder = try #require(try ResponseFormat.json(schema: tricky).schemaObject())

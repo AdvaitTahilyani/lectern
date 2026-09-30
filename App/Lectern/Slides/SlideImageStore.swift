@@ -10,7 +10,13 @@ import LecternCore
 final class SlideImageStore {
     // Rendering happens lazily from view bodies, so the cache must not be observed.
     @ObservationIgnored private var document: PDFDocument?
-    @ObservationIgnored private var cache: [String: NSImage] = [:]
+    /// Bounded: every hero/thumbnail size bucket of every page is a separate 2x bitmap, which for a
+    /// long deck adds up to hundreds of MB if kept forever. Evicted images re-render on demand.
+    @ObservationIgnored private let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
     /// Aspect ratio (height / width) of the first page, or 9/16 when unknown.
     private(set) var aspect: CGFloat = 9 / 16
     private(set) var pageCount: Int = 0
@@ -35,11 +41,11 @@ final class SlideImageStore {
         guard let document, page >= 1, page <= document.pageCount else { return nil }
         let bucket = Int((width / 64).rounded(.up)) * 64
         let key = "\(page)@\(bucket)"
-        if let cached = cache[key] { return cached }
+        if let cached = cache.object(forKey: key as NSString) { return cached }
         guard let pdfPage = document.page(at: page - 1) else { return nil }
         let size = CGSize(width: CGFloat(bucket) * 2, height: CGFloat(bucket) * 2 * aspect)
         let image = pdfPage.thumbnail(of: size, for: .mediaBox)
-        cache[key] = image
+        cache.setObject(image, forKey: key as NSString, cost: Int(size.width * size.height) * 4)
         return image
     }
 

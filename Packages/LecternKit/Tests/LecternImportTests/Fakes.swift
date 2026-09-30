@@ -77,6 +77,7 @@ actor FakeBrain: LectureIntelligence {
     func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {}
     func tick(sessionTime: TimeInterval) {}
     func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap { throw LLMError.invalidResponse("unused") }
+    func lectureSummary() async throws -> LectureSummary { throw LLMError.invalidResponse("unused") }
     func setCurrentSlide(_ page: Int) {}
 }
 

@@ -175,7 +175,7 @@ import Testing
     }
 
     static let allSchemas = [SegmentationReply.schema, DetailReply.schema, RecapReply.schema, CardReply.schema,
-                             MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema]
+                             LectureSummaryReply.schema, MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema]
 
     @Test func schemasAreValidJSON() throws {
         for schema in Self.allSchemas {

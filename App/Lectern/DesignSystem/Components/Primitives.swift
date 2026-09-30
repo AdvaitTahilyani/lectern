@@ -82,11 +82,15 @@ struct SessionClock: View {
     }
 }
 
-/// Review-mode stats capsule.
+/// Review-mode stats capsule. With a `sessionID`, the lecture's cloud API cost is appended when
+/// it isn't zero.
 struct StatsCapsule: View {
     var duration: TimeInterval
     var takeaways: Int
     var score: (correct: Int, total: Int)
+    var sessionID: UUID? = nil
+    @Environment(AppModel.self) private var app
+    @State private var apiCost: Double = 0
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
@@ -96,6 +100,19 @@ struct StatsCapsule: View {
             if score.total > 0 {
                 Text("·").foregroundStyle(.tertiary)
                 Text("\(score.correct)/\(score.total) ✓")
+            }
+            if apiCost > 0 {
+                Text("·").foregroundStyle(.tertiary)
+                Text(apiCost, format: .currency(code: "USD").precision(.fractionLength(apiCost < 0.1 ? 3 : 2)))
+                    .help("Cloud API cost of this lecture")
+                    .accessibilityLabel("API cost \(apiCost.formatted(.currency(code: "USD")))")
+            }
+        }
+        .task(id: sessionID) {
+            guard let sessionID, let usage = app.services.usage else { return }
+            for await _ in await usage.changes() {
+                let cost = await usage.cost(forSession: sessionID)
+                if cost != apiCost { apiCost = cost }
             }
         }
         .font(DS.Typo.mono)
@@ -152,7 +169,6 @@ struct ModelStatusBadge: View {
     var style: Style
     var detail: String? = nil
     var onDetails: (() -> Void)? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
@@ -180,11 +196,6 @@ struct ModelStatusBadge: View {
         switch status {
         case .ready:
             Circle().fill(DS.Colors.correct).frame(width: 8, height: 8)
-        case .warming:
-            Image(systemName: "waveform")
-                .font(.caption)
-                .foregroundStyle(DS.Colors.accent)
-                .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
         case .downloading(let p):
             ZStack {
                 Circle().stroke(.quaternary, lineWidth: 2)
@@ -201,7 +212,6 @@ struct ModelStatusBadge: View {
     private var primaryText: String {
         switch status {
         case .ready(let engine): style == .compact ? "On-device · Ready" : "On-device · \(engine) ready"
-        case .warming: "Warming up…"
         case .downloading(let p): "Downloading \(Int(p * 100))%"
         case .cloud(let provider): style == .compact ? "\(provider) · Cloud" : "Cloud · \(provider)"
         case .unavailable(let reason): style == .compact ? "Unavailable" : reason

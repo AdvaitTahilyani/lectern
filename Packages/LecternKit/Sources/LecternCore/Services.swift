@@ -33,6 +33,25 @@ public protocol SlideSearching: Sendable {
     /// evidence — surfaced to the user as a suggestion only, never applied automatically.
     /// Returns nil when there's no convincing backward candidate.
     func backtrackCandidate(forTranscript text: String, current: Int) -> Int?
+
+    /// `likelySlide(forTranscript:near:)` at a known transcript time (seconds of recording, pauses
+    /// excluded). Evidence over time (confirming a leap, stepping through build slides) is measured
+    /// on this clock, so tracking behaves the same live, sped up, or during an import.
+    func likelySlide(forTranscript text: String, near: Int?, sessionTime: TimeInterval) -> Int?
+
+    /// `backtrackCandidate(forTranscript:current:)` at a known transcript time.
+    func backtrackCandidate(forTranscript text: String, current: Int, sessionTime: TimeInterval) -> Int?
+}
+
+public extension SlideSearching {
+    /// Default for implementations without temporal evidence: the time is ignored.
+    func likelySlide(forTranscript text: String, near: Int?, sessionTime: TimeInterval) -> Int? {
+        likelySlide(forTranscript: text, near: near)
+    }
+
+    func backtrackCandidate(forTranscript text: String, current: Int, sessionTime: TimeInterval) -> Int? {
+        backtrackCandidate(forTranscript: text, current: current)
+    }
 }
 
 
@@ -89,6 +108,11 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Seconds of new transcript between rolling-summary updates.
     public var summaryIntervalSeconds: Double
     public var hasCompletedOnboarding: Bool
+    /// Correct misheard course jargon ("gen expression" → `genExpr`) using the lecture's slides.
+    public var fixesJargonFromSlides: Bool
+    /// Optional monthly spending cap for cloud APIs, in US dollars. Once this month's spend reaches
+    /// it, cloud roles fall back to the on-device model. `nil` means no cap.
+    public var monthlyCloudCapUSD: Double?
 
     public init(
         providers: [LLMRole: ProviderConfig] = AppSettings.defaultProviders,
@@ -97,7 +121,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
         vocabulary: [String] = [],
         quiz: QuizSettings = .init(),
         summaryIntervalSeconds: Double = 150,
-        hasCompletedOnboarding: Bool = false
+        hasCompletedOnboarding: Bool = false,
+        fixesJargonFromSlides: Bool = true,
+        monthlyCloudCapUSD: Double? = nil
     ) {
         self.providers = providers
         self.transcriptionEngine = transcriptionEngine
@@ -106,6 +132,28 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.quiz = quiz
         self.summaryIntervalSeconds = summaryIntervalSeconds
         self.hasCompletedOnboarding = hasCompletedOnboarding
+        self.fixesJargonFromSlides = fixesJargonFromSlides
+        self.monthlyCloudCapUSD = monthlyCloudCapUSD
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case providers, transcriptionEngine, inputDeviceID, vocabulary, quiz, summaryIntervalSeconds, hasCompletedOnboarding
+        case fixesJargonFromSlides, monthlyCloudCapUSD
+    }
+
+    /// The original fields decode strictly; the fields added later decode tolerantly (missing or
+    /// unreadable → their defaults), so saved settings from an older build keep loading.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        providers = try c.decode([LLMRole: ProviderConfig].self, forKey: .providers)
+        transcriptionEngine = try c.decode(TranscriptionEngineID.self, forKey: .transcriptionEngine)
+        inputDeviceID = try c.decodeIfPresent(String.self, forKey: .inputDeviceID)
+        vocabulary = try c.decode([String].self, forKey: .vocabulary)
+        quiz = try c.decode(QuizSettings.self, forKey: .quiz)
+        summaryIntervalSeconds = try c.decode(Double.self, forKey: .summaryIntervalSeconds)
+        hasCompletedOnboarding = try c.decode(Bool.self, forKey: .hasCompletedOnboarding)
+        fixesJargonFromSlides = ((try? c.decodeIfPresent(Bool.self, forKey: .fixesJargonFromSlides)) ?? nil) ?? true
+        monthlyCloudCapUSD = (try? c.decodeIfPresent(Double.self, forKey: .monthlyCloudCapUSD)) ?? nil
     }
 
     /// Default on-device model repo. Updated from docs/research/local-llm.md.

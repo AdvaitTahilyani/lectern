@@ -74,6 +74,22 @@ import Testing
         #expect(!cache.canRewindExactly(12))
     }
 
+    @Test func steadyStateDecodeCompactsOncePerStep() {
+        // window + slack is a multiple of `step` (as with the defaults: 512 or 1024 + 2048, step
+        // 256), so a buffer sized exactly `keep + n` would be full again after every token.
+        let step = 4
+        let cache = ReusableSlidingWindowCache(window: window, slack: 8, step: step)
+        var compactions = 0
+        var previousRows = 0
+        for i in 0 ..< 200 {
+            _ = cache.update(keys: random(1, seed: UInt64(i)), values: random(1, seed: UInt64(i + 500)))
+            let rows = cache.state[0].dim(2)
+            if i >= 40, rows <= previousRows { compactions += 1 }
+            previousRows = rows
+        }
+        #expect(compactions <= 160 / step + 1)
+    }
+
     @Test func snapshotAttendsLikeTheOriginal() {
         let cache = ReusableSlidingWindowCache(window: window, slack: 20, step: 4)
         _ = attend(cache, random(30, seed: 1), random(30, seed: 2), random(30, seed: 3))
@@ -97,6 +113,13 @@ import Testing
 
 @Suite struct GrammarMaskExpanderTests {
     init() { MetalLibrary.ensureConfigured() }
+
+    @Test func biasIsFittedToTheLogitDimension() {
+        let bias = MLXArray([Float(1), 2, 3])
+        #expect(bias.fitted(to: 3).asArray(Float.self) == [1, 2, 3])
+        #expect(bias.fitted(to: 5).asArray(Float.self) == [1, 2, 3, 0, 0])
+        #expect(bias.fitted(to: 2).asArray(Float.self) == [1, 2])
+    }
 
     @Test func expandsPackedBitmask() {
         // 70 grammar tokens over 72 logits: allow 0, 33, 69 (bit 31 of word 0 too, as a sign bit).

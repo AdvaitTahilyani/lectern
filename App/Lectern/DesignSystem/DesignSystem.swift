@@ -25,7 +25,6 @@ nonisolated enum DS {
         static let card: CGFloat = 12
         static let float: CGFloat = 16
         static let panel: CGFloat = 20
-        static let pill: CGFloat = 999
     }
 
     // MARK: Layout widths (points)
@@ -104,7 +103,6 @@ nonisolated enum DS {
 
     // MARK: Typography.
     enum Typo {
-        static let largeTitle = Font.largeTitle
         static let title = Font.title
         static let title2 = Font.title2
         static let title3 = Font.title3
@@ -128,7 +126,6 @@ nonisolated enum DS {
         static let slideThumb = CGSize(width: 96, height: 54)
         static let slideThumbLarge = CGSize(width: 128, height: 72)
         static let cardThumb = CGSize(width: 64, height: 36)
-        static let iconButton: CGFloat = 28
         static let levelMeterHeight: CGFloat = 6
     }
 }

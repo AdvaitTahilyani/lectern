@@ -111,6 +111,8 @@ private final class AssetReaderPass: ExtractionPass, @unchecked Sendable {
             duration = seconds.isFinite ? seconds : 0
         } catch let error as ImportError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw ImportError.unreadableMedia(error.localizedDescription)
         }

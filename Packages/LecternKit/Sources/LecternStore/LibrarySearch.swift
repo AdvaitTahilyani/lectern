@@ -49,6 +49,7 @@ public enum LibrarySearch {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty, limit > 0 else { return [] }
 
+        let asciiWords = words.map { word in word.utf8.allSatisfy { $0 < 0x80 } ? Array(word.lowercased().utf8) : nil }
         var titles: [SearchHit] = [], takeaways: [SearchHit] = [], notes: [SearchHit] = [], transcripts: [SearchHit] = []
         for session in sessions {
             if let snippet = snippet(in: session.title, words: words) {
@@ -65,7 +66,8 @@ public enum LibrarySearch {
                     notes.append(SearchHit(sessionID: session.id, kind: .slideNotes, snippet: snippet, slide: page.number))
                 }
             }
-            transcripts += transcriptHits(in: session, words: words)
+            // Transcript hits come last, so hits beyond `limit` could never be shown.
+            if transcripts.count < limit { transcripts += transcriptHits(in: session, words: words, asciiWords: asciiWords) }
         }
         return Array((titles + takeaways + notes + transcripts).prefix(limit))
     }
@@ -82,20 +84,38 @@ public enum LibrarySearch {
         return fields
     }
 
-    private static func transcriptHits(in session: LectureSession, words: [String]) -> [SearchHit] {
+    private static func transcriptHits(in session: LectureSession, words: [String], asciiWords: [[UInt8]?]) -> [SearchHit] {
         let segments = session.transcript.filter(\.isFinal).sorted { $0.start < $1.start }
+        guard !segments.isEmpty else { return [] }
+        // Most segments contain none of the query words, so a cheap presence test per word decides
+        // whether the (allocating) snippet builder needs to run at all.
+        let everyWord: UInt64 = words.count >= 64 ? .max : (1 << UInt64(words.count)) - 1
+        func presence(_ text: String) -> UInt64 {
+            var mask: UInt64 = 0
+            for bit in words.indices.prefix(64) where contains(text, words[bit], ascii: asciiWords[bit]) {
+                mask |= 1 << UInt64(bit)
+            }
+            return mask
+        }
+
         var hits: [SearchHit] = []
         var previousMatched = false
-        for (index, segment) in segments.enumerated() where hits.count < transcriptHitsPerSession {
-            if let snippet = snippet(in: segment.text, words: words) {
-                hits.append(SearchHit(sessionID: session.id, kind: .transcript, snippet: snippet, time: segment.start))
+        var current = presence(segments[0].text)
+        for index in segments.indices {
+            let next = index + 1 < segments.count ? presence(segments[index + 1].text) : 0
+            defer { current = next }
+            if current == everyWord, let snippet = snippet(in: segments[index].text, words: words) {
+                hits.append(SearchHit(sessionID: session.id, kind: .transcript, snippet: snippet, time: segments[index].start))
+                if hits.count == transcriptHitsPerSession { break }
                 previousMatched = true
                 continue
             }
-            // A phrase split across a caption break matches neither segment alone.
-            if words.count > 1, !previousMatched, index + 1 < segments.count,
-               let snippet = snippet(in: segment.text + " " + segments[index + 1].text, words: words) {
-                hits.append(SearchHit(sessionID: session.id, kind: .transcript, snippet: snippet, time: segment.start))
+            // A phrase split across a caption break matches neither segment alone. (When the next
+            // segment matches by itself it gets its own hit; a second one here would be a duplicate.)
+            if words.count > 1, !previousMatched, index + 1 < segments.count, current | next == everyWord, next != everyWord,
+               let snippet = snippet(in: segments[index].text + " " + segments[index + 1].text, words: words) {
+                hits.append(SearchHit(sessionID: session.id, kind: .transcript, snippet: snippet, time: segments[index].start))
+                if hits.count == transcriptHitsPerSession { break }
             }
             previousMatched = false
         }
@@ -105,6 +125,26 @@ public enum LibrarySearch {
     // MARK: Matching
 
     private static let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+
+    /// Whether `text` contains `word`, ignoring case and accents. Plain-ASCII text (nearly every
+    /// transcript segment) against an ASCII word is scanned bytewise, which is about 20x faster than
+    /// Foundation's folding search; anything else takes the general path.
+    private static func contains(_ text: String, _ word: String, ascii needle: [UInt8]?) -> Bool {
+        if let needle {
+            var text = text
+            let found: Bool? = text.withUTF8 { haystack in
+                if haystack.contains(where: { $0 >= 0x80 }) { return nil }
+                guard haystack.count >= needle.count else { return false }
+                func lower(_ byte: UInt8) -> UInt8 { byte >= 65 && byte <= 90 ? byte + 32 : byte }
+                for start in 0...(haystack.count - needle.count) where lower(haystack[start]) == needle[0] {
+                    if needle.indices.dropFirst().allSatisfy({ lower(haystack[start + $0]) == needle[$0] }) { return true }
+                }
+                return false
+            }
+            if let found { return found }
+        }
+        return text.range(of: word, options: options) != nil
+    }
 
     /// An excerpt of `text` around the first word's first match, or nil unless every word occurs.
     private static func snippet(in text: String, words: [String]) -> String? {

@@ -32,6 +32,8 @@ struct OnboardingView: View {
         .frame(width: DS.Layout.onboarding.width, height: DS.Layout.onboarding.height)
         .background(DS.Colors.canvas)
         .onAppear { permission = app.services.microphonePermission() }
+        // Closing the window mid-step must release the microphone tap.
+        .onDisappear { stopMeter() }
         .onChange(of: step) { _, s in
             if s == 1 { startMeter() } else { stopMeter() }
             if s == 2, !downloadsStarted { startDownloads() }
@@ -100,7 +102,7 @@ struct OnboardingView: View {
             }
             Spacer()
             Button(step == 3 ? "Done" : (step == 2 && !allInstalled ? "Continue while downloading" : "Continue")) {
-                if step == 3 { finish() } else { withAnimation(DS.Motion.settle) { step += 1 } }
+                if step == 3 { if saveKeys() { finish() } } else { withAnimation(DS.Motion.settle) { step += 1 } }
             }
             .lecternProminent()
             .keyboardShortcut(.defaultAction)
@@ -150,6 +152,20 @@ struct OnboardingView: View {
             case .idle: EmptyView()
             }
         }
+    }
+
+    /// Stores every typed key (Done counts as confirming them, Test isn't required). Returns false,
+    /// leaving the step open with the error on the row, when the Keychain refuses one.
+    private func saveKeys() -> Bool {
+        for (kind, key) in keys {
+            let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            do { try app.services.keychain.setAPIKey(trimmed, for: kind) } catch {
+                tests[kind] = .failed("Couldn't save the key: \(error.localizedDescription)")
+                return false
+            }
+        }
+        return true
     }
 
     private func test(_ kind: ProviderKind) {

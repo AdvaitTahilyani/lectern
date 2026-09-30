@@ -4,12 +4,16 @@ import LecternCore
 /// Decodable shapes for the parts of the Chat Completions API Lectern reads.
 enum OpenAIWire {
     struct Usage: Decodable {
+        struct PromptDetails: Decodable { var cachedTokens: Int? }
         var promptTokens: Int?
         var completionTokens: Int?
+        /// OpenAI reports prompt-cache hits here; local servers usually omit it.
+        var promptTokensDetails: PromptDetails?
 
+        /// `prompt_tokens` already includes the cached tokens, so they are a part of `inputTokens`.
         var llmUsage: LLMUsage? {
             guard let promptTokens, let completionTokens else { return nil }
-            return LLMUsage(inputTokens: promptTokens, outputTokens: completionTokens)
+            return LLMUsage(inputTokens: promptTokens, outputTokens: completionTokens, cachedInputTokens: promptTokensDetails?.cachedTokens)
         }
     }
 
@@ -20,7 +24,11 @@ enum OpenAIWire {
     /// Non-streaming response.
     struct Completion: Decodable {
         struct Choice: Decodable {
-            struct Message: Decodable { var content: String? }
+            struct Message: Decodable {
+                var content: String?
+                /// Set instead of `content` when a structured-output request is declined.
+                var refusal: String?
+            }
             var message: Message?
             var finishReason: String?
         }
@@ -31,7 +39,10 @@ enum OpenAIWire {
     /// One SSE `data:` payload of a streaming response.
     struct Chunk: Decodable {
         struct Choice: Decodable {
-            struct Delta: Decodable { var content: String? }
+            struct Delta: Decodable {
+                var content: String?
+                var refusal: String?
+            }
             var delta: Delta?
             var finishReason: String?
         }
@@ -58,6 +69,7 @@ struct OpenAIStreamDecoder: SSEDecoder {
     private var usage: LLMUsage?
     private var finishReason: String?
     private var emittedText = false
+    private var refusal = ""
     private var finished = false
 
     init() {}
@@ -79,6 +91,7 @@ struct OpenAIStreamDecoder: SSEDecoder {
         var out: [LLMStreamEvent] = []
         for choice in chunk.choices ?? [] {
             if let reason = choice.finishReason { finishReason = reason }
+            if let refusal = choice.delta?.refusal { self.refusal += refusal }
             if let content = choice.delta?.content, !content.isEmpty {
                 append(filter.consume(content), to: &out)
             }
@@ -93,6 +106,9 @@ struct OpenAIStreamDecoder: SSEDecoder {
         finished = true
         var out: [LLMStreamEvent] = []
         append(filter.finish(), to: &out)
+        if !emittedText && !refusal.isEmpty {
+            throw LLMError.invalidResponse(OpenAICompatibleProvider.refusedMessage(refusal))
+        }
         if !emittedText && finishReason == "length" {
             throw LLMError.invalidResponse(OpenAICompatibleProvider.truncatedMessage)
         }

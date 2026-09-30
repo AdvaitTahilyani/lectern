@@ -64,10 +64,18 @@ struct HLSAudioDownloader: Sendable {
         while true {
             do {
                 return try MPEGTSAudioDemuxer.extractAudio(from: try await fetcher.data(from: segment.url))
-            } catch let error as URLError where error.code != .cancelled && attempt < retries {
+            } catch where attempt < retries && Self.isTransient(error) {
                 attempt += 1
                 try await Task.sleep(for: .milliseconds(400 * attempt))
             }
         }
+    }
+
+    /// Network errors and CDN hiccups (5xx, throttling) that a retry can clear; a long lecture is
+    /// hundreds of segments, so one of them failing once must not sink the import.
+    private static func isTransient(_ error: Error) -> Bool {
+        if let urlError = error as? URLError { return urlError.code != .cancelled }
+        if case ImportError.downloadFailed(let status) = error { return status >= 500 || status == 429 }
+        return false
     }
 }

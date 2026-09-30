@@ -55,6 +55,22 @@ import Testing
         #expect(astra["reasoning_effort"] as? String == "low")
     }
 
+    @Test func chatSnapshotsAreNotTreatedAsReasoningModels() throws {
+        for model in ["gpt-5-chat-latest", "gpt-5.1-chat-latest"] {
+            let json = try body(openAI(StubServer(), model: model), simpleRequest)
+            #expect(json["reasoning_effort"] == nil, "\(model)")
+            #expect(json["temperature"] != nil, "\(model)")
+        }
+    }
+
+    @Test func modelsWithoutAnEffortParameterGetNoneAndNoTemperature() throws {
+        for model in ["o1-mini", "o1-preview", "gpt-5-pro", "o3-pro"] {
+            let json = try body(openAI(StubServer(), model: model), simpleRequest)
+            #expect(json["reasoning_effort"] == nil, "\(model)")
+            #expect(json["temperature"] == nil, "\(model)")
+        }
+    }
+
     @Test func nonReasoningModelGetsTemperatureButNoEffort() throws {
         let json = try body(openAI(StubServer(), model: "gpt-4.1-mini"), simpleRequest)
         #expect(json["reasoning_effort"] == nil)
