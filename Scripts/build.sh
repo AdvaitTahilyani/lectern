@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DD="build/${1:-DD-main}"
 CONFIG="${2:-Debug}"
-[[ -d Lectern.xcodeproj ]] || xcodegen generate >/dev/null
+xcodegen generate --quiet >/dev/null  # picks up added/removed source files
 xcodebuild -project Lectern.xcodeproj -scheme Lectern -configuration "$CONFIG" \
   -derivedDataPath "$DD" -destination 'platform=macOS' \
   -skipPackagePluginValidation -skipMacroValidation build 2>&1 \

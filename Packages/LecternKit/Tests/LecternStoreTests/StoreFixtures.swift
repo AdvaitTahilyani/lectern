@@ -138,6 +138,8 @@ actor RecordingStore: SessionStoring {
     func delete(sessionID: UUID) async throws {}
     func folder(for sessionID: UUID) async throws -> URL { FileManager.default.temporaryDirectory }
     func importSlides(from url: URL, into sessionID: UUID) async throws -> String { "slides.pdf" }
+    func loadCourseChat(courseID: UUID) async throws -> [CourseAnswer] { [] }
+    func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws {}
 }
 
 /// Polls until `condition` holds or `timeout` passes.

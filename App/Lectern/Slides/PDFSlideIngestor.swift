@@ -94,6 +94,9 @@ nonisolated final class SimpleSlideIndex: SlideSearching {
         .map { $0 }
     }
 
+    /// The demo index never suggests going back; only the real `SlideIndex` does.
+    func backtrackCandidate(forTranscript text: String, current: Int) -> Int? { nil }
+
     func likelySlide(forTranscript text: String, near: Int?) -> Int? {
         let q = Self.tokenize(text)
         guard q.count >= 4 else { return nil }

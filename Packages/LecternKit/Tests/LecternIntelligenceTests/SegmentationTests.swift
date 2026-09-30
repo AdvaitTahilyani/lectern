@@ -74,6 +74,19 @@ import Testing
         #expect(timeline.takeaways.isEmpty)
     }
 
+    /// A lecture that opens with "let me correct last week's slides…" can be classified as admin,
+    /// but the first card must still cover it rather than silently starting minutes later.
+    @Test func firstCardClaimsLinesSkippedAsAdmin() {
+        var timeline = TopicTimeline(takeaways: [])
+        let admin = SegmentationReply(action: .continueTopic, newLinesAbout: "slide correction", newLinesKind: .admin, title: "", summary: "")
+        #expect(timeline.apply(admin, chunk: chunk(window: 0..<3, new: 0..<3), validPages: []) == .ignored)
+        // The brain keeps the skipped lines in the next window (0..<8), so the opened card starts at 0.
+        let outcome = timeline.apply(SegmentationReply(action: .newTopic, title: "Phi placement", summary: "Phis go at the dominance frontier."),
+                                     chunk: chunk(window: 0..<8, new: 3..<8), validPages: [])
+        #expect(outcome == .opened(boundary: 0))
+        #expect(timeline.takeaways[0].start == 0)
+    }
+
     @Test func continueRefinesInPlace() {
         var timeline = TopicTimeline(takeaways: [])
         _ = timeline.apply(SegmentationReply(action: .newTopic, title: "LL(1)", summary: "v1", slides: [2]), chunk: chunk(window: 0..<6, new: 0..<6), validPages: [2, 3])

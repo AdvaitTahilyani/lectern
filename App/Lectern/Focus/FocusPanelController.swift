@@ -175,9 +175,12 @@ struct FocusPanelView: View {
                         .help(option)
                     }
                     Spacer()
-                    Button("snooze") { session.snoozeQuiz() }.buttonStyle(.link).font(DS.Typo.footnote)
-                    Button("skip") { session.skipQuiz() }.buttonStyle(.link).font(DS.Typo.footnote)
+                    Button("Snooze") { session.snoozeQuiz() }
+                    Button("Skip") { session.skipQuiz() }
                 }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.mini)
             } else {
                 Text("Answer in Lectern").font(DS.Typo.footnote).foregroundStyle(.secondary)
             }

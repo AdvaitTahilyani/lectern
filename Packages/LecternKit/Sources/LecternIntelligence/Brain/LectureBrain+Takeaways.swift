@@ -84,7 +84,10 @@ extension LectureBrain {
                 if newRange.isEmpty { reply.action = .continueTopic }
 
                 switch timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages) {
-                case .ignored: topicWindowStart = newEnd
+                // Nothing opened yet: keep the skipped lines in the window so the first card can
+                // still claim them. A lecture often opens with something that reads like admin
+                // ("let me correct last week's slides…") but carries real content.
+                case .ignored: topicWindowStart = windowStart
                 case .opened(let boundary), .split(let boundary): topicWindowStart = boundary
                 case .refined: topicWindowStart = windowStart
                 }
@@ -126,7 +129,7 @@ extension LectureBrain {
     /// jumps forward in one step, keeping about half the budget of older context, so the next
     /// several prompts again share an identical transcript prefix.
     private func windowStart(for newRange: Range<Int>, hasLive: Bool) -> Int {
-        var start = hasLive ? min(topicWindowStart, newRange.lowerBound) : newRange.lowerBound
+        var start = min(topicWindowStart, newRange.lowerBound)
         let total = TranscriptText.tokens(segments[start..<newRange.upperBound])
         if total > TokenBudget.topicWindow {
             let newTokens = TranscriptText.tokens(segments[newRange])

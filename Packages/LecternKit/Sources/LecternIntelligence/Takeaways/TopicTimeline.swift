@@ -80,9 +80,11 @@ struct TopicTimeline: Sendable {
 
         guard var current = live else {
             guard reply.newLinesKind != .admin, !title.isEmpty, !summary.isEmpty, !chunk.new.isEmpty else { return .ignored }
-            let match = reply.action == .newTopic ? locate(reply.boundaryQuote, chunk, preferFrom: chunk.new.lowerBound, within: chunk.new) : nil
-            let boundary = match?.segmentIndex ?? chunkStart
-            let start = match?.time ?? chunk.segments[chunkStart].start
+            // The first card claims the whole window, including earlier lines that were skipped as
+            // admin, unless the model quotes where the topic actually begins.
+            let match = reply.action == .newTopic ? locate(reply.boundaryQuote, chunk, preferFrom: chunk.window.lowerBound, within: chunk.window) : nil
+            let boundary = match?.segmentIndex ?? chunk.window.lowerBound
+            let start = match?.time ?? chunk.segments[chunk.window.lowerBound].start
             takeaways.append(Takeaway(title: title, summary: summary, start: start, end: max(start, latestEnd),
                                       slidePages: Self.merge([], slides), isLive: true, updatedAt: now))
             return .opened(boundary: boundary)

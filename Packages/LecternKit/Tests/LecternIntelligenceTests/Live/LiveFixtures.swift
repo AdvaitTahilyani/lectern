@@ -61,6 +61,7 @@ enum LiveFixtures {
 
 /// BM25 over slide text with a preference for pages near the current one.
 struct KeywordSlides: SlideSearching {
+    func backtrackCandidate(forTranscript text: String, current: Int) -> Int? { nil }
     let deck: SlideDeck
     private let index: BM25Index
 

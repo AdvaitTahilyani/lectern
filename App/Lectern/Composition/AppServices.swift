@@ -163,9 +163,8 @@ nonisolated struct LibrarySearchHit: Sendable, Hashable, Identifiable {
 // MARK: - Wiring
 
 extension AppServices {
-    /// Real modules. The lead replaces this body when the service modules land; until then the app
-    /// runs the demo stack so every screen is clickable.
-    static var live: AppServices { .demo }
+    /// Real modules (see LiveServices.swift).
+    static var live: AppServices { makeLive() }
 
     /// In-app demo stack: scripted compilers lecture, simulated brain, in-memory store.
     static var demo: AppServices {

@@ -127,18 +127,3 @@ public struct Recap: Codable, Sendable, Hashable {
         self.slides = slides
     }
 }
-
-public extension LectureIntelligence {
-    /// Default so conformers compile before implementing it.
-    func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap {
-        throw LLMError.invalidResponse("Recap is not supported by this intelligence implementation.")
-    }
-
-    /// Waits until every scheduled summary pass has finished (used when importing a recording,
-    /// where the transcript is fed far faster than real time). Default: returns immediately.
-    func waitUntilIdle() async {}
-
-    func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
-
-    func setCurrentSlide(_ page: Int) {}
-}

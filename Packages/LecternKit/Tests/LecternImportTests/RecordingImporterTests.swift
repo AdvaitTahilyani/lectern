@@ -219,6 +219,9 @@ private actor NeverIdleBrain: LectureIntelligence {
     nonisolated func ask(_ question: String, history: [ChatMessage]) -> AsyncThrowingStream<AskEvent, Error> { AsyncThrowingStream { $0.finish() } }
     func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {}
     func tick(sessionTime: TimeInterval) {}
+    func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap { throw CancellationError() }
+    func applySpeakers(_ labels: [UUID: SpeakerRole]) {}
+    func setCurrentSlide(_ page: Int) {}
 }
 
 private final class ProgressLog2: @unchecked Sendable {

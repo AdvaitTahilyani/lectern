@@ -35,9 +35,6 @@ public protocol SlideSearching: Sendable {
     func backtrackCandidate(forTranscript text: String, current: Int) -> Int?
 }
 
-public extension SlideSearching {
-    func backtrackCandidate(forTranscript text: String, current: Int) -> Int? { nil }
-}
 
 // MARK: - Persistence contract (implemented in LecternStore)
 
@@ -61,10 +58,6 @@ public protocol SessionStoring: Sendable {
     func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws
 }
 
-public extension SessionStoring {
-    func loadCourseChat(courseID: UUID) async throws -> [CourseAnswer] { [] }
-    func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws {}
-}
 
 // MARK: - Settings
 

@@ -76,6 +76,8 @@ actor FakeBrain: LectureIntelligence {
     nonisolated func ask(_ question: String, history: [ChatMessage]) -> AsyncThrowingStream<AskEvent, Error> { AsyncThrowingStream { $0.finish() } }
     func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {}
     func tick(sessionTime: TimeInterval) {}
+    func recap(from: TimeInterval, to: TimeInterval) async throws -> Recap { throw LLMError.invalidResponse("unused") }
+    func setCurrentSlide(_ page: Int) {}
 }
 
 final class Box<Value>: @unchecked Sendable {
