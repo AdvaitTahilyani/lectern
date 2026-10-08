@@ -16,7 +16,7 @@ struct TranscriptView: View {
     @State private var hitIndex = 0
     @State private var flashID: UUID?
     @State private var popoverTime: TimeInterval?
-    @State private var hitCache = HitCache()
+    @State private var hitCache = TranscriptHitCache()
     @FocusState private var searchFocused: Bool
 
     private var searchShown: Bool { showSearch?.wrappedValue ?? false }
@@ -35,7 +35,8 @@ struct TranscriptView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: DS.Space.l) {
                         if let notice = session.notice(for: .transcript) {
-                            NoticeBanner(notice: notice, action: { session.dismissNotice(notice.id) }, onClose: { session.dismissNotice(notice.id) })
+                            NoticeBanner(notice: notice, action: MicChooser.noticeIDs.contains(notice.id) ? { session.showMicChooser = true } : { session.dismissNotice(notice.id) }, onClose: { session.dismissNotice(notice.id) })
+                                .popover(isPresented: $session.showMicChooser, arrowEdge: .bottom) { MicChooser(session: session) }
                         }
                         if session.paragraphs.isEmpty, session.volatile == nil {
                             HStack(spacing: DS.Space.m) {
@@ -78,11 +79,13 @@ struct TranscriptView: View {
                     proxy.scrollSoon(to: p.id, anchor: .center, animation: reduceMotion ? nil : motion.settle)
                     flash(p.id)
                 }
-                .onChange(of: hitIndex) { _, _ in
+                // Observes the whole (query, current hit) pair: a new query resets the index to 0, which is
+                // often already 0, so the index alone never fired for the first hit.
+                .onChange(of: hitFocus) { _, _ in
                     guard let id = currentHitID else { return }
                     proxy.scrollSoon(to: id, anchor: .center, animation: motion.settle)
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .lecternJumpToLive)) { _ in jump(proxy) }
+                .onWindowCommand(.lecternJumpToLive) { jump(proxy) }
                 .overlay(alignment: .bottom) {
                     if !followLive, newSinceUnpinned > 0 {
                         JumpToLivePill(newCount: newSinceUnpinned) { jump(proxy) }.padding(.bottom, DS.Space.m)
@@ -112,7 +115,7 @@ struct TranscriptView: View {
             searchFocused = shown
             if !shown { query = ""; hitIndex = 0 }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in if searchShown { searchFocused = true } }
+        .onWindowCommand(.lecternFind) { if searchShown { searchFocused = true } }
         .onKeyPress(.escape) {
             guard searchShown else { return .ignored }
             showSearch?.wrappedValue = false
@@ -128,20 +131,19 @@ struct TranscriptView: View {
 
     // MARK: Search
 
-    /// Paragraphs matching the query. Memoized on (query, paragraph count, last paragraph's size):
+    /// Paragraphs matching the query. Memoized on (query, transcript revision):
     /// the search bar and every highlighted row ask for it on each body pass.
     private var hits: [UUID] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2 else { return [] }
-        let key = HitCache.Key(query: q, paragraphs: session.paragraphs.count, lastSegments: session.paragraphs.last?.segments.count ?? 0)
-        if hitCache.key == key { return hitCache.ids }
-        let ids = session.paragraphs.filter { $0.kind == .speech && $0.text.localizedCaseInsensitiveContains(q) }.map(\.id)
-        hitCache.key = key
-        hitCache.ids = ids
-        return ids
+        hitCache.hits(query: query, revision: session.transcriptRevision, paragraphs: session.paragraphs)
     }
 
-    private var currentHitID: UUID? { hits.indices.contains(hitIndex) ? hits[hitIndex] : nil }
+    /// `hitIndex` kept inside the hits (the list can shrink when the transcript changes under the search).
+    private var shownIndex: Int { min(hitIndex, max(0, hits.count - 1)) }
+    private var currentHitID: UUID? { hits.indices.contains(shownIndex) ? hits[shownIndex] : nil }
+
+    private var hitFocus: TranscriptSearch.Focus {
+        TranscriptSearch.Focus(query: TranscriptSearch.normalized(query), index: shownIndex, hitID: currentHitID)
+    }
 
     /// Field height plus its vertical padding; fixed so showing the bar never depends on content.
     private static let searchBarHeight: CGFloat = 20 + 2 * DS.Space.s
@@ -158,12 +160,14 @@ struct TranscriptView: View {
                 .onKeyPress(.upArrow) { step(-1); return .handled }
                 .onKeyPress(.downArrow) { step(1); return .handled }
             if !hits.isEmpty {
-                Text("\(hitIndex + 1) of \(hits.count)").font(DS.Typo.mono).foregroundStyle(.secondary).contentTransition(.numericText())
+                Text("\(shownIndex + 1) of \(hits.count)").font(DS.Typo.mono).foregroundStyle(.secondary).contentTransition(.numericText())
             } else if query.count >= 2 {
                 Text("0").font(DS.Typo.mono).foregroundStyle(.tertiary)
             }
             Button { step(-1) } label: { Image(systemName: "chevron.up") }.keyboardShortcut(.return, modifiers: .shift).disabled(!searchShown)
+                .help("Previous match (⇧↩)").accessibilityLabel("Previous match")
             Button { step(1) } label: { Image(systemName: "chevron.down") }.disabled(!searchShown)
+                .help("Next match (↩)").accessibilityLabel("Next match")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, DS.Space.m).padding(.vertical, DS.Space.s)
@@ -172,7 +176,7 @@ struct TranscriptView: View {
 
     private func step(_ d: Int) {
         guard !hits.isEmpty else { return }
-        hitIndex = (hitIndex + d + hits.count) % hits.count
+        hitIndex = (shownIndex + d + hits.count) % hits.count
     }
 
     // MARK: Paragraphs
@@ -276,13 +280,6 @@ struct TranscriptView: View {
     }
 }
 
-/// Memoized search hits (a reference type so `hits` can fill it from a body pass).
-private final class HitCache {
-    struct Key: Equatable { var query: String; var paragraphs: Int; var lastSegments: Int }
-    var key: Key?
-    var ids: [UUID] = []
-}
-
 /// A transcript row: timestamp gutter plus content. Only the row whose timestamp was clicked
 /// carries a popover modifier: hundreds of live popover presentations inside a streaming,
 /// re-laying-out list are a layout-loop risk.
@@ -316,6 +313,11 @@ private struct ParagraphText: View {
     var speaker: SpeakerRole
     var isLast: Bool
 
+    private var spokenStart: String {
+        let s = TimeFormat.wholeSeconds(paragraph.start)
+        return "\(s / 60) minute\(s / 60 == 1 ? "" : "s") \(s % 60) second\(s % 60 == 1 ? "" : "s")"
+    }
+
     var body: some View {
         let p = paragraph
         let volatile = isLast ? session.volatile.flatMap { v in TranscriptView.volatileContinues(p, v) ? v.text : nil } : nil
@@ -323,7 +325,7 @@ private struct ParagraphText: View {
             if volatile == nil {
                 Text(committed).textSelection(.enabled)
             } else {
-                StreamingText(committed: committed, volatile: volatile, isStreaming: true, style: .transcript)
+                StreamingText(committed: committed, volatile: volatile)
             }
         }
         .font(DS.Typo.body)
@@ -332,7 +334,7 @@ private struct ParagraphText: View {
         .modifier(CorrectionHelp(text: TranscriptView.correctionHelp(p)))
         // Selectable text is one plain-string element (never combined with a parent label).
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Int(p.start) / 60) minutes \(Int(p.start) % 60) seconds\(speaker.isLecturer ? "" : ", student"): \(p.text)\(volatile.map { " In progress: \($0)" } ?? "")")
+        .accessibilityLabel("\(spokenStart)\(speaker.isLecturer ? "" : ", student"): \(p.text)\(volatile.map { " In progress: \($0)" } ?? "")")
     }
 }
 
@@ -344,7 +346,7 @@ private struct VolatileTail: View {
     var body: some View {
         if let v = session.volatile, session.paragraphs.last.map({ !TranscriptView.volatileContinues($0, v) }) ?? true {
             TranscriptRow(session: session, time: v.start, popoverTime: $popoverTime) {
-                StreamingText(committed: AttributedString(""), volatile: v.text, isStreaming: true, style: .transcript)
+                StreamingText(committed: AttributedString(""), volatile: v.text)
             }
         }
     }

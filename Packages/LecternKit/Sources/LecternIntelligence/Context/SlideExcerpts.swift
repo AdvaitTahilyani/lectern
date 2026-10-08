@@ -13,8 +13,11 @@ struct SlideExcerpts: Sendable {
     var validPages: Set<Int> { Set(deck?.pages.map(\.number) ?? []) }
 
     /// `pages` first (in order), then up to `hits` search results for `query`.
-    /// - Parameter allowed: pages that may be shown (e.g. only those the lecture has reached).
-    func render(pages: [Int], query: String?, hits: Int, budgetTokens: Int, allowed: (Int) -> Bool = { _ in true }) -> String? {
+    /// - Parameters:
+    ///   - allowed: pages that may be shown (e.g. only those the lecture has reached).
+    ///   - maxChars: text kept per slide.
+    func render(pages: [Int], query: String?, hits: Int, budgetTokens: Int, maxChars: Int = Self.maxCharsPerSlide,
+                allowed: (Int) -> Bool = { _ in true }) -> String? {
         var entries: [(page: Int, text: String)] = []
         var seen = Set<Int>()
         for number in pages where !seen.contains(number) && allowed(number) {
@@ -34,7 +37,7 @@ struct SlideExcerpts: Sendable {
         var lines: [String] = []
         var used = 0
         for entry in entries {
-            let line = "[S\(entry.page)] " + Text.truncate(entry.text, maxChars: Self.maxCharsPerSlide)
+            let line = "[S\(entry.page)] " + Text.truncate(entry.text, maxChars: maxChars)
             let cost = TokenBudget.estimate(line) + 1
             if used + cost > budgetTokens, !lines.isEmpty { break }
             lines.append(line); used += cost

@@ -62,6 +62,7 @@ nonisolated enum PDFExporter {
         var doc = NSMutableAttributedString()
         func flush() { if doc.length > 0 { blocks.append(doc); doc = NSMutableAttributedString() } }
         let body = NSFont.systemFont(ofSize: 11)
+        let italic = NSFont(descriptor: body.fontDescriptor.withSymbolicTraits(.italic), size: 11) ?? body
         let mono = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
         let gray = NSColor(white: 0.45, alpha: 1)
         func para(_ spacing: CGFloat, indent: CGFloat = 0, headIndent: CGFloat = 0) -> NSParagraphStyle {
@@ -102,11 +103,19 @@ nonisolated enum PDFExporter {
         if !takeaways.isEmpty {
             add("Takeaways", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
             for t in takeaways {
-                flush()
                 add("\(TimeFormat.clock(t.start))–\(TimeFormat.clock(t.end))  \(t.title)", font: .systemFont(ofSize: 12, weight: .semibold), style: para(2))
                 add(t.summary, font: body, style: para(4))
                 for b in t.detail?.bullets ?? [] { add("•  \(b)", font: body, style: para(1, indent: 12, headIndent: 24)) }
+                if let d = t.detail {
+                    if !d.keyTerms.isEmpty { add("Key terms: " + d.keyTerms.map(\.term).joined(separator: ", "), font: body, style: para(4)) }
+                    if let e = d.example { add("Example: \(e)", font: italic, style: para(4)) }
+                }
+                for number in Set(t.slidePages).sorted() {
+                    if let notes = session.deck?.page(number)?.notes, !notes.isEmpty { add("Slide \(number) notes: \(notes)", font: body, color: gray, style: para(2)) }
+                }
                 if !t.slidePages.isEmpty { add("Slides " + t.slidePages.map(String.init).joined(separator: ", "), font: mono, color: gray, style: para(10)) } else { add("", font: body, style: para(6)) }
+                // The heading rides with the first takeaway, and the Quiz heading starts a block of its own.
+                flush()
             }
         }
         let quiz = session.quiz.filter { $0.outcome != nil }
@@ -122,8 +131,11 @@ nonisolated enum PDFExporter {
         if !session.transcript.isEmpty {
             add("Transcript", font: .systemFont(ofSize: 15, weight: .semibold), style: para(6))
             for p in LiveSessionModel.paragraphs(from: session.transcript) where p.kind == .speech {
-                let line = NSMutableAttributedString(string: TimeFormat.clock(p.start) + "  ", attributes: [.font: mono, .foregroundColor: gray])
-                line.append(NSAttributedString(string: p.text + "\n", attributes: [.font: body, .foregroundColor: NSColor.black, .paragraphStyle: para(6, headIndent: 0)]))
+                // A paragraph takes its style from its first run, so the timestamp carries it too.
+                let style = para(6, headIndent: 0)
+                let student = p.segments.first?.speaker?.isLecturer == false ? "Student: " : ""
+                let line = NSMutableAttributedString(string: TimeFormat.clock(p.start) + "  ", attributes: [.font: mono, .foregroundColor: gray, .paragraphStyle: style])
+                line.append(NSAttributedString(string: student + p.text + "\n", attributes: [.font: body, .foregroundColor: NSColor.black, .paragraphStyle: style]))
                 doc.append(line)
                 flush()
             }

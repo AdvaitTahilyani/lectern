@@ -62,13 +62,16 @@ public actor CourseAssistant: CourseAssisting {
         }
     }
 
+    /// Longest question or answer carried from earlier turns (course Ask keeps its own, independent of the lecture Ask's).
+    private static let historyMessageChars = 1_500
+
     /// Prior Q&A as alternating user/assistant turns, newest kept within the history budget.
     static func historyMessages(_ history: [CourseAnswer]) -> [LLMMessage] {
         var result: [LLMMessage] = []
         var used = 0
         for answer in history.reversed() {
-            let q = Text.truncate(answer.question, maxChars: LectureBrain.historyMessageChars)
-            let a = Text.truncate(answer.text, maxChars: LectureBrain.historyMessageChars)
+            let q = Text.truncate(answer.question, maxChars: Self.historyMessageChars)
+            let a = Text.truncate(answer.text, maxChars: Self.historyMessageChars)
             let cost = TokenBudget.estimate(q) + TokenBudget.estimate(a)
             if used + cost > TokenBudget.askHistory { break }
             result.insert(contentsOf: [.user(q), .assistant(a)], at: 0)

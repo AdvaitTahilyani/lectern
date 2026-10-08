@@ -52,12 +52,18 @@ actor DemoStore: SessionStoring {
         return url
     }
 
+    /// Like the real store: every deck gets a file of its own, and stored files are never rewritten.
     func importSlides(from url: URL, into sessionID: UUID) async throws -> String {
         let folder = try await folder(for: sessionID)
-        let dest = folder.appendingPathComponent("slides.pdf")
-        if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
-        try FileManager.default.copyItem(at: url, to: dest)
-        return "slides.pdf"
+        let name = "slides-\(UUID().uuidString.prefix(8).lowercased()).pdf"
+        try FileManager.default.copyItem(at: url, to: folder.appendingPathComponent(name))
+        return name
+    }
+
+    func removeSlides(named fileName: String, from sessionID: UUID) async throws {
+        guard fileName.hasPrefix("slides"), fileName.hasSuffix(".pdf"), !fileName.contains("/") else { return }
+        let file = root.appendingPathComponent(sessionID.uuidString).appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
     }
 
     private var courseChats: [UUID: [CourseAnswer]] = [:]

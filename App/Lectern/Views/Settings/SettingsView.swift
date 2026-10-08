@@ -1,5 +1,6 @@
 import SwiftUI
 import LecternCore
+import LecternLLM
 
 /// Settings window (DESIGN.md §4.10): General · Transcription · Models · Quizzes · Focus.
 struct SettingsView: View {
@@ -42,7 +43,6 @@ struct GeneralSettings: View {
                     }
                 }
                 LabeledContent("Used", value: model.storageSummary)
-                Toggle("Keep audio recordings", isOn: Binding(get: { model.preferences.keepAudioRecordings }, set: { v in model.updatePreferences { $0.keepAudioRecordings = v } }))
             }
             Section("While you were away") {
                 Toggle("Catch me up when I come back", isOn: Binding(get: { model.preferences.showRecapWhenBack }, set: { v in model.updatePreferences { $0.showRecapWhenBack = v } }))
@@ -113,14 +113,18 @@ struct TranscriptionSettings: View {
             Section("Microphone") {
                 LabeledContent("Input") {
                     HStack(spacing: DS.Space.m) {
-                        Picker("Input", selection: Binding(get: { model.settings.inputDeviceID ?? model.inputDevices.first?.id ?? "" }, set: { model.setInputDevice($0) })) {
+                        Picker("Input", selection: Binding(get: { model.selectedInputDeviceID }, set: { model.setInputDevice($0) })) {
                             ForEach(model.inputDevices) { d in Text(d.name).tag(d.id) }
                         }
                         .labelsHidden()
-                        LevelMeter(level: model.level, peak: model.peak, width: 120)
+                        if model.isMicrophoneInUse {
+                            LevelMeter(level: model.recordingLevel, peak: model.recordingLevel, width: 120)
+                                .help("In use by the current lecture")
+                        } else {
+                            LevelMeter(level: model.level, peak: model.peak, width: 120)
+                        }
                     }
                 }
-                Toggle("Voice isolation", isOn: Binding(get: { model.preferences.voiceIsolation }, set: { v in model.updatePreferences { $0.voiceIsolation = v } }))
             }
             Section {
                 Toggle("Fix course jargon from slides", isOn: Binding(get: { model.settings.fixesJargonFromSlides }, set: { model.setFixesJargon($0) }))
@@ -151,6 +155,7 @@ struct TranscriptionSettings: View {
         .formStyle(.grouped)
         .onAppear { model.startLevel() }
         .onDisappear { model.stopLevel() }
+        .onChange(of: model.isMicrophoneInUse) { _, inUse in if inUse { model.stopLevel() } else { model.startLevel() } }
     }
 }
 
@@ -217,6 +222,11 @@ struct ModelsSettings: View {
                         .controlSize(.small)
                 }
             }
+            if let problem = model.usage.storageProblem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(DS.Typo.footnote)
+                    .foregroundStyle(DS.Colors.warning)
+            }
             if model.isCapReached {
                 Label(
                     model.hasOnDeviceFallback ? "Cap reached. Cloud roles use the on-device model until next month." : "Cap reached. Cloud roles are paused until next month or a higher cap.",
@@ -225,7 +235,7 @@ struct ModelsSettings: View {
                 .font(DS.Typo.footnote)
                 .foregroundStyle(DS.Colors.warning)
             }
-            Text("From each provider's list prices per 1M tokens; prompt-cache reads cost a tenth of fresh input (Anthropic cache writes 1.25×). On-device and local-server models are free. At the cap, cloud roles switch to the on-device model if it's downloaded.")
+            Text("From each provider's list prices per 1M tokens; prompt-cache reads cost a tenth of fresh input (Anthropic cache writes 1.25×). Calls that were cancelled or reported no usage are estimated. On-device and local-server models are free. A cloud call that could take spending past the cap is held back, and cloud roles switch to the on-device model if it's downloaded.")
                 .font(DS.Typo.footnote).foregroundStyle(.secondary)
         } header: {
             Text("Cloud spending")
@@ -238,6 +248,7 @@ struct ModelsSettings: View {
         if line.inputTokens > 0, line.cachedInputTokens > 0 {
             parts.append("\(Int((Double(line.cachedInputTokens) / Double(line.inputTokens) * 100).rounded()))% cached")
         }
+        if line.isEstimate { parts.append("includes estimates") }
         return parts.joined(separator: " · ")
     }
 
@@ -261,10 +272,11 @@ struct ModelsSettings: View {
                 ForEach(model.models(for: config.kind), id: \.self) { id in Text(displayName(id, kind: config.kind)).tag(id) }
                 if !model.models(for: config.kind).contains(config.model) { Text(displayName(config.model, kind: config.kind)).tag(config.model) }
             }
-            .labelsHidden().frame(width: 240)
+            .labelsHidden().frame(minWidth: 140, maxWidth: 240)
             .help(displayName(config.model, kind: config.kind))
             .accessibilityValue(displayName(config.model, kind: config.kind))
-            roleStatus(role, config: config)
+            // The model popup gives way, so the status ("Not downloaded  Download") is never cut off.
+            roleStatus(role, config: config).fixedSize()
         }
         .accessibilityElement(children: .contain)
     }
@@ -290,7 +302,11 @@ struct ModelsSettings: View {
     }
 
     private func displayName(_ id: String, kind: ProviderKind) -> String {
-        kind == .onDevice ? (model.catalog.first { $0.id == id }?.displayName ?? id) : id
+        switch kind {
+        case .onDevice: return model.catalog.first { $0.id == id }?.displayName ?? id
+        case .openAI, .anthropic: return ProviderCatalog.suggestedModels(for: kind).first { $0.id == id }?.displayName ?? id
+        case .localServer: return id
+        }
     }
 
     private var onDeviceGroup: some View {
@@ -362,24 +378,36 @@ struct ModelsSettings: View {
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { model.commitKey(kind) }
+                    if model.hasKeyDraft(kind) {
+                        Button("Save") { model.commitKey(kind) }.controlSize(.small)
+                    }
                     testButton(kind)
                     testStatus(kind)
                 }
             }
             if model.isKeyStored(kind) {
-                Label("Stored in Keychain", systemImage: "key.fill").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                HStack(spacing: DS.Space.s) {
+                    Label("Stored in Keychain", systemImage: "key.fill").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    Button("Remove key") { model.removeKey(kind) }.buttonStyle(.link).font(DS.Typo.footnote)
+                }
             }
             LabeledContent("Model") {
-                Picker("Model", selection: Binding(get: { model.settings.providers.values.first { $0.kind == kind }?.model ?? model.defaultModel(for: kind) }, set: { m in
+                Picker("Model", selection: Binding(get: { selectedModel(kind) }, set: { m in
                     for role in LLMRole.allCases where model.settings.provider(for: role).kind == kind { model.setModel(m, for: role) }
                 })) {
-                    ForEach(model.models(for: kind), id: \.self) { Text($0).tag($0) }
+                    ForEach(ProviderCatalog.suggestedModels(for: kind)) { m in Text([m.displayName, m.priceDescription].compactMap { $0 }.joined(separator: " · ")).tag(m.id) }
+                    if !model.models(for: kind).contains(selectedModel(kind)) { Text(selectedModel(kind)).tag(selectedModel(kind)) }
                 }
-                .labelsHidden().frame(width: 260)
+                .labelsHidden().frame(width: 380)
                 .accessibilityLabel("\(kind.displayName) model")
             }
         }
         .padding(.vertical, DS.Space.xs)
+    }
+
+    /// The model the roles using `kind` have selected (the first role's), else the default.
+    private func selectedModel(_ kind: ProviderKind) -> String {
+        LLMRole.allCases.first { model.settings.provider(for: $0).kind == kind }.map { model.settings.provider(for: $0).model } ?? model.defaultModel(for: kind)
     }
 
     private func testButton(_ kind: ProviderKind) -> some View {
@@ -416,9 +444,6 @@ struct QuizSettingsView: View {
                 Picker("Ask me a question every", selection: Binding(get: { current }, set: { v in model.updateQuiz { $0.enabled = v > 0; if v > 0 { $0.intervalMinutes = v } } })) {
                     ForEach(intervals, id: \.self) { m in Text(m == m.rounded() ? "\(Int(m)) min" : String(format: "%.1f min", m)).tag(m) }
                     Text("Off").tag(0.0)
-                }
-                Picker("Time to answer", selection: Binding(get: { model.preferences.quizTimeToAnswer }, set: { v in model.updatePreferences { $0.quizTimeToAnswer = v } })) {
-                    Text("45 s").tag(45.0); Text("90 s").tag(90.0); Text("2 min").tag(120.0)
                 }
                 Picker("Style", selection: Binding(get: { model.preferences.quizStyle }, set: { v in model.updatePreferences { $0.quizStyle = v } })) {
                     Text("Card").tag(UIPreferences.QuizStyle.card)

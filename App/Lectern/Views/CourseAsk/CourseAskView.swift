@@ -17,7 +17,7 @@ struct CourseAskView: View {
                 Spacer()
                 Text("\(model.lectures.count) lecture\(model.lectures.count == 1 ? "" : "s")").font(DS.Typo.footnote).foregroundStyle(.secondary)
                 if !model.answers.isEmpty {
-                    Button { model.clearHistory() } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Clear history")
+                    Button { model.clearHistory() } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Clear history").accessibilityLabel("Clear history")
                 }
             }
             .padding(DS.Space.l)
@@ -36,6 +36,8 @@ struct CourseAskView: View {
 struct CourseAskThread: View {
     var model: CourseAskModel
     var onOpen: (CourseCitation) -> Void
+    /// A streamed token changes the answer's length; scrolling follows at most every ~100 ms (P10).
+    @State private var scrollCoalescer = ScrollCoalescer()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -59,12 +61,19 @@ struct CourseAskThread: View {
                             Button("Retry") { model.retry() }.buttonStyle(.link).font(DS.Typo.footnote)
                         }
                     }
+                    if let historyError = model.historyError {
+                        HStack(spacing: DS.Space.s) {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(DS.Colors.warning)
+                            Text(historyError).font(DS.Typo.footnote)
+                            Button("Retry") { model.retryHistory() }.buttonStyle(.link).font(DS.Typo.footnote)
+                        }
+                    }
                 }
                 .padding(DS.Space.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .defaultScrollAnchor(.bottom)
-            .onChange(of: model.streaming?.count) { _, _ in proxy.scrollSoon(to: "streaming", anchor: .bottom) }
+            .onChange(of: model.streaming?.count) { _, _ in scrollCoalescer.request { proxy.scrollSoon(to: "streaming", anchor: .bottom) } }
         }
     }
 
@@ -85,12 +94,16 @@ struct CourseAskThread: View {
 
     private func answerView(text: String, citations: [CourseCitation], streaming: Bool) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            CourseAnswerText(text: text, ordinals: model.ordinals, streaming: streaming).equatable()
+            if streaming {
+                StreamingAnswerBody(text: text)
+            } else {
+                AnswerBody(text: text, resolver: .course(citations: citations)).equatable()
+            }
             if !citations.isEmpty {
                 Divider()
                 FlowLayout(spacing: DS.Space.s) {
                     ForEach(Array(citations.enumerated()), id: \.offset) { _, c in
-                        CourseCitationChip(citation: c, title: model.lectureTitle(ordinal: c.ordinal)) { onOpen(c) }
+                        CourseCitationChip(citation: c, title: model.lectureTitle(of: c)) { onOpen(c) }
                     }
                 }
             }
@@ -102,30 +115,6 @@ struct CourseAskThread: View {
             onOpen(c)
             return .handled
         })
-    }
-}
-
-/// One course answer, re-parsed only when its text changes (the thread re-renders per streamed token).
-private struct CourseAnswerText: View, Equatable {
-    var text: String
-    var ordinals: [Int: UUID]
-    var streaming: Bool
-
-    var body: some View {
-        let attributed = CourseAnswerFormatter.attributed(text, ordinals: ordinals)
-        // One plain-string accessibility element over link-bearing text (see C1 in AskView).
-        if streaming {
-            HStack(alignment: .lastTextBaseline, spacing: 0) {
-                Text(attributed)
-                Caret(animating: true)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(CourseAnswerFormatter.plainText(text))
-        } else {
-            Text(attributed).textSelection(.enabled)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(CourseAnswerFormatter.plainText(text))
-        }
     }
 }
 
@@ -154,7 +143,14 @@ struct CourseCitationChip: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .help(title)
-        .accessibilityLabel("Lecture \(citation.ordinal), \(title)")
+        .accessibilityLabel("Lecture \(citation.ordinal), \(locator), \(title)")
+    }
+
+    private var locator: String {
+        switch citation.citation {
+        case .slide(let n): "slide \(n)"
+        case .time(let t): "at \(TimeFormat.clock(t))"
+        }
     }
 }
 
@@ -163,7 +159,7 @@ nonisolated enum CourseCitationURL {
     static func url(for c: CourseCitation) -> URL {
         switch c.citation {
         case .slide(let n): URL(string: "lectern://course/\(c.sessionID.uuidString)/\(c.ordinal)/slide/\(n)")!
-        case .time(let t): URL(string: "lectern://course/\(c.sessionID.uuidString)/\(c.ordinal)/t/\(Int(t))")!
+        case .time(let t): URL(string: "lectern://course/\(c.sessionID.uuidString)/\(c.ordinal)/t/\(TimeFormat.wholeSeconds(t))")!
         }
     }
 
@@ -176,53 +172,5 @@ nonisolated enum CourseCitationURL {
         case "t": return Double(parts[3]).map { CourseCitation(sessionID: id, ordinal: ordinal, citation: .time($0)) }
         default: return nil
         }
-    }
-}
-
-nonisolated enum CourseAnswerFormatter {
-    /// Renders `[L9 S12]` / `[L9 T14:32]` markers as inline links.
-    static func attributed(_ text: String, ordinals: [Int: UUID]) -> AttributedString {
-        var result = AttributedString()
-        let pattern = /\[[Ll](\d+)\s+([SsTt])\s*([^\[\]]{1,12})\]/
-        var cursor = text.startIndex
-        for match in text.matches(of: pattern) {
-            result.append(markdown(String(text[cursor..<match.range.lowerBound])))
-            let ordinal = Int(match.1) ?? 0
-            let kind = match.2.lowercased()
-            let value = String(match.3).trimmingCharacters(in: .whitespaces)
-            var link = AttributedString()
-            if let id = ordinals[ordinal] {
-                if kind == "s", let n = Int(value) {
-                    link = AttributedString("Lecture \(ordinal) · Slide \(n)")
-                    link.link = CourseCitationURL.url(for: CourseCitation(sessionID: id, ordinal: ordinal, citation: .slide(n)))
-                } else if kind == "t", let secs = TimeFormat.parse(value) {
-                    link = AttributedString("Lecture \(ordinal) · \(TimeFormat.clock(secs))")
-                    link.link = CourseCitationURL.url(for: CourseCitation(sessionID: id, ordinal: ordinal, citation: .time(secs)))
-                }
-            }
-            if link.characters.isEmpty { link = AttributedString(String(text[match.range])) }
-            link.foregroundColor = .accentColor
-            link.underlineStyle = nil
-            result.append(AttributedString(" "))
-            result.append(link)
-            cursor = match.range.upperBound
-        }
-        result.append(markdown(String(text[cursor...])))
-        return result
-    }
-
-    /// Plain text for accessibility: "[L9 S12]" → "Lecture 9 slide 12", "[L9 T14:32]" → "Lecture 9 14:32".
-    static func plainText(_ text: String) -> String {
-        var out = text
-        for m in text.matches(of: /\[[Ll](\d+)\s+([SsTt])\s*([^\[\]]{1,12})\]/).reversed() {
-            let value = String(m.3).trimmingCharacters(in: .whitespaces)
-            let tail = m.2.lowercased() == "s" ? "slide \(value)" : (TimeFormat.parse(value).map(TimeFormat.clock) ?? value)
-            out.replaceSubrange(m.range, with: " Lecture \(m.1) \(tail)")
-        }
-        return out.replacingOccurrences(of: "*", with: "")
-    }
-
-    private static func markdown(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
     }
 }

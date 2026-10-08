@@ -19,7 +19,11 @@ struct GenerationProfile: Sendable, Hashable {
     static let quizQuestion = GenerationProfile(maxTokens: 450, temperature: 0.7, priority: .background)
     static let feedback = GenerationProfile(maxTokens: 200, temperature: 0.3)
     static let grading = GenerationProfile(maxTokens: 300, temperature: 0.2)
+    /// Course-wide Ask (and the compact lecture Ask design kept for evaluation).
     static let answer = GenerationProfile(maxTokens: 800, temperature: 0.5)
+    /// Lecture Ask: room for a complete explanation (~250 words plus Markdown and citations).
+    /// `AskDesign.reasoning(_:)` adds the thinking budget on top.
+    static let lectureAnswer = GenerationProfile(maxTokens: 1_500, temperature: 0.4)
 
     /// The request for `messages` with these settings.
     func request(_ messages: [LLMMessage], format: ResponseFormat = .text) -> LLMRequest {

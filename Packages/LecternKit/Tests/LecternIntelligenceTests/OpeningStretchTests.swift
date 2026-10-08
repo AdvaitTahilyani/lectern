@@ -141,4 +141,11 @@ import Testing
         let again = timeline.mergeLiveIntoPreviousIfDuplicate()
         #expect(!again)
     }
+
+    /// "class" is a logistics word ("end the class", "class is cancelled"); counting it as technical
+    /// made logistics talk look like lecture content.
+    @Test func logisticsWordsAreNeverTechnical() {
+        #expect(OpeningStretch.lexicon.isDisjoint(with: OpeningStretch.logistics))
+    }
+
 }

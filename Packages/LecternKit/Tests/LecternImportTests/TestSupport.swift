@@ -76,6 +76,7 @@ final class StubServer: @unchecked Sendable {
     let id = UUID().uuidString
     private let lock = NSLock()   // guards `seen`
     private var seen: [URL] = []
+    private var seenRanges: [URL: [String?]] = [:]
     private let route: @Sendable (URL) -> StubResponse
 
     init(route: @escaping @Sendable (URL) -> StubResponse) {
@@ -88,6 +89,8 @@ final class StubServer: @unchecked Sendable {
     }
 
     var requests: [URL] { lock.lock(); defer { lock.unlock() }; return seen }
+    /// The `Range` request headers sent for `url` (nil for a request without one), in arrival order.
+    func ranges(for url: URL) -> [String?] { lock.lock(); defer { lock.unlock() }; return seenRanges[url, default: []] }
 
     var session: URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -101,8 +104,8 @@ final class StubServer: @unchecked Sendable {
         return request.value(forHTTPHeaderField: "X-Stub-ID").flatMap { registry[$0] }
     }
 
-    fileprivate func respond(to url: URL) -> StubResponse {
-        lock.lock(); seen.append(url); lock.unlock()
+    fileprivate func respond(to url: URL, range: String? = nil) -> StubResponse {
+        lock.lock(); seen.append(url); seenRanges[url, default: []].append(range); lock.unlock()
         return route(url)
     }
 }
@@ -116,7 +119,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotFindHost))
             return
         }
-        let stub = server.respond(to: url)
+        let stub = server.respond(to: url, range: request.value(forHTTPHeaderField: "Range"))
         let response = HTTPURLResponse(url: url, statusCode: stub.status, httpVersion: "HTTP/1.1", headerFields: stub.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: stub.body)

@@ -59,7 +59,7 @@ struct TakeawayCard: View {
             HStack(spacing: DS.Space.s) {
                 LiveDot(state: .recording, size: DS.Size.liveDotSmall).accessibilityHidden(true)
                 Text("NOW").font(DS.Typo.caption).fontWeight(.semibold).tracking(0.5).foregroundStyle(.secondary)
-                Text("· \(Int(elapsed / 60)) min").font(DS.Typo.mono).foregroundStyle(.secondary).contentTransition(.numericText())
+                Text("· \(TimeFormat.wholeSeconds(elapsed) / 60) min").font(DS.Typo.mono).foregroundStyle(.secondary).contentTransition(.numericText())
                 if compact, let takeaway {
                     Text(takeaway.title).font(DS.Typo.headline).lineLimit(1).contentTransition(.opacity)
                 }
@@ -98,7 +98,7 @@ struct TakeawayCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: DS.Space.s)
                 if let t = takeaway {
-                    TimestampChip(time: t.start, style: .range(t.end)) { onSeek(t.start) }
+                    TimestampChip(time: t.start, style: .range(t.end), tooltip: "Show in transcript") { onSeek(t.start) }
                 }
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
@@ -106,12 +106,18 @@ struct TakeawayCard: View {
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .accessibilityHidden(true)
             }
-            Text(takeaway?.summary ?? "")
-                .font(DS.Typo.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(isExpanded ? nil : 2)
-                .lineSpacing(DS.Typo.summaryLineSpacing)
-                .fixedSize(horizontal: false, vertical: true)
+            // Collapsed: a two-line preview of the first lines; expanded: the full text with lists and emphasis.
+            Group {
+                if isExpanded {
+                    AnswerBody(text: takeaway?.summary ?? "").equatable()
+                } else {
+                    Text(AnswerMarkup.plainText(takeaway?.summary ?? "").replacingOccurrences(of: "\n", with: " ")).lineLimit(2)
+                }
+            }
+            .font(DS.Typo.subheadline)
+            .foregroundStyle(.secondary)
+            .lineSpacing(DS.Typo.summaryLineSpacing)
+            .fixedSize(horizontal: false, vertical: true)
             if isExpanded, let t = takeaway { expandedDetails(t) }
             footer
         }
@@ -169,12 +175,12 @@ struct TakeawayCard: View {
                 ForEach(Array(d.bullets.enumerated()), id: \.offset) { _, b in
                     HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                         Text("•").frame(width: 12, alignment: .leading)
-                        Text(b).fixedSize(horizontal: false, vertical: true)
+                        Text(AnswerRendering.attributed(b, resolver: .unlinked)).fixedSize(horizontal: false, vertical: true)
                     }
                     .font(DS.Typo.body)
                 }
                 if let e = d.example {
-                    Text(e).font(DS.Typo.body).italic().foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, DS.Space.xxs)
+                    Text(AnswerRendering.attributed(e, resolver: .unlinked)).font(DS.Typo.body).italic().foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, DS.Space.xxs)
                 }
             }
             .padding(.top, DS.Space.xxs)
@@ -215,7 +221,6 @@ struct TakeawayCard: View {
                 .buttonStyle(.borderless).controlSize(.small)
             Button { onCopy() } label: { Label("Copy", systemImage: "doc.on.doc") }
                 .buttonStyle(.borderless).controlSize(.small)
-                .keyboardShortcut("c", modifiers: .command)
         }
         .font(DS.Typo.caption)
         .padding(.top, DS.Space.xxs)
@@ -230,7 +235,7 @@ struct TakeawayCard: View {
         case .some(.incorrect): parts.append("missed on the quiz")
         default: break
         }
-        parts.append("Summary: \(t.summary)")
+        parts.append("Summary: \(AnswerMarkup.plainText(t.summary))")
         return parts.joined(separator: ", ")
     }
 }

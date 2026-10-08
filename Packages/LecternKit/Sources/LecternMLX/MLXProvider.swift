@@ -44,7 +44,8 @@ public struct MLXProvider: LLMProvider {
 
     /// Like ``complete(_:)`` but also returns timing and memory measurements.
     public func completeWithMetrics(_ request: LLMRequest) async throws -> MLXCompletion {
-        let output = try await run(request, onText: { _ in })
+        // Nobody watches a completion's text, so background work may yield and be run again.
+        let output = try await run(request, preemptible: request.priority == .background, onText: { _ in })
         if case .json = request.responseFormat {
             try Self.validateJSON(output.text)
         }
@@ -84,12 +85,13 @@ public struct MLXProvider: LLMProvider {
     // MARK: - Private
 
     private func run(
-        _ request: LLMRequest, onText: @escaping @Sendable (String) -> Void
+        _ request: LLMRequest, preemptible: Bool = false, onText: @escaping @Sendable (String) -> Void
     ) async throws -> GenerationOutput {
         try await mapErrors {
             try await host.generate(
                 model: model, request: request,
-                priority: GenerationScheduler.priority(of: role, request: request.priority), onText: onText)
+                priority: GenerationScheduler.priority(of: role, request: request.priority),
+                preemptible: preemptible, onText: onText)
         }
     }
 

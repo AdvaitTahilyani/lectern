@@ -142,6 +142,46 @@ import Testing
         try await autosaver.flush()
         #expect(try await store.loadSession(id: live.id) == live)
     }
+
+    // MARK: Audit P07
+
+    @Test func aSnapshotIdenticalToTheLastWriteIsNotWrittenAgain() async throws {
+        let store = RecordingStore()
+        let autosaver = autosaver(store, interval: .seconds(60))
+        let s = session("same")
+        await autosaver.update(s)
+        try await autosaver.flush()
+        await autosaver.update(s)
+        try await autosaver.flush()
+        #expect(await store.saved.count == 1)
+        await autosaver.update(session("changed"))
+        try await autosaver.flush()
+        #expect(await store.saved.map(\.title) == ["same", "changed"])
+    }
+
+    @Test func aFailedWriteIsRetriedEvenWhenTheSnapshotIsUnchanged() async throws {
+        let store = RecordingStore()
+        await store.failNext(1)
+        let autosaver = autosaver(store, interval: .seconds(60))
+        await autosaver.update(session("retry"))
+        await #expect(throws: (any Error).self) { try await autosaver.flush() }
+        try await autosaver.flush()
+        #expect(await store.saved.map(\.title) == ["retry"])
+    }
+
+    @Test func slowWritesStretchTheIntervalUpToFourTimes() async throws {
+        let store = RecordingStore()
+        let autosaver = autosaver(store, interval: .milliseconds(10))
+        #expect(await autosaver.effectiveInterval == .milliseconds(10))
+        await store.setSaveDelay(.milliseconds(100))
+        await autosaver.update(session("slow"))
+        try await autosaver.flush()
+        #expect(await autosaver.effectiveInterval == .milliseconds(40))   // 20 × 100 ms, capped at 4 × interval
+        await store.setSaveDelay(.zero)
+        await autosaver.update(session("fast"))
+        try await autosaver.flush()
+        #expect(await autosaver.effectiveInterval == .milliseconds(10))
+    }
 }
 
 /// Thread-safe error counter for `onError` callbacks.

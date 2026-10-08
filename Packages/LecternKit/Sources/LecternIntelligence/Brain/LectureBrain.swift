@@ -19,7 +19,9 @@ public actor LectureBrain: LectureIntelligence {
     public nonisolated let updates: AsyncStream<BrainUpdate>
     let continuation: AsyncStream<BrainUpdate>.Continuation
 
-    let providers: RoleProviders
+    /// Replaced by `update(providers:)` when the user picks another model or provider; a call
+    /// already running finishes on the provider it started with.
+    var providers: RoleProviders
     var slideSearch: (any SlideSearching)?
     var excerpts: SlideExcerpts
     var slideSupport: SlideSupport
@@ -48,6 +50,11 @@ public actor LectureBrain: LectureIntelligence {
     var isFinishing = false
     var finishTask: Task<Void, Never>?
     var retrieverCache: (count: Int, retriever: TranscriptRetriever)?
+    /// How Ask builds its prompt (see `AskDesign`).
+    var askDesign = AskDesign.standard
+    /// Ask prefix warm-up (on-device only): the transcript length last prefilled, and the call doing it.
+    var askWarmedCount = 0
+    var askWarmTask: Task<Void, Never>?
     var detailCache: [UUID: CachedDetail] = [:]
     var pendingSpeakers: [UUID: SpeakerRole] = [:]
     /// Items flagged by recaps this session, offered to the lecture summary (not persisted: a
@@ -95,7 +102,8 @@ public actor LectureBrain: LectureIntelligence {
     ///     reopening a session.
     ///   - slides: retrieval over the deck, or nil when no deck is attached.
     ///   - summaryIntervalSeconds: seconds of new transcript between rolling updates (an update also
-    ///     runs after ~350 new words).
+    ///     runs after ~170 new words). Clamped to 15–70 s: every rolling update refreshes the live
+    ///     card, so a longer interval leaves it stale.
     public init(context: BrainContext, providers: RoleProviders, slides: (any SlideSearching)?, quiz: QuizSettings, summaryIntervalSeconds: Double) {
         self.init(context: context, providers: providers, slides: slides, quiz: quiz,
                   summaryIntervalSeconds: summaryIntervalSeconds, tuning: BrainTuning(),
@@ -114,12 +122,13 @@ public actor LectureBrain: LectureIntelligence {
         digest = DeckDigest.render(context.deck)
         self.tuning = tuning
         quizSettings = quiz
-        summaryInterval = max(15, summaryIntervalSeconds)
+        summaryInterval = Self.rollingInterval(summaryIntervalSeconds, tuning: tuning)
         rng = SplitMix64(seed: seed)
 
         let transcript = context.transcript.filter(\.isFinal)
         segments = transcript
-        timeline = TopicTimeline(takeaways: context.takeaways, minTopicSeconds: tuning.minTopicSeconds)
+        timeline = TopicTimeline(takeaways: context.takeaways, minTopicSeconds: tuning.minTopicSeconds,
+                                 longTopicSeconds: tuning.longTopicSeconds)
         let covered = timeline.takeaways.last?.end
         summarizedCount = covered.map { end in transcript.firstIndex { $0.start >= end - 0.01 } ?? transcript.count } ?? 0
         let summarized = summarizedCount
@@ -160,6 +169,7 @@ public actor LectureBrain: LectureIntelligence {
         if classEndedAt == nil, AsideStretch.endsClass(segment) { classEndedAt = segment.end }
         trackSlide()
         scheduleSummaryIfNeeded()
+        warmAskPrefixIfNeeded()
     }
 
     /// Quiz pings are scheduled only from the app's session clock, so an import (which never ticks)
@@ -188,9 +198,23 @@ public actor LectureBrain: LectureIntelligence {
 
     public func update(quiz: QuizSettings, summaryIntervalSeconds: Double) {
         quizSettings = quiz
-        summaryInterval = max(15, summaryIntervalSeconds)
+        summaryInterval = Self.rollingInterval(summaryIntervalSeconds, tuning: tuning)
         // Timed quizzes start only from the session clock (`tick`), never from a settings change.
         scheduleSummaryIfNeeded()
+    }
+
+    /// Switches every role to `providers` (a provider or model change in Settings). Calls already
+    /// running finish on their old provider; everything started afterwards, including queued
+    /// background work, uses the new one. History, cards and quiz state are kept. Material for
+    /// questions written earlier is kept too, so grading reuses the same prompt.
+    public func update(providers: RoleProviders) {
+        self.providers = providers
+    }
+
+    /// The rolling-update interval for a requested one: at least 15 s, at most
+    /// `tuning.maxUpdateSeconds`.
+    static func rollingInterval(_ requested: Double, tuning: BrainTuning) -> TimeInterval {
+        min(max(15, requested), max(15, tuning.maxUpdateSeconds))
     }
 
     // MARK: - Plumbing shared by the feature extensions

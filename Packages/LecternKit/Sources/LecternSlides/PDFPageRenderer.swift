@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// A thin wrapper over `CGPDFDocument` that renders pages to bitmaps, to feed image-only slides
-/// to OCR.
+/// to OCR and to draw slide images (`SlideRasterizer`).
 ///
 /// `CGPDFDocument` is not annotated `Sendable`; a renderer is only ever used from one isolation
 /// domain (an actor or a single ingest task) and is never shared.
@@ -31,6 +31,24 @@ struct PDFPageRenderer {
         guard size.width > 0, size.height > 0 else { throw SlideRenderError.renderFailed(page: pageNumber) }
         let clamped = min(scale, maxDimension / max(size.width, size.height))
         return try draw(page, size: size, scale: clamped, pageNumber: pageNumber)
+    }
+
+    /// Renders the 1-based `pageNumber` `pixelWidth` pixels wide (height from the page's aspect).
+    func render(page pageNumber: Int, pixelWidth: Int) throws -> CGImage {
+        guard pageNumber >= 1, pageNumber <= pageCount else {
+            throw SlideRenderError.pageOutOfRange(page: pageNumber, pageCount: pageCount)
+        }
+        guard let page = document.page(at: pageNumber) else { throw SlideRenderError.renderFailed(page: pageNumber) }
+        let size = Self.displaySize(of: page)
+        guard size.width > 0, size.height > 0 else { throw SlideRenderError.renderFailed(page: pageNumber) }
+        return try render(page: pageNumber, scale: CGFloat(max(pixelWidth, 1)) / size.width)
+    }
+
+    /// Height / width of the 1-based page as displayed, or nil when it has no area.
+    func aspect(ofPage pageNumber: Int) -> Double? {
+        guard pageNumber >= 1, pageNumber <= pageCount, let page = document.page(at: pageNumber) else { return nil }
+        let size = Self.displaySize(of: page)
+        return size.width > 0 && size.height > 0 ? Double(size.height / size.width) : nil
     }
 
     /// Size of the page as displayed (crop box, rotation applied), in points.

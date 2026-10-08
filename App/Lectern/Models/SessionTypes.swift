@@ -106,7 +106,7 @@ nonisolated struct PendingNavigation: Hashable, Sendable {
 /// Internal navigation URLs used by citation links (DESIGN.md §2.3).
 nonisolated enum LecternURL {
     static func slide(session: UUID, page: Int) -> URL { URL(string: "lectern://session/\(session.uuidString)/slide/\(page)")! }
-    static func time(session: UUID, seconds: TimeInterval) -> URL { URL(string: "lectern://session/\(session.uuidString)/t/\(Int(seconds))")! }
+    static func time(session: UUID, seconds: TimeInterval) -> URL { URL(string: "lectern://session/\(session.uuidString)/t/\(TimeFormat.wholeSeconds(seconds))")! }
 
     enum Target: Hashable { case slide(Int), time(TimeInterval) }
     static func parse(_ url: URL) -> (session: UUID, target: Target)? {

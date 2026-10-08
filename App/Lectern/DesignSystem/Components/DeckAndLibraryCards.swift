@@ -183,7 +183,8 @@ struct DeckDropZone: View {
 
     private var fileLine: String {
         var parts = [setup.deckDisplayName ?? setup.deckURL?.lastPathComponent ?? ""]
-        parts.append("\(setup.slideImages?.pageCount ?? 0) slides")
+        let pages = setup.slideImages?.pageCount ?? 0
+        parts.append("\(pages) slide\(pages == 1 ? "" : "s")")
         if setup.deckFileSize > 0 { parts.append(ByteCountFormatter.string(fromByteCount: setup.deckFileSize, countStyle: .file)) }
         return parts.joined(separator: " · ")
     }
@@ -205,8 +206,14 @@ struct DeckDropZone: View {
             HStack(spacing: DS.Space.xs) {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.Colors.correct)
                     .symbolEffect(.bounce, options: .nonRepeating, isActive: !reduceMotion)
-                Text("Indexed \(count) slides").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                Text("Indexed \(count) slide\(count == 1 ? "" : "s")").font(DS.Typo.footnote).foregroundStyle(.secondary)
                 if count > 300 { Text("· Large deck — indexing may take a minute").font(DS.Typo.footnote).foregroundStyle(.secondary) }
+            }
+            // Audit B43: pages OCR couldn't read are named, not hidden behind "Indexed".
+            if !setup.pagesMissingText.isEmpty {
+                let pages = setup.pagesMissingText
+                Label("Couldn't read the text of \(pages.count == 1 ? "slide" : "slides") \(pages.prefix(8).map(String.init).joined(separator: ", "))\(pages.count > 8 ? "…" : ""): \(pages.count == 1 ? "it" : "they") won't be searched or followed", systemImage: "text.viewfinder")
+                    .font(DS.Typo.footnote).foregroundStyle(DS.Colors.warning)
             }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle").font(DS.Typo.footnote).foregroundStyle(DS.Colors.warning)
@@ -216,14 +223,13 @@ struct DeckDropZone: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) }) else { return false }
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else { return false }
         provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
             var url: URL?
             if let data = item as? Data { url = URL(dataRepresentation: data, relativeTo: nil) }
             if let u = item as? URL { url = u }
             guard let url else { return }
             Task { @MainActor in
-                guard setup.acceptedExtensions.contains(url.pathExtension.lowercased()) else { return }
                 setup.loadDeck(url: url)
             }
         }
@@ -311,7 +317,7 @@ struct LectureCard: View {
 
     private var metaLine2: String {
         if isLive { return "Recording · \(TimeFormat.clock(liveElapsed))" }
-        let minutes = Int((session.duration / 60).rounded())
+        let minutes = TimeFormat.wholeSeconds((session.duration / 60).rounded())
         let takeaways = session.takeaways.count
         var parts = ["\(minutes) min", "\(takeaways) takeaway\(takeaways == 1 ? "" : "s")"]
         let answered = session.quiz.filter { $0.outcome != nil && $0.question.followUpOf == nil }

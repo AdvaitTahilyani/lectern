@@ -1,5 +1,6 @@
 import Foundation
 import LecternCore
+import LecternLLM
 
 /// UI state for the Settings window: provider test results, API key drafts, level meter.
 @Observable
@@ -16,6 +17,10 @@ final class SettingsModel {
     private(set) var testStates: [ProviderKind: TestState] = [:]
     private(set) var keyDrafts: [ProviderKind: String] = [:]
     private(set) var keyStored: [ProviderKind: Bool] = [:]
+    /// The running "Test connection" per provider, and a counter that tells a result whether it is
+    /// still the latest request (an older test finishing late must not overwrite a newer one).
+    private var testTasks: [ProviderKind: Task<Void, Never>] = [:]
+    private var testGeneration: [ProviderKind: Int] = [:]
     var localServerURL: String
     var localServerModel: String
     private(set) var inputDevices: [AudioInputDevice] = []
@@ -33,21 +38,23 @@ final class SettingsModel {
     /// The last cap the user set, restored when the cap is switched back on.
     private var lastCap: Double = 10
 
-    /// Model choices per provider shown in the pickers.
-    static let cloudModels: [ProviderKind: [String]] = [
-        .openAI: ["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini"],
-        .anthropic: ["claude-haiku-4-5", "claude-sonnet-4-5"],
-    ]
-
     init(app: AppModel) {
         self.app = app
         let local = app.settings.providers.values.first { $0.kind == .localServer }
         localServerURL = local?.baseURL?.absoluteString ?? "http://localhost:11434/v1"
         localServerModel = local?.model ?? "gemma4:12b"
         for kind in [ProviderKind.openAI, .anthropic] {
-            keyStored[kind] = ((try? app.services.keychain.apiKey(for: kind)) ?? nil) != nil
+            let stored = ((try? app.services.keychain.apiKey(for: kind)) ?? nil) != nil
+            keyStored[kind] = stored
+            app.noteKeyStored(stored, for: kind)
         }
         inputDevices = app.services.inputDevices()
+    }
+
+    /// The microphone the Input picker shows: the chosen one, else the system default, which is what a
+    /// lecture records from when none is chosen.
+    var selectedInputDeviceID: String {
+        settings.inputDeviceID ?? inputDevices.first { $0.isDefault }?.id ?? inputDevices.first?.id ?? ""
     }
 
     var settings: AppSettings { app.settings }
@@ -63,7 +70,7 @@ final class SettingsModel {
         app.updateSettings { s in
             var config = s.provider(for: role)
             if config.kind != kind {
-                config = ProviderConfig(kind: kind, model: defaultModel(for: kind), baseURL: kind == .localServer ? URL(string: localServerURL) : nil)
+                config = ProviderConfig(kind: kind, model: defaultModel(for: kind), baseURL: kind == .localServer ? Self.serverURL(from: localServerURL) ?? Self.defaultServerURL : nil)
             }
             s.providers[role] = config
         }
@@ -81,8 +88,7 @@ final class SettingsModel {
         switch kind {
         case .onDevice: return catalog.first { $0.purpose == .language && modelState($0.id).isInstalled }?.id ?? AppSettings.defaultOnDeviceModel
         case .localServer: return localServerModel
-        case .openAI: return Self.cloudModels[.openAI]?.first ?? "gpt-4.1-mini"
-        case .anthropic: return Self.cloudModels[.anthropic]?.first ?? "claude-haiku-4-5"
+        case .openAI, .anthropic: return ProviderCatalog.defaultModel(for: kind)
         }
     }
 
@@ -90,7 +96,7 @@ final class SettingsModel {
         switch kind {
         case .onDevice: return catalog.filter { $0.purpose == .language }.map(\.id)
         case .localServer: return [localServerModel]
-        case .openAI, .anthropic: return Self.cloudModels[kind] ?? []
+        case .openAI, .anthropic: return ProviderCatalog.suggestedModels(for: kind).map(\.id)
         }
     }
 
@@ -100,12 +106,46 @@ final class SettingsModel {
         return c.kind == .onDevice && !modelState(c.model).isInstalled
     }
 
+    /// Where a local server is expected when none is configured.
+    nonisolated static let defaultServerURL = URL(string: "http://localhost:11434/v1")!
+
+    /// `text` as an http(s) URL with a host, or nil. `URL(string: "localhost")` and similar partial
+    /// drafts parse fine but aren't addresses a request can go to.
+    nonisolated static func serverURL(from text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed),
+            let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            let host = components.host, !host.isEmpty
+        else { return nil }
+        return components.url
+    }
+
+    /// Saves the local-server URL and model into every role that uses a local server. A draft that
+    /// isn't a usable address or model is rejected (and shown as an error), not saved.
     func commitLocalServer() {
-        app.updateSettings { s in
-            for role in LLMRole.allCases where s.provider(for: role).kind == .localServer {
-                s.providers[role] = ProviderConfig(kind: .localServer, model: localServerModel, baseURL: URL(string: localServerURL))
+        switch localServerDraft() {
+        case .failure(let problem):
+            testStates[.localServer] = .failed(problem.message)
+        case .success(let draft):
+            invalidateTest(.localServer)
+            testStates[.localServer] = .idle
+            app.updateSettings { s in
+                for role in LLMRole.allCases where s.provider(for: role).kind == .localServer {
+                    s.providers[role] = ProviderConfig(kind: .localServer, model: draft.model, baseURL: draft.url)
+                }
             }
         }
+    }
+
+    private struct DraftProblem: Error { var message: String }
+
+    private func localServerDraft() -> Result<(url: URL, model: String), DraftProblem> {
+        guard let url = Self.serverURL(from: localServerURL) else {
+            return .failure(DraftProblem(message: "Enter the server address, like http://localhost:11434/v1"))
+        }
+        let model = localServerModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return .failure(DraftProblem(message: "Enter a model name")) }
+        return .success((url, model))
     }
 
     // MARK: Keys
@@ -113,11 +153,31 @@ final class SettingsModel {
     func keyDraft(_ kind: ProviderKind) -> String { keyDrafts[kind] ?? "" }
     func setKeyDraft(_ value: String, for kind: ProviderKind) { keyDrafts[kind] = value }
 
+    /// True when the user has typed a replacement key that isn't saved yet.
+    func hasKeyDraft(_ kind: ProviderKind) -> Bool {
+        !keyDraft(kind).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Saves the typed replacement key. An empty draft means "unchanged": it never deletes the
+    /// stored key (use ``removeKey(_:)`` for that).
     func commitKey(_ kind: ProviderKind) {
         let value = keyDraft(kind).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        store(key: value, for: kind)
+    }
+
+    /// Deletes the stored key (the explicit "Remove key" action).
+    func removeKey(_ kind: ProviderKind) {
+        store(key: nil, for: kind)
+    }
+
+    private func store(key: String?, for kind: ProviderKind) {
+        invalidateTest(kind)
         do {
-            try app.services.keychain.setAPIKey(value.isEmpty ? nil : value, for: kind)
-            keyStored[kind] = !value.isEmpty
+            try app.services.keychain.setAPIKey(key, for: kind)
+            keyDrafts[kind] = nil
+            keyStored[kind] = key != nil
+            app.noteKeyStored(key != nil, for: kind)
             testStates[kind] = .idle
         } catch {
             testStates[kind] = .failed(error.localizedDescription)
@@ -128,28 +188,100 @@ final class SettingsModel {
 
     // MARK: Test connection
 
+    /// What one "Test connection" press will check: nothing here is saved.
+    private struct TestPlan {
+        var configs: [ProviderConfig]
+        var key: String?
+    }
+
+    /// Checks `kind` with what is on screen (a typed key, the server address in the field) without
+    /// saving any of it. Cloud providers are tested with every model a role selected.
     func test(_ kind: ProviderKind) {
-        testStates[kind] = .testing
-        if kind == .localServer { commitLocalServer() }
-        if kind.isCloud { commitKey(kind); testStates[kind] = .testing }
-        let config = ProviderConfig(kind: kind, model: kind == .localServer ? localServerModel : defaultModel(for: kind), baseURL: kind == .localServer ? URL(string: localServerURL) : nil)
-        let key = kind.isCloud ? ((try? app.services.keychain.apiKey(for: kind)) ?? nil) : nil
-        Task { [app] in
-            do {
-                let health = try await withThrowingTaskGroup(of: ProviderHealth.self) { group in
-                    group.addTask { try await app.services.providerHealthCheck(config, key) }
-                    group.addTask { try await Task.sleep(for: .seconds(8)); throw LLMError.network("Timed out after 8 s") }
-                    let first = try await group.next()!
-                    group.cancelAll()
-                    return first
-                }
-                testStates[kind] = .ok(latencyMs: health.latencyMilliseconds, detail: health.detail)
-            } catch {
-                let message: String
-                if let e = error as? LLMError, case .http(let s, let m) = e { message = "\(s) \(m)" } else { message = error.localizedDescription.split(separator: "\n").first.map(String.init) ?? "Failed" }
-                testStates[kind] = .failed(message)
-            }
+        invalidateTest(kind)
+        let plan: TestPlan
+        switch testPlan(for: kind) {
+        case .failure(let problem):
+            testStates[kind] = .failed(problem.message)
+            return
+        case .success(let value):
+            plan = value
         }
+        let generation = testGeneration[kind] ?? 0
+        testStates[kind] = .testing
+        let check = app.services.providerHealthCheck
+        testTasks[kind] = Task { [weak self] in
+            let result: TestState
+            var testing: String?
+            do {
+                var slowest = 0
+                var details: [String] = []
+                for config in plan.configs {
+                    testing = config.model
+                    let health = try await Self.timeBoxed { try await check(config, plan.key) }
+                    slowest = max(slowest, health.latencyMilliseconds)
+                    if let detail = health.detail { details.append(detail) }
+                }
+                let detail = plan.configs.count > 1 ? "\(plan.configs.count) models" : details.first
+                result = .ok(latencyMs: slowest, detail: detail)
+            } catch is CancellationError {
+                return
+            } catch {
+                result = .failed(Self.message(for: error, model: plan.configs.count > 1 ? testing : nil))
+            }
+            guard let self, self.testGeneration[kind] == generation else { return }
+            self.testStates[kind] = result
+            self.testTasks[kind] = nil
+        }
+    }
+
+    /// Ends any test in flight for `kind`, so its result is dropped when it arrives.
+    private func invalidateTest(_ kind: ProviderKind) {
+        testGeneration[kind, default: 0] += 1
+        testTasks.removeValue(forKey: kind)?.cancel()
+    }
+
+    private func testPlan(for kind: ProviderKind) -> Result<TestPlan, DraftProblem> {
+        switch kind {
+        case .localServer:
+            return localServerDraft().map { TestPlan(configs: [ProviderConfig(kind: .localServer, model: $0.model, baseURL: $0.url)], key: nil) }
+        case .onDevice:
+            return .success(TestPlan(configs: [ProviderConfig(kind: kind, model: defaultModel(for: kind))], key: nil))
+        case .openAI, .anthropic:
+            let typed = keyDraft(kind).trimmingCharacters(in: .whitespacesAndNewlines)
+            let key: String?
+            if typed.isEmpty {
+                do { key = try app.services.keychain.apiKey(for: kind) } catch { return .failure(DraftProblem(message: error.localizedDescription)) }
+            } else {
+                key = typed
+            }
+            guard let key, !key.isEmpty else { return .failure(DraftProblem(message: "No API key. Paste one first.")) }
+            var models: [String] = []
+            for role in LLMRole.allCases {
+                let config = settings.provider(for: role)
+                if config.kind == kind, !models.contains(config.model) { models.append(config.model) }
+            }
+            if models.isEmpty { models = [defaultModel(for: kind)] }
+            return .success(TestPlan(configs: models.map { ProviderConfig(kind: kind, model: $0) }, key: key))
+        }
+    }
+
+    /// Runs `operation`, failing after 8 s.
+    private nonisolated static func timeBoxed(_ operation: @escaping @Sendable () async throws -> ProviderHealth) async throws -> ProviderHealth {
+        try await withThrowingTaskGroup(of: ProviderHealth.self) { group in
+            group.addTask { try await operation() }
+            group.addTask { try await Task.sleep(for: .seconds(8)); throw LLMError.network("Timed out after 8 s") }
+            let first = try await group.next()!
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// One line for the status label; with several models it names the one that failed.
+    private nonisolated static func message(for error: Error, model: String?) -> String {
+        var text: String
+        if let e = error as? LLMError, case .http(let s, let m) = e { text = "\(s) \(m)" } else { text = error.localizedDescription.split(separator: "\n").first.map(String.init) ?? "Failed" }
+        if let model { text = "\(model): \(text)" }
+        return text
     }
 
     func testState(_ kind: ProviderKind) -> TestState { testStates[kind] ?? .idle }
@@ -166,7 +298,10 @@ final class SettingsModel {
         app.updateSettings { $0.monthlyCloudCapUSD = value }
     }
 
-    func setCapEnabled(_ on: Bool) { setMonthlyCap(on ? (monthlyCap ?? lastCap) : nil) }
+    func setCapEnabled(_ on: Bool) {
+        if !on, let cap = monthlyCap { lastCap = cap }
+        setMonthlyCap(on ? (monthlyCap ?? lastCap) : nil)
+    }
 
     var isCapReached: Bool {
         guard let cap = monthlyCap, cap > 0 else { return false }
@@ -210,8 +345,13 @@ final class SettingsModel {
         startLevel()
     }
 
+    /// A lecture is recording: it owns the microphone, so the meter shows its level instead of opening a second capture.
+    var isMicrophoneInUse: Bool { app.liveSession != nil }
+    var recordingLevel: Float { app.liveSession?.level ?? 0 }
+
     func startLevel() {
-        guard levelTask == nil else { return }
+        guard levelTask == nil, !isMicrophoneInUse else { return }
+        inputDevices = app.services.inputDevices()   // microphones plugged in since Settings was first opened
         let monitor = app.services.makeLevelMonitor()
         levelMonitor = monitor
         let stream = monitor.start(deviceID: settings.inputDeviceID)
@@ -230,6 +370,7 @@ final class SettingsModel {
         levelMonitor?.stop()
         levelMonitor = nil
         level = 0
+        peak = 0
     }
 
     func addVocabulary() {

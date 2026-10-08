@@ -41,19 +41,12 @@ public final class ParakeetEngine: TranscriptionEngine {
 
 /// All mutable state of `ParakeetEngine`, isolated in one actor.
 private actor ParakeetCore {
-    private struct LiveSession {
-        let capture: AudioCapture
-        let task: Task<Void, Never>
-    }
-
     private var unified: StreamingUnifiedAsrManager?
     /// Vocabulary terms the loaded unified manager is boosted with (boosting cannot be unset).
     private var boostedTerms: [String]?
     private var fallbackModels: AsrModels?
     private var vocabularyModels: CtcModels?
-    private var live: LiveSession?
-    /// Set while a session is being opened; opening suspends the actor, so this blocks a second start.
-    private var isStarting = false
+    private let live = LiveSessionSlot()
 
     // MARK: Readiness & preparation
 
@@ -209,9 +202,10 @@ private actor ParakeetCore {
     }
 
     func startLive(options: TranscriptionOptions) async throws -> AsyncThrowingStream<TranscriptionEvent, Error> {
-        guard live == nil, !isStarting else { throw TranscriptionError.alreadyRunning }
-        isStarting = true
-        defer { isStarting = false }
+        try await live.start { id in try await self.openLive(options: options, session: id) }
+    }
+
+    private func openLive(options: TranscriptionOptions, session id: UUID) async throws -> LiveSessionSlot.Opened {
         let session = try await openSession(options: options)
         let capture = AudioCapture()
         let audio: AsyncThrowingStream<AudioCaptureEvent, Error>
@@ -226,18 +220,18 @@ private actor ParakeetCore {
             await SessionRunner.runLive(audio: audio, recognizer: session.pipeline, diarization: session.diarization, sink: session.sink)
             await capture.stop()
         }
-        live = LiveSession(capture: capture, task: task)
-        session.sink.onTermination { [weak self] in
-            Task { await self?.stopLive() }
+        // The consumer dropped the stream (or it ended): stop this session, never a newer one.
+        session.sink.onTermination { [live] in
+            Task { await live.stop(session: id) }
         }
-        return session.stream
+        return LiveSessionSlot.Opened(stream: session.stream) {
+            await capture.stop()   // ends the audio stream; the task then flushes and finishes
+            await task.value
+        }
     }
 
     func stopLive() async {
-        guard let session = live else { return }
-        live = nil
-        await session.capture.stop()   // ends the audio stream; the task then flushes and finishes
-        await session.task.value
+        await live.stop()
     }
 
     func transcribeFile(at url: URL, options: TranscriptionOptions) async throws -> AsyncThrowingStream<TranscriptionEvent, Error> {

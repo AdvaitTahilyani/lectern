@@ -8,8 +8,8 @@ struct QuizCard: View {
     var streak: Int
     var showStreak: Bool
     var sessionID: UUID
-    /// Seconds allowed for the question (`UIPreferences.quizTimeToAnswer`), for the countdown ring.
-    var timeToAnswer: TimeInterval
+    /// Questions queued behind this one; shown as a quiet count, never as pressure.
+    var waiting: Int = 0
     var thumbnail: (Int) -> NSImage? = { _ in nil }
     var onSelect: (Int) -> Void
     var onShortAnswerChange: (String) -> Void
@@ -17,12 +17,10 @@ struct QuizCard: View {
     var onSnooze: () -> Void
     var onSkip: () -> Void
     var onDismiss: () -> Void
-    var onHover: (Bool) -> Void
     var onOpenURL: (URL) -> Void
     var compactWidth: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dsAnimation) private var motion
     @FocusState private var shortAnswerFocused: Bool
 
     var body: some View {
@@ -72,7 +70,6 @@ struct QuizCard: View {
         .frame(maxHeight: 250)
         .fixedSize(horizontal: false, vertical: true)
         .lecternGlass(.regular, in: .rect(cornerRadius: DS.Radius.float))
-        .onHover(perform: onHover)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quiz")
         .onAppear { if case .shortAnswer = quiz.question.kind { shortAnswerFocused = true } }
@@ -82,13 +79,16 @@ struct QuizCard: View {
 
     private var header: some View {
         HStack(spacing: DS.Space.s) {
-            DeadlineRing(deadline: quiz.deadline, total: timeToAnswer, paused: quiz.phase == .grading)
             Text("Quick check · \(quiz.question.concept)")
                 .font(DS.Typo.caption).fontWeight(.semibold).foregroundStyle(.secondary)
                 .lineLimit(1)
+            if waiting > 0 {
+                Text("+\(waiting) more").font(DS.Typo.footnote).foregroundStyle(.tertiary).lineLimit(1)
+                    .help("\(waiting) more question\(waiting == 1 ? "" : "s") waiting")
+            }
             if quiz.phase == .grading { ProgressView().controlSize(.mini) }
             Spacer()
-            Button("Snooze", action: onSnooze).keyboardShortcut("s", modifiers: []).help("Ask again in 5 minutes (S)")
+            Button("Snooze", action: onSnooze).help("Ask again in 5 minutes (S)")
             Button("Skip", action: onSkip).help("Skip this question (Esc)")
         }
         .buttonStyle(.bordered)
@@ -160,7 +160,7 @@ struct QuizCard: View {
 
     private func feedback(_ grade: QuizGrade) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            Text(grade.feedback)
+            Text(AnswerRendering.attributed(grade.feedback, resolver: .unlinked))
                 .font(DS.Typo.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
@@ -206,33 +206,6 @@ struct OptionRow: View {
         if selected { return AnyShapeStyle(DS.Colors.accent) }
         if hovered, !disabled { return AnyShapeStyle(DS.Colors.accent.opacity(0.12)) }
         return AnyShapeStyle(.quaternary)
-    }
-}
-
-/// 16 pt ring draining to the deadline; a `mono` countdown under Reduce Motion.
-struct DeadlineRing: View {
-    var deadline: Date
-    /// Length of the whole countdown in seconds (the ring is full at that point).
-    var total: TimeInterval
-    var paused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: reduceMotion ? 1 : 0.25)) { timeline in
-            let remaining = max(0, deadline.timeIntervalSince(timeline.date))
-            if reduceMotion {
-                Text(TimeFormat.clock(remaining)).font(DS.Typo.mono).foregroundStyle(.secondary)
-            } else {
-                ZStack {
-                    Circle().stroke(.quaternary, lineWidth: 2)
-                    Circle().trim(from: 0, to: min(1, remaining / max(1, total)))
-                        .stroke(paused ? AnyShapeStyle(.secondary) : AnyShapeStyle(DS.Colors.accent), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: 16, height: 16)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 

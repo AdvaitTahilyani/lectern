@@ -43,6 +43,11 @@ extension AppServices {
                     summaryIntervalSeconds: settings.summaryIntervalSeconds
                 )
             },
+            makeRoleProviders: { settings, sessionID in
+                // A role moved to the on-device model: load it before the next call needs it.
+                OnDeviceStack.shared.warmUp(for: settings)
+                return ProviderResolver.roleProviders(for: settings, keychain: keychain, sessionID: sessionID)
+            },
             slideIngestor: PDFSlideIngestor(),
             makeSlideIndex: { await SlideIndex.build(deck: $0) },
             store: store,
@@ -58,8 +63,8 @@ extension AppServices {
                 }
                 return LibraryLoad(sessions: library.sessions, issues: issues)
             },
-            providerHealthCheck: { config, _ in
-                let provider = try ProviderResolver.provider(for: config, keychain: keychain)
+            providerHealthCheck: { config, apiKey in
+                let provider = try HealthCheckProvider.make(config, apiKey: apiKey, keychain: keychain)
                 let start = ContinuousClock.now
                 try await provider.healthCheck()
                 let ms = Int((ContinuousClock.now - start) / .milliseconds(1))
@@ -68,7 +73,8 @@ extension AppServices {
             onDeviceModels: onDevice.modelManager,
             keychain: KeychainKeyStore(keychain: keychain),
             search: { query, scope, sessions in
-                LibrarySearch.search(query, in: sessions).compactMap { LibrarySearchHit(hit: $0, scope: scope) }
+                // The scope selects which fields are searched, before the result limit applies (B29).
+                LibrarySearch.search(query, in: sessions, kinds: scope.kinds).map { LibrarySearchHit(hit: $0, query: query) }
             },
             recordingImporter: RecordingImporter(
                 makeEngine: { TranscriptionEngines.make(StoredSettings.current().transcriptionEngine) },
@@ -89,15 +95,18 @@ extension AppServices {
                     guard !vocabulary.isEmpty else { return transcript }
                     let corrector = TranscriptCorrector(vocabulary: vocabulary)
                     return transcript.map(corrector.correct)
-                }
+                },
+                // An import saves its transcript and takeaways as it goes, so an interruption leaves
+                // a lecture that can be finished.
+                checkpoint: { try await store.save($0) }
             ),
             mediaSpaceBrowser: LiveMediaSpaceBrowser(),
             presentationConverter: PresentationConverter(),
-            makeCourseAssistant: { lectures in
+            makeCourseAssistant: { lectures, courseName in
                 let settings = StoredSettings.current()
                 return CourseAssistant(
                     lectures: lectures,
-                    courseName: nil,
+                    courseName: courseName,
                     provider: ProviderResolver.resolvedProvider(for: settings.provider(for: .ask), role: .ask, keychain: keychain)
                 )
             },
@@ -164,6 +173,23 @@ nonisolated enum ProviderResolver {
     }
 }
 
+/// The provider "Test connection" runs. A cloud provider is built from the key being tested (typed
+/// in Settings or Onboarding, not saved yet), never from the Keychain.
+nonisolated enum HealthCheckProvider {
+    static func make(_ config: ProviderConfig, apiKey: String?, keychain: KeychainStore) throws -> any LLMProvider {
+        switch config.kind {
+        case .openAI, .anthropic:
+            guard let apiKey, !apiKey.isEmpty else { throw LLMError.missingAPIKey(config.kind) }
+            if config.kind == .openAI {
+                return OpenAICompatibleProvider.openAI(apiKey: apiKey, model: config.model, baseURL: config.baseURL ?? OpenAICompatibleProvider.openAIBaseURL)
+            }
+            return AnthropicProvider(apiKey: apiKey, model: config.model, baseURL: config.baseURL ?? AnthropicProvider.baseURL)
+        case .onDevice, .localServer:
+            return try ProviderResolver.provider(for: config, keychain: keychain)
+        }
+    }
+}
+
 // MARK: - API cost
 
 /// The usage ledger behind every cloud call, and the monthly cap around it.
@@ -195,9 +221,11 @@ nonisolated struct LedgerUsageReporter: UsageReporting {
             lines: month.breakdown.map { m in
                 UsageMonthSummary.Line(
                     provider: m.provider, model: m.model, calls: m.totals.calls, inputTokens: m.totals.inputTokens,
-                    outputTokens: m.totals.outputTokens, cachedInputTokens: m.totals.cachedInputTokens, costUSD: m.totals.costUSD
+                    outputTokens: m.totals.outputTokens, cachedInputTokens: m.totals.cachedInputTokens, costUSD: m.totals.costUSD,
+                    isEstimate: m.isEstimate
                 )
-            }
+            },
+            storageProblem: await ledger.storageProblem()
         )
     }
 
@@ -312,26 +340,37 @@ nonisolated struct KeychainKeyStore: APIKeyStoring {
     }
 }
 
+nonisolated extension LibrarySearchScope {
+    /// The store's kinds of match this scope shows.
+    var kinds: Set<SearchHit.Kind> {
+        switch self {
+        case .all: Set(SearchHit.Kind.allCases)
+        case .titles: [.title]
+        case .transcripts: [.transcript]
+        case .takeaways: [.takeaway, .slideNotes]
+        }
+    }
+}
+
 nonisolated extension LibrarySearchHit {
-    /// Maps a store hit into the UI's shape, or nil when the scope excludes it.
-    init?(hit: SearchHit, scope: LibrarySearchScope) {
+    /// Maps a store hit into the UI's shape; the first of the query's words found in the snippet is highlighted.
+    init(hit: SearchHit, query: String) {
         let field: Field
         switch hit.kind {
         case .title: field = .title
         case .takeaway, .slideNotes: field = .takeaway
         case .transcript: field = .transcript
         }
-        switch (scope, field) {
-        case (.all, _), (.titles, .title), (.transcripts, .transcript), (.takeaways, .takeaway): break
-        default: return nil
-        }
-        self.init(sessionID: hit.sessionID, field: field, snippet: hit.snippet, matchRange: nil, time: hit.time, slide: hit.slide)
+        let match = query.split(whereSeparator: \.isWhitespace)
+            .compactMap { hit.snippet.range(of: String($0), options: [.caseInsensitive, .diacriticInsensitive]) }
+            .min { $0.lowerBound < $1.lowerBound }
+        self.init(sessionID: hit.sessionID, field: field, snippet: hit.snippet, matchRange: match, time: hit.time, slide: hit.slide)
     }
 }
 
 nonisolated struct LiveMediaSpaceBrowser: MediaSpaceBrowserProviding {
     @MainActor
-    func makeBrowser(onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView {
-        AnyView(MediaSpaceBrowserView(onFound: onFound))
+    func makeBrowser(state: MediaSpaceBrowserState, onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView {
+        AnyView(MediaSpaceBrowserView(state: state, onFound: onFound))
     }
 }

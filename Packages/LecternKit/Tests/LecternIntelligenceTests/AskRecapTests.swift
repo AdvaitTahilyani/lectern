@@ -1,7 +1,7 @@
 import Foundation
 import LecternCore
 import Testing
-@testable import LecternIntelligence
+@_spi(Evaluation) @testable import LecternIntelligence
 
 @Suite struct AskTests {
     let transcript = Fixtures.segments([
@@ -39,12 +39,16 @@ import Testing
         #expect(done?.citations == [.slide(4), .time(240), .time(300)])
 
         let request = provider.requests[0]
-        #expect(request.system.contains("Cite your sources"))
+        #expect(request.system.contains("Cite where it helps"))
         #expect(request.system.contains("[S4] FOLLOW sets"))
+        // The transcript up to the last 5-minute boundary is in the cached prefix; the rest follows.
+        #expect(request.system.contains("[2:00] FIRST of alpha is the set of terminals"))
+        #expect(!request.system.contains("end marker dollar"))
         let user = request.lastUser
         #expect(user.contains("QUESTION: What is in FOLLOW of the start symbol?"))
         #expect(user.contains("[S4] FOLLOW sets"))                 // slide hit
-        #expect(user.contains("end marker dollar"))                 // transcript retrieval
+        #expect(user.contains("TRANSCRIPT, CONTINUED FROM [5:00]:\n[5:00] the end marker dollar"))
+        #expect(request.maxTokens == AskDesign.standard.maxTokens && request.priority == .interactive)
         #expect(user.contains("FIRST sets: Terminals that begin"))  // topic list
         #expect(user.contains("FOLLOW sets (now)"))
     }
@@ -160,8 +164,9 @@ import Testing
         await brain.waitUntilIdle()
         let requests = provider.requests
         #expect(provider.maxInFlight == 1)
-        // ~150 s or ~350 words per chunk: 30 min → about a dozen updates, never one giant prompt.
-        #expect(requests.count >= 10 && requests.count <= 16)
+        // The stored 150 s interval is capped at the 70 s live cadence (or ~170 words per chunk):
+        // 30 min → about 26 updates, never one giant prompt.
+        #expect(requests.count >= 22 && requests.count <= 32)
         // Chunks are consecutive: each "NEW LINES" marker is later than the previous one.
         let marks = requests.compactMap { r -> TimeInterval? in
             guard let m = r.lastUser.firstMatch(of: /NEW LINES: everything from \[([\d:]+)\]/) else { return nil }

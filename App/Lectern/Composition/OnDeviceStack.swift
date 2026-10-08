@@ -32,23 +32,44 @@ nonisolated final class OnDeviceStack: Sendable {
         return MLXProvider(model: model, role: role)
     }
 
-    /// Loads the on-device model(s) a session will use and pre-compiles the brain's JSON grammars
+    /// Loads the on-device model a session needs first and pre-compiles the brain's JSON grammars
     /// in the background, so the first takeaway doesn't pay ~10 s of load + setup. No-op when every
-    /// role uses a server or cloud provider, or the model isn't downloaded yet.
+    /// role uses a server or cloud provider, the model isn't downloaded yet, or it is already
+    /// loaded and warm (warming again would clear its prompt caches).
+    ///
+    /// Models are taken in the order a lecture first needs them (rolling summaries, then quiz
+    /// questions, then Ask), and only as many as the host keeps loaded: warming a second model
+    /// would just evict the first.
     func warmUp(for settings: AppSettings) {
-        let models = Set(LLMRole.allCases.map { settings.provider(for: $0) }.filter { $0.kind == .onDevice }.map(\.model))
+        let models = Self.warmUpOrder(for: settings, resident: MLXModelHost.shared.configuration.maxResidentModels)
             .filter { MLXModelHost.shared.modelManager.isDownloaded($0) }
-        for model in models {
-            Task.detached(priority: .utility) {
+        guard !models.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            for model in models {
                 // Best-effort: a model that fails to load fails again on the first real call, which
                 // the brain reports through its normal `.error` path.
                 try? await MLXModelHost.shared.warmUp(model, schemas: LectureBrain.jsonSchemas)
             }
         }
     }
+
+    /// Distinct on-device models in role order (summaries, quizzes, Ask), at most `resident`.
+    static func warmUpOrder(for settings: AppSettings, resident: Int) -> [String] {
+        var models: [String] = []
+        for role in [LLMRole.summaries, .quizzes, .ask] {
+            let config = settings.provider(for: role)
+            if config.kind == .onDevice, !models.contains(config.model) { models.append(config.model) }
+        }
+        return Array(models.prefix(max(1, resident)))
+    }
 }
 
 /// Download manager over MLX model repos and the Parakeet speech models.
+///
+/// Each model has at most one operation at a time (download or removal), identified by a
+/// generation. A new operation first waits for everything issued before it for that model (a
+/// pause's cancellation, a removal) to finish, and results from an older generation are dropped,
+/// so a late cancellation or completion can never act on a newer transfer.
 nonisolated final class LiveModelManager: OnDeviceModelManaging {
     static let speechID = TranscriptionEngineID.parakeet.rawValue
 
@@ -56,23 +77,44 @@ nonisolated final class LiveModelManager: OnDeviceModelManaging {
 
     private let mlx: ModelManager
     private let speech: @Sendable () -> any TranscriptionEngine
+    private let unload: @Sendable (String) async -> Void
+
+    private struct Operation {
+        enum Kind { case download, remove }
+        var generation: UUID
+        var kind: Kind
+        var task: Task<Void, Never>?
+    }
 
     private struct State {
         var models: [String: OnDeviceModelState] = [:]
         var listeners: [UUID: AsyncStream<[String: OnDeviceModelState]>.Continuation] = [:]
-        var tasks: [String: Task<Void, Never>] = [:]
+        /// The current operation per model.
+        var operations: [String: Operation] = [:]
+        /// The last thing issued per model, including a pause's cancellation; the next operation waits for it.
+        var tail: [String: Task<Void, Never>] = [:]
     }
     private let state = Mutex(State())
 
-    init(mlx: ModelManager, speech: @escaping @Sendable () -> any TranscriptionEngine) {
+    /// `unload` releases a loaded MLX model before its files are removed.
+    init(
+        mlx: ModelManager,
+        speech: @escaping @Sendable () -> any TranscriptionEngine,
+        unload: @escaping @Sendable (String) async -> Void = { await MLXModelHost.shared.unload($0) }
+    ) {
         self.mlx = mlx
         self.speech = speech
+        self.unload = unload
         // Parakeet streaming (~0.6 GB) + vocabulary boosting (~0.1 GB) + Sortformer diarizer (~0.23 GB).
         catalog = [OnDeviceModelInfo(id: Self.speechID, displayName: "Parakeet (speech + speakers)", purpose: .speech, sizeBytes: 930_000_000)]
             + mlx.catalog.map { OnDeviceModelInfo(id: $0.id, displayName: $0.displayName, purpose: .language, sizeBytes: $0.approximateDownloadBytes) }
 
         var initial: [String: OnDeviceModelState] = [:]
-        for model in mlx.catalog { initial[model.id] = mlx.isDownloaded(model.id) ? .installed : .notInstalled }
+        for model in mlx.catalog {
+            // Bytes on disk that don't make a usable model (cut off or damaged): offer Retry, which
+            // resumes or repairs, rather than a model that looks installed or untouched.
+            initial[model.id] = mlx.isDownloaded(model.id) ? .installed : mlx.isIncomplete(model.id) ? .failed(Self.incompleteMessage) : .notInstalled
+        }
         initial[Self.speechID] = .notInstalled
         state.withLock { $0.models = initial }
 
@@ -82,6 +124,8 @@ nonisolated final class LiveModelManager: OnDeviceModelManaging {
             self?.set(Self.speechID, ready ? .installed : .notInstalled, onlyIf: { $0 == .notInstalled })
         }
     }
+
+    static let incompleteMessage = "Download incomplete or damaged. Retry to repair."
 
     func states() -> AsyncStream<[String: OnDeviceModelState]> {
         let (stream, continuation) = AsyncStream.makeStream(of: [String: OnDeviceModelState].self, bufferingPolicy: .bufferingNewest(1))
@@ -96,78 +140,117 @@ nonisolated final class LiveModelManager: OnDeviceModelManaging {
     }
 
     func download(id: String) {
-        let alreadyRunning = state.withLock { $0.tasks[id] != nil }
-        guard !alreadyRunning else { return }
-        let resumeFrom = state.withLock { $0.models[id]?.progress } ?? 0
-        set(id, .downloading(progress: resumeFrom, bytesPerSecond: nil))
-        let task = Task { [weak self] in
-            guard let self else { return }
-            do {
-                if id == Self.speechID {
-                    try await self.speech().prepare { [weak self] fraction in
-                        self?.set(id, .downloading(progress: fraction, bytesPerSecond: nil), onlyIf: \.isDownloading)
-                    }
-                } else {
-                    let meter = RateMeter()
-                    try await self.mlx.download(id) { [weak self] progress in
-                        let rate = meter.bytesPerSecond(completed: progress.completedBytes)
-                        self?.set(id, .downloading(progress: progress.fractionCompleted, bytesPerSecond: rate), onlyIf: \.isDownloading)
-                    }
-                }
-                self.finish(id, .installed)
-            } catch is CancellationError {
-                self.finish(id, nil)
-            } catch {
-                self.finish(id, Task.isCancelled ? nil : .failed(error.localizedDescription))
+        let generation = UUID()
+        let resumeFrom: Double? = state.withLock { s in
+            guard s.operations[id]?.kind != .download else { return nil }
+            let prior = s.tail[id]
+            let task = Task { [weak self] in
+                await prior?.value
+                guard let self, self.isCurrent(id, generation) else { return }
+                await self.runDownload(id, generation: generation)
             }
+            s.operations[id] = Operation(generation: generation, kind: .download, task: task)
+            s.tail[id] = task
+            return s.models[id]?.progress ?? 0
         }
-        state.withLock { $0.tasks[id] = task }
+        guard let resumeFrom else { return }
+        set(id, .downloading(progress: resumeFrom, bytesPerSecond: nil))
+    }
+
+    private func runDownload(_ id: String, generation: UUID) async {
+        do {
+            if id == Self.speechID {
+                try await speech().prepare { [weak self] fraction in
+                    self?.set(id, .downloading(progress: fraction, bytesPerSecond: nil), onlyIf: \.isDownloading, generation: generation)
+                }
+            } else {
+                let meter = RateMeter()
+                try await mlx.download(id) { [weak self] progress in
+                    let rate = meter.bytesPerSecond(completed: progress.completedBytes)
+                    self?.set(id, .downloading(progress: progress.fractionCompleted, bytesPerSecond: rate), onlyIf: \.isDownloading, generation: generation)
+                }
+            }
+            finish(id, generation, .installed)
+        } catch is CancellationError {
+            finish(id, generation, nil)
+        } catch {
+            finish(id, generation, Task.isCancelled ? nil : .failed(error.localizedDescription))
+        }
     }
 
     func pause(id: String) {
         let progress = state.withLock { $0.models[id]?.progress } ?? 0
+        stop(id)
         set(id, .paused(progress: progress))
-        cancelTask(id)
     }
 
     func resume(id: String) { download(id: id) }
 
     func remove(id: String) {
-        cancelTask(id)
+        stop(id)
         guard id != Self.speechID else { return }  // Speech models are shared with FluidAudio; keep them.
-        Task { [mlx] in
-            await MLXModelHost.shared.unload(id)
-            do {
-                try await mlx.delete(id)
-                self.set(id, .notInstalled)
-            } catch {
-                self.set(id, .failed(error.localizedDescription))
+        let generation = UUID()
+        state.withLock { s in
+            let prior = s.tail[id]
+            let task = Task { [weak self, mlx, unload] in
+                await prior?.value
+                guard let self, self.isCurrent(id, generation) else { return }
+                await unload(id)
+                do {
+                    try await mlx.delete(id)
+                    self.finish(id, generation, .notInstalled)
+                } catch {
+                    self.finish(id, generation, .failed(error.localizedDescription))
+                }
             }
+            s.operations[id] = Operation(generation: generation, kind: .remove, task: task)
+            s.tail[id] = task
         }
     }
 
     func freeSpaceBytes() -> Int64 {
-        let values = try? mlx.storageDirectory.deletingLastPathComponent()
-            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        // The cache folder doesn't exist until the first download; ask its nearest existing parent.
+        var folder = mlx.storageDirectory
+        while !FileManager.default.fileExists(atPath: folder.path), folder.path != "/" { folder.deleteLastPathComponent() }
+        let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage ?? 0
     }
 
     // MARK: State
 
-    private func cancelTask(_ id: String) {
-        let task = state.withLock { $0.tasks.removeValue(forKey: id) }
-        task?.cancel()
-        if id != Self.speechID { Task { [mlx] in await mlx.cancelDownload(id) } }
+    /// Ends the current operation for `id` and cancels its work. What is issued next waits for the
+    /// cancelled work to wind down, so its late completion or cancellation can't reach it.
+    private func stop(_ id: String) {
+        state.withLock { s in
+            let running = s.operations.removeValue(forKey: id)?.task
+            running?.cancel()
+            let previous = s.tail[id]
+            let isMLX = id != Self.speechID
+            s.tail[id] = Task { [mlx] in
+                await previous?.value
+                if isMLX { await mlx.cancelDownload(id) }
+            }
+        }
     }
 
-    /// Ends a download task. `nil` keeps the current state (a pause already set `.paused`).
-    private func finish(_ id: String, _ final: OnDeviceModelState?) {
-        state.withLock { _ = $0.tasks.removeValue(forKey: id) }
-        if let final { set(id, final) }
+    private func isCurrent(_ id: String, _ generation: UUID) -> Bool {
+        state.withLock { $0.operations[id]?.generation == generation }
     }
 
-    private func set(_ id: String, _ value: OnDeviceModelState, onlyIf condition: ((OnDeviceModelState) -> Bool)? = nil) {
+    /// Ends the operation `generation` and publishes `final`, unless a newer operation (or a
+    /// pause) has taken over. `nil` keeps the current state (a pause already set `.paused`).
+    private func finish(_ id: String, _ generation: UUID, _ final: OnDeviceModelState?) {
+        let isCurrent = state.withLock { s -> Bool in
+            guard s.operations[id]?.generation == generation else { return false }
+            s.operations[id] = nil
+            return true
+        }
+        if isCurrent, let final { set(id, final) }
+    }
+
+    private func set(_ id: String, _ value: OnDeviceModelState, onlyIf condition: ((OnDeviceModelState) -> Bool)? = nil, generation: UUID? = nil) {
         let (snapshot, listeners) = state.withLock { s -> ([String: OnDeviceModelState]?, [AsyncStream<[String: OnDeviceModelState]>.Continuation]) in
+            if let generation, s.operations[id]?.generation != generation { return (nil, []) }
             if let condition, let current = s.models[id], !condition(current) { return (nil, []) }
             s.models[id] = value
             return (s.models, Array(s.listeners.values))

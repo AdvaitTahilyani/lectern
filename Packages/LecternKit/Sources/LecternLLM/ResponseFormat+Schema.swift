@@ -2,12 +2,6 @@ import Foundation
 import LecternCore
 
 extension ResponseFormat {
-    /// True for `.json`.
-    var isJSON: Bool {
-        if case .json = self { return true }
-        return false
-    }
-
     /// The JSON Schema for `.json(schema:)` as a request-body value, or nil when no schema was given.
     /// The value is a `VerbatimJSON` placeholder: property order in a schema steers what the model
     /// generates first, and re-serializing it (especially with `.sortedKeys`) would reorder it, so

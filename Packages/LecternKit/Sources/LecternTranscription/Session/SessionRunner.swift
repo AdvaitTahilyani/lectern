@@ -16,43 +16,68 @@ enum SessionRunner {
     /// How far the recognizer may run ahead of speaker diarization when transcribing a file.
     private static let fileLeadSeconds: TimeInterval = 10
 
+    /// Limits for live capture: how much unrecognized audio may queue up, how much one recognizer
+    /// feed may coalesce, and when the user is told that transcription is behind.
+    struct LivePolicy: Sendable {
+        /// Most unrecognized audio held in memory (10 min ≈ 38 MB); older audio is skipped beyond it.
+        var backlogCapacity: TimeInterval = 600
+        /// Largest batch handed to the recognizer when audio has queued up.
+        var maxBatch: TimeInterval = 2
+        var warnAfterLag: TimeInterval = 15
+        var caughtUpBelowLag: TimeInterval = 3
+
+        static let `default` = LivePolicy()
+    }
+
     /// Consumes microphone events until capture ends, then flushes. If capture itself fails (the
     /// microphone disappeared and could not be replaced), the words already heard are still
     /// flushed before the stream ends with that error.
+    ///
+    /// Capture and recognition run apart, joined by a bounded `LiveAudioBacklog`: levels and
+    /// warnings are forwarded as they arrive, however far recognition has fallen behind, and the
+    /// delay is reported to the user (see `LagReporter`).
     static func runLive(
         audio: AsyncThrowingStream<AudioCaptureEvent, Error>,
         recognizer: any SessionRecognizer,
         diarization: DiarizationFeed?,
-        sink: EventSink
+        sink: EventSink,
+        policy: LivePolicy = .default
     ) async {
-        var captureFailure: Error?
+        let rate = MonoResampler.targetSampleRate
+        let backlog = LiveAudioBacklog(capacity: Int(policy.backlogCapacity * rate))
+        // Ending this task (or cancelling it) ends the capture stream, which stops the microphone.
+        let capture = Task {
+            do {
+                for try await event in audio {
+                    switch event {
+                    case .samples(let samples): backlog.append(samples)
+                    case .level(let level): sink.send(.level(level))
+                    case .warning(let text): sink.send(.warning(text))
+                    }
+                }
+                backlog.finish()
+            } catch {
+                backlog.finish(throwing: error)
+            }
+        }
+        var lag = LagReporter(warnAfter: policy.warnAfterLag, caughtUpBelow: policy.caughtUpBelowLag)
         do {
-            var events = audio.makeAsyncIterator()
-            capture: while true {
-                let event: AudioCaptureEvent
-                do {
-                    guard let next = try await events.next() else { break capture }
-                    event = next
-                } catch {
-                    captureFailure = error
-                    break capture
-                }
-                switch event {
-                case .samples(let samples):
-                    diarization?.feed(samples)
-                    try await recognizer.feed(samples)
-                case .level(let level): sink.send(.level(level))
-                case .warning(let text): sink.send(.warning(text))
-                }
+            while let samples = await backlog.next(maxSamples: Int(policy.maxBatch * rate)) {
+                diarization?.feed(samples)
+                try await recognizer.feed(samples)
+                let skipped = Double(backlog.takeSkippedSamples()) / rate
+                for message in lag.update(lag: backlog.queuedSeconds, skipped: skipped) { sink.send(.warning(message)) }
             }
             try await recognizer.finish()
             await diarization?.finish(sink: sink)
-            sink.finish(throwing: captureFailure)
+            sink.finish(throwing: backlog.failure)
         } catch {
+            capture.cancel()
             diarization?.cancel()
             await recognizer.cancel()
-            sink.finish(throwing: captureFailure ?? error)   // the microphone dying is the root cause of a failed flush
+            sink.finish(throwing: backlog.failure ?? error)   // the microphone dying is the root cause of a failed flush
         }
+        await capture.value
     }
 
     /// Feeds a whole file faster than real time, then flushes.

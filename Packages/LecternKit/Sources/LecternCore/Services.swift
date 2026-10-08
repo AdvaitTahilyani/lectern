@@ -66,17 +66,31 @@ public protocol SessionStoring: Sendable {
     func loadSession(id: UUID) async throws -> LectureSession
     func save(_ session: LectureSession) async throws
     func delete(sessionID: UUID) async throws
+    /// Erases the session for good, bypassing any Trash. Only for a deletion the user has
+    /// explicitly confirmed as permanent (e.g. after `delete(sessionID:)` could not use the Trash).
+    func deletePermanently(sessionID: UUID) async throws
 
     /// Folder holding the session's files (slides PDF, etc.). Created on demand.
     func folder(for sessionID: UUID) async throws -> URL
-    /// Copies a PDF into the session folder, returns the stored file name.
+    /// Copies a PDF into the session folder under a new file name of its own (never replacing
+    /// another deck's file) and returns that name.
     func importSlides(from url: URL, into sessionID: UUID) async throws -> String
+    /// Deletes a stored slide PDF that no deck of the session refers to any more (a removed or
+    /// replaced deck). Removing a file that isn't there is a no-op.
+    func removeSlides(named fileName: String, from sessionID: UUID) async throws
 
     /// Course-wide Ask history (oldest first).
     func loadCourseChat(courseID: UUID) async throws -> [CourseAnswer]
     func saveCourseChat(_ answers: [CourseAnswer], courseID: UUID) async throws
 }
 
+public extension SessionStoring {
+    /// Stores that keep no slide files have nothing to remove.
+    func removeSlides(named fileName: String, from sessionID: UUID) async throws {}
+
+    /// Stores without a Trash have only one kind of deletion.
+    func deletePermanently(sessionID: UUID) async throws { try await delete(sessionID: sessionID) }
+}
 
 // MARK: - Settings
 
@@ -120,7 +134,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         inputDeviceID: String? = nil,
         vocabulary: [String] = [],
         quiz: QuizSettings = .init(),
-        summaryIntervalSeconds: Double = 150,
+        summaryIntervalSeconds: Double = 70,
         hasCompletedOnboarding: Bool = false,
         fixesJargonFromSlides: Bool = true,
         monthlyCloudCapUSD: Double? = nil

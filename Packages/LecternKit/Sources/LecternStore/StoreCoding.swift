@@ -121,6 +121,11 @@ struct TolerantSessionFile: Decodable {
             throw DecodingError.keyNotFound(SessionKeys.id, .init(codingPath: fields.codingPath, debugDescription: "Session has no id"))
         }
 
+        // Several decks are stored as `decks` (with the combined `deck` beside them for older
+        // builds); a file from before that, or with one deck, holds just `deck`.
+        var decks = fields.lossyArray(SlideDeck.self, forKey: .decks, context: "decks", tally: tally)
+        if decks.isEmpty { decks = SlideDeck.migrating(decks: nil, legacy: fields.lossyOptional(SlideDeck.self, forKey: .deck, tally: tally)) }
+
         session = LectureSession(
             id: id,
             courseID: fields.lossyOptional(UUID.self, forKey: .courseID, tally: tally),
@@ -130,7 +135,6 @@ struct TolerantSessionFile: Decodable {
             endedAt: fields.lossyOptional(Date.self, forKey: .endedAt, tally: tally),
             duration: fields.lossy(TimeInterval.self, forKey: .duration, default: 0, tally: tally),
             status: fields.lossy(SessionStatus.self, forKey: .status, default: .draft, tally: tally),
-            deck: fields.lossyOptional(SlideDeck.self, forKey: .deck, tally: tally),
             transcript: fields.lossyArray(TranscriptSegment.self, forKey: .transcript, context: "transcript", tally: tally),
             takeaways: fields.lossyArray(Takeaway.self, forKey: .takeaways, context: "takeaways", tally: tally),
             quiz: fields.lossyArray(QuizRecord.self, forKey: .quiz, context: "quiz", tally: tally),
@@ -138,7 +142,9 @@ struct TolerantSessionFile: Decodable {
             currentSlide: fields.lossyOptional(Int.self, forKey: .currentSlide, tally: tally),
             vocabulary: fields.lossyArray(String.self, forKey: .vocabulary, context: "vocabulary", tally: tally),
             source: fields.lossyOptional(SessionSource.self, forKey: .source, tally: tally),
-            summary: fields.lossyOptional(LectureSummary.self, forKey: .summary, tally: tally)
+            summary: fields.lossyOptional(LectureSummary.self, forKey: .summary, tally: tally),
+            importRecord: fields.lossyOptional(ImportRecord.self, forKey: .importRecord, tally: tally),
+            decks: decks
         )
         // Migration: the summary used to be stored as a takeaway with a magic id. Drop it; the app
         // regenerates a `LectureSummary` the next time the lecture is reviewed.
@@ -148,8 +154,8 @@ struct TolerantSessionFile: Decodable {
     }
 
     private enum SessionKeys: String, CodingKey {
-        case id, courseID, title, createdAt, startedAt, endedAt, duration, status, deck
-        case transcript, takeaways, quiz, chat, currentSlide, vocabulary, source, summary
+        case id, courseID, title, createdAt, startedAt, endedAt, duration, status, deck, decks
+        case transcript, takeaways, quiz, chat, currentSlide, vocabulary, source, summary, importRecord
     }
 }
 

@@ -61,17 +61,15 @@ public protocol CourseAssisting: Sendable {
 }
 
 extension CitationParser {
-    /// Parses "[L9 S12]", "[L9 T14:32]", "[L3 S4, L3 S5]" given a map from ordinal → session id.
+    /// Parses "[L9 S12]", "[L9 T14:32]", "[L3 S4, L3 S5]" and "[L3 S4, S5]" (a token without its own "L#"
+    /// continues the previous lecture) given a map from ordinal → session id. Unknown lectures are dropped.
     public static func courseCitations(in text: String, sessions: [Int: UUID]) -> [CourseCitation] {
         var result: [CourseCitation] = []
         var seen = Set<CourseCitation>()
-        for match in text.matches(of: /\[([^\[\]]{1,80})\]/) {
-            for token in match.1.split(separator: ",") {
-                let parts = token.split(separator: " ", omittingEmptySubsequences: true)
-                guard parts.count == 2, parts[0].first == "L" || parts[0].first == "l",
-                      let ordinal = Int(parts[0].dropFirst()), let id = sessions[ordinal],
-                      let inner = citations(in: "[\(parts[1])]").first else { continue }
-                let c = CourseCitation(sessionID: id, ordinal: ordinal, citation: inner)
+        for case .citations(_, let tokens) in AnswerMarkup.inline(text) {
+            for token in tokens {
+                guard let ordinal = token.lecture, let id = sessions[ordinal] else { continue }
+                let c = CourseCitation(sessionID: id, ordinal: ordinal, citation: token.citation)
                 if seen.insert(c).inserted { result.append(c) }
             }
         }

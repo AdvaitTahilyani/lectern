@@ -100,10 +100,13 @@ actor MLXInferenceEngine {
     ///
     /// Cancelling the calling task stops prefill between steps and decoding after the current
     /// token; the prompt cache stays consistent with what was actually evaluated. Throws
-    /// `CancellationError` in that case.
+    /// `CancellationError` in that case. `shouldYield` is polled at the same points; when it
+    /// returns true the generation stops the same way and throws ``GenerationPreempted`` (the
+    /// evaluated prompt stays in the cache, so running the request again resumes its prefill).
     func generate(
         _ request: LLMRequest,
         queueSeconds: Double,
+        shouldYield: @Sendable () -> Bool = { false },
         onText: @Sendable (String) -> Void
     ) throws -> GenerationOutput {
         let clock = ContinuousClock()
@@ -118,7 +121,7 @@ actor MLXInferenceEngine {
         let rendered = clock.now
         let promptCache = promptCaches.slot(for: prompt)
         let reuse = try promptCache.reuse(for: prompt, stablePrefix: stable)
-        try prefill(prompt, reuse: reuse, into: promptCache)
+        try prefill(prompt, reuse: reuse, into: promptCache, shouldYield: shouldYield)
         let prefilled = clock.now
 
         let processor = try makeProcessor(for: request, prompt: prompt)
@@ -182,17 +185,14 @@ actor MLXInferenceEngine {
                     onText(visible)
                 }
             }
-            if Task.isCancelled {
-                stopReason = .cancelled
-                break
-            }
+            if Task.isCancelled { throw CancellationError() }
+            if shouldYield() { throw GenerationPreempted() }
         }
         let tail = filter.finish()
-        if !tail.isEmpty, stopReason != .cancelled {
+        if !tail.isEmpty {
             text += tail
             onText(tail)
         }
-        if stopReason == .cancelled { throw CancellationError() }
 
         let end = clock.now
         let firstTokenTime = firstToken ?? end
@@ -218,7 +218,8 @@ actor MLXInferenceEngine {
 
     /// Evaluates `prompt[reusedTokens ..< count - 1]` into the cache in steps, committing
     /// progress after every step so a cancelled prefill is still reusable.
-    private func prefill(_ prompt: [Int], reuse: PromptCache.Reuse, into promptCache: PromptCache) throws {
+    private func prefill(_ prompt: [Int], reuse: PromptCache.Reuse, into promptCache: PromptCache,
+                         shouldYield: @Sendable () -> Bool) throws {
         let end = prompt.count - 1
         var position = reuse.reusedTokens
         promptCache.commit(Array(prompt[..<position]))
@@ -227,6 +228,7 @@ actor MLXInferenceEngine {
         let step = max(1, configuration.prefillStepSize)
         while position < end {
             try Task.checkCancellation()
+            if shouldYield() { throw GenerationPreempted() }
             var chunkEnd = min(position + step, end)
             if let checkpoint = reuse.checkpointAt, checkpoint > position, checkpoint < chunkEnd {
                 chunkEnd = checkpoint
@@ -361,6 +363,9 @@ actor MLXInferenceEngine {
         }
     }
 }
+
+/// A background generation gave the GPU back because interactive work was waiting.
+struct GenerationPreempted: Error {}
 
 /// Identifies the part of a request that determines its stable prompt prefix.
 private struct StablePrefixKey: Hashable {

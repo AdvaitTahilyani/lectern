@@ -430,7 +430,7 @@ Leading → trailing:
    - **Ask** — `sparkle.magnifyingglass` (fallback `text.bubble`), `⌘K` / `⌘L`. Opens the inspector on the Ask tab and focuses the field.
    - **Focus panel** — `rectangle.inset.topright.filled` (`⌘⇧F`). Toggles the floating panel; button shows selected state while open.
    - **Inspector toggle** — system `sidebar.trailing` (`⌘⌥I`).
-   - Overflow `ellipsis.circle` (`Menu`): Show/Hide Slides `⌘⌥S`, Follow Slides (checkmark), Quiz frequency ▸ (Off / 5 / 10 / 15 / 20 min), Keep Audio Recording (toggle, off by default), Export… (review only), Lecture Info….
+   - Overflow `ellipsis.circle` (`Menu`): Show/Hide Slides `⌘⌥S`, Follow Slides (checkmark), Quiz frequency ▸ (Off / 5 / 10 / 15 / 20 min), Export… (review only), Lecture Info….
 
 **Model activity** lives in the Takeaways column header, not the toolbar, so it never competes with the recording state: `footnote` secondary text with a leading `waveform` symbol running `.symbolEffect(.variableColor.iterative.reversing, isActive: isBusy)`. Copy: "Listening", "Summarizing…", "Writing quiz…", "Answering…", "Paused". Text changes with `.contentTransition(.opacity)`. If two things run at once, show the one that started last.
 
@@ -521,7 +521,7 @@ In single tier, Ask opens as an **overlay panel** (glass, 480 pt wide max, ancho
 
 ### 4.6 Quiz pings
 
-**Principle:** a quiz is an *invitation*, never an interruption. It cannot take keyboard focus away from a text field, cannot cover the transcript or the Now card, makes no sound, and expires on its own.
+**Principle:** a quiz is an *invitation*, never an interruption. It cannot take keyboard focus away from a text field, cannot cover the transcript or the Now card, makes no sound, and stays until the user answers, skips or dismisses it.
 
 **Placement:** a glass card inside the same `GlassEffectContainer` as the Now card, rising from behind it to sit directly above it (bottom of the Takeaways column, `floatInset` margins, same width as the Now card). Entry: `.transition(.move(edge: .bottom).combined(with: .opacity))`, `DS.Motion.float`. The container makes the two glass shapes bloom apart as it appears. Under Reduce Motion: fade only.
 
@@ -529,7 +529,7 @@ In single tier, Ask opens as an **overlay panel** (glass, 480 pt wide max, ancho
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║ ◔ Quick check · Unification                 snooze  skip ║   ← header: "◔" is a 16-pt ring that drains over 90 s
+║ Quick check · Unification  +1 more          snooze  skip ║   ← header; "+1 more" only when questions are queued behind this one
 ║                                                          ║
 ║ What does the occurs check prevent?                      ║   ← title3
 ║                                                          ║
@@ -548,7 +548,8 @@ In single tier, Ask opens as an **overlay panel** (glass, 480 pt wide max, ancho
 **Behavior:**
 - Trigger: every N minutes (default 10) *and* only when a topic has settled in the last N minutes (no quiz on silence), *and* not within 60 s of the previous quiz, *and* not while the user is typing in Ask. If blocked, retry in 60 s.
 - Keys: `1–4` select (only when no text field has focus; the option row highlights immediately and submits after 150 ms — no separate confirm for MCQ), `↩` submit (short answer), `S` snooze 5 min, `Esc` skip. Mouse: click an option. Snooze/skip are `footnote` link-style buttons — deliberately small.
-- Header ring: an 16 pt `Circle().trim` that drains over 90 s (`.linear(duration: 90)`); at zero the card slides away and counts as skipped (never as wrong). Under Reduce Motion the ring is replaced by a "1:30" countdown in `mono`.
+- **No timer.** A question stays until the user answers, snoozes, skips or dismisses it (✕ on a result); nothing counts down and nothing expires. A skip is recorded as skipped, never as wrong.
+- **Queue:** a question that arrives while one is showing waits behind it (the header shows a quiet "+N more") and takes its place when the card closes. With the toolbar-badge style the queued questions wait for a click on the badge. Questions still queued when the lecture ends are dropped.
 - The Now card compresses to a single line while a quiz is up so the pair never exceeds ~40% of column height. On a 14" screen with a 640-pt-tall content area the pair is ≤ 260 pt.
 - **Short answer** variant: replaces options with a single-line `TextField` (glass), placeholder "Type a short answer…"; ↩ submits; grading is lenient (semantic) and explained.
 
@@ -560,7 +561,7 @@ In single tier, Ask opens as an **overlay panel** (glass, 480 pt wide max, ancho
 ║ ✓ Correct                                    🔥 4 in a row║   ← checkmark.circle.fill green, symbolEffect(.bounce) once
 ║ Binding a variable to a type that contains it            ║   ← chosen option, primary
 ║ Nice — that's exactly the infinite-type case.  <Slide 13>║   ← one line, secondary
-╚══════════════════════════════════════════════════════════╝   ← auto-dismisses after 4 s (hover pauses); Esc dismisses
+╚══════════════════════════════════════════════════════════╝   ← stays until dismissed (✕ or Esc)
 ```
 *Wrong:*
 ```
@@ -654,7 +655,7 @@ Same `LiveSessionView` in `.review` mode. Differences only:
 - **Inspector › Quiz tab:** score ring (`Circle().trim`, accent, 64 pt, `title2` numeric inside), "N concepts to review", the **Review missed concepts** button, then a list of every question with `checkmark.circle.fill` (green) / `arrow.uturn.backward.circle.fill` (orange) / `minus.circle` (secondary, skipped), timestamp (`mono`) and the concept name. Click → expands the row to show question, your answer, the explanation, and citations.
 - **Review missed concepts flow:** replaces the Takeaways list (not a sheet) with a **card stack**: one concept at a time, centered, max 560 pt wide: header "1 of 2 · Occurs check", the takeaway's detailed summary, the explanation from the lecture, cited slide thumbnails, then a fresh question. Bottom bar: [Skip] ⟶ [Next] (`glassProminent`, ↩). Progress dots at the top. Finish screen: "All caught up" with `checkmark.seal.fill` (`symbolEffect(.bounce)`), [Back to lecture]. Esc exits at any time. Motion: cards slide horizontally with `DS.Motion.settle` (`.transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading))` + opacity).
 - **Ask** works identically (thread persists). Regenerate is available here.
-- **Audio playback:** not in v1 (audio isn't kept by default). If "Keep audio" was on, timestamps get a `play.circle` on hover and a simple scrubber appears under the transcript header. Design for its absence.
+- **Audio playback:** not in v1: audio is never stored (the "Keep audio recordings" option was removed until retention is built and verified; see the 8 Oct 2026 audit, B05). Design for its absence.
 
 **Export formats:**
 - *Markdown:* H1 title, metadata line, "## Summary", "## Takeaways" (H3 per takeaway with time range, bullets, key terms as bold, `Slide 12` references), "## Quiz" (results table), "## Transcript" (`**14:02**` paragraphs). Slide references link to `slides/page-012.png` if "Include slide images" is checked in the save panel accessory.
@@ -677,7 +678,6 @@ Tabs (order): **General** `gearshape` · **Transcription** `waveform` · **Model
 ┌ Storage ───────────────────────────────────────────┐
 │ Location   ~/Library/Application Support/Lectern   [Change…] [Reveal] │
 │ Used       1.4 GB · 23 lectures · 3 models          │
-│ Keep audio recordings                        (  ○)  │
 └────────────────────────────────────────────────────┘
 ┌ Privacy ───────────────────────────────────────────┐
 │ 🔒 With on-device models selected, audio, slides    │
@@ -696,7 +696,6 @@ Tabs (order): **General** `gearshape` · **Transcription** `waveform` · **Model
 └────────────────────────────────────────────────────┘
 ┌ Microphone ────────────────────────────────────────┐
 │ Input      [ MacBook Pro Microphone ▾ ]  ▮▮▮▮▮▯▯▯▯▯ │  ← LevelMeter live
-│ Voice isolation                              (●  )  │
 └────────────────────────────────────────────────────┘
 ┌ Custom vocabulary ─────────────────────────────────┐
 │ ┌────────────────────────────────────────────────┐ │
@@ -745,7 +744,6 @@ Tabs (order): **General** `gearshape` · **Transcription** `waveform` · **Model
 ```
 ┌ Timing ────────────────────────────────────────────┐
 │ Ask me a question every   [ 10 min ▾ ]   (5/10/15/20/Off)│
-│ Time to answer            [ 90 s ▾ ]                │
 │ Style                     (● Card  ○ Toolbar badge only) │
 └────────────────────────────────────────────────────┘
 ┌ Questions ─────────────────────────────────────────┐
@@ -781,8 +779,8 @@ Step 1 — Welcome                    Step 2 — Microphone               Step 3
 │                      │            │                      │          │                      │            │                      │
 │  Live takeaways from │            │  Audio is processed   │          │  ● Parakeet (speech) │            │  Anthropic  [key…][Test]│
 │  every lecture, on   │            │  on this Mac and is   │          │    600 MB  ✓ done    │            │  OpenAI     [key…][Test]│
-│  your Mac.           │            │  not stored unless    │          │  ● Qwen3 4B (summaries)│          │                      │
-│                      │            │  you choose to.       │          │    2.6 GB  ▬▬▬▬▯▯ 58% │            │  You can add these   │
+│  your Mac.           │            │  never stored; only   │          │  ● Qwen3 4B (summaries)│          │                      │
+│                      │            │  the transcript is.   │          │    2.6 GB  ▬▬▬▬▯▯ 58% │            │  You can add these   │
 │                      │            │                      │          │                      │            │  later in Settings.  │
 │                      │            │  [ Allow Microphone ] │          │  3.2 GB · ~2 min on  │            │                      │
 │                      │            │                      │          │  campus Wi-Fi         │            │                      │
@@ -945,9 +943,9 @@ All components live in `Lectern/DesignSystem/Components/`. Props are listed as S
 - VoiceOver: card is one element in collapsed state: "Unification algorithm, 18:40 to 31:15, slides 12 to 14, quizzed correctly. Summary: … Double-tap to expand." Live card: "Current topic: …". The live card is *not* a live region; announcements are made only when a card settles (`AccessibilityNotification.Announcement("New takeaway: Unification algorithm")`) and can be disabled in Settings › Focus ("Announce new takeaways").
 
 ### QuizCard
-`QuizCard(question: QuizQuestion, phase: QuizPhase, streak: Int, deadline: Date, onAnswer, onSnooze, onSkip, onDismiss)`
+`QuizCard(question: QuizQuestion, phase: QuizPhase, streak: Int, waiting: Int, onAnswer, onSnooze, onSkip, onDismiss)`
 `QuizPhase = .asking | .grading | .correct(feedback:) | .wrong(explanation:, followUp:) | .followUpAsking`
-- Layout per §4.6. Option rows: 36 pt, `Radius.control`, `.quaternary` fill; key-cap glyph is a 18×18 rounded rect with `mono` digit; hover → `.accent.opacity(0.12)`; selected → accent fill 100% with white text for 150 ms before submit. `.grading` shows a 14 pt `ProgressView` in the header for ≤ 2 s (grading is local and fast; if a cloud grader takes longer, options stay disabled with the ring paused).
+- Layout per §4.6. Option rows: 36 pt, `Radius.control`, `.quaternary` fill; key-cap glyph is a 18×18 rounded rect with `mono` digit; hover → `.accent.opacity(0.12)`; selected → accent fill 100% with white text for 150 ms before submit. `.grading` shows a 14 pt `ProgressView` in the header for ≤ 2 s (grading is local and fast; if a cloud grader takes longer, options stay disabled until it finishes).
 - Keyboard is captured through `.onKeyPress` on the card *only when* `@FocusState` says no text field is focused; otherwise ignored.
 - VoiceOver: on appear, `Announcement("Quick check: <question>")`; options are buttons "Option 1: …". Card is a `accessibilityElement(children: .contain)` group labeled "Quiz".
 

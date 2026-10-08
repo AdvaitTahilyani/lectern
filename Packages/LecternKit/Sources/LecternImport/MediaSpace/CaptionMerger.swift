@@ -10,11 +10,16 @@ public struct CaptionMerger: Sendable {
     public var minSentenceSeconds: TimeInterval
     /// A silence at least this long between cues closes the segment.
     public var pauseSeconds: TimeInterval
+    /// A cue is a rolling-caption repeat of the previous one only when it starts no later than
+    /// this many seconds after the previous cue ended. Identical text further apart is a real
+    /// repetition by the lecturer and is kept.
+    public var rollingToleranceSeconds: TimeInterval
 
-    public init(maxSegmentSeconds: TimeInterval = 25, minSentenceSeconds: TimeInterval = 8, pauseSeconds: TimeInterval = 2) {
+    public init(maxSegmentSeconds: TimeInterval = 25, minSentenceSeconds: TimeInterval = 8, pauseSeconds: TimeInterval = 2, rollingToleranceSeconds: TimeInterval = 1) {
         self.maxSegmentSeconds = maxSegmentSeconds
         self.minSentenceSeconds = minSentenceSeconds
         self.pauseSeconds = pauseSeconds
+        self.rollingToleranceSeconds = rollingToleranceSeconds
     }
 
     public func merge(_ cues: [CaptionCue]) -> [TranscriptSegment] {
@@ -45,11 +50,16 @@ public struct CaptionMerger: Sendable {
     }
 
     /// Sorts by start time, drops exact repeats, and trims words that a rolling caption repeats
-    /// from the previous cue.
+    /// from the previous cue. Only cues that overlap or directly follow the previous one are
+    /// treated as rolling repeats; the same words after a silence are kept as spoken.
     func deduplicated(_ cues: [CaptionCue]) -> [CaptionCue] {
         var result: [CaptionCue] = []
         for cue in cues.sorted(by: { ($0.start, $0.end) < ($1.start, $1.end) }) {
             guard let previous = result.last else {
+                result.append(cue)
+                continue
+            }
+            guard cue.start <= previous.end + rollingToleranceSeconds else {
                 result.append(cue)
                 continue
             }

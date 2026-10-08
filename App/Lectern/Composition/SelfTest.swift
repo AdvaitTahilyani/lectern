@@ -4,7 +4,7 @@ import LecternMLX
 
 /// Headless checks of the real stack from inside the app bundle, where resource lookup (MLX's
 /// metallib, CoreML model caches) differs from `swift test`. Launch the app binary with
-/// `-selftest mlx` or `-selftest pipeline …` (see PipelineSelfTest); it prints results to stdout and exits with status 0 on success.
+/// `-selftest mlx`, `-selftest pipeline …` (see PipelineSelfTest) or `-selftest ask …` (see AskSelfTest); it prints results to stdout and exits with status 0 on success.
 nonisolated enum SelfTest {
     static var requested: String? {
         let args = CommandLine.arguments
@@ -19,6 +19,7 @@ nonisolated enum SelfTest {
             switch name {
             case "mlx": ok = await mlx()
             case "pipeline": ok = await PipelineSelfTest.run(arguments: CommandLine.arguments)
+            case "ask": ok = await AskSelfTest.run(arguments: CommandLine.arguments)
             default:
                 print("[selftest] unknown test \(name)")
                 ok = false

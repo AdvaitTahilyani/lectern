@@ -91,21 +91,34 @@ struct ActivityTracker: Sendable {
 
 /// Thresholds for background work. Defaults are the production values; tests shrink them.
 struct BrainTuning: Sendable {
-    /// Rolling update after this many new words even if the interval hasn't elapsed.
-    var wordsPerUpdate = 350
+    /// Rolling update after this many new words even if the interval hasn't elapsed (≈ 70 s of a
+    /// fast lecturer).
+    var wordsPerUpdate = 170
     /// The first takeaway may appear sooner than the regular interval.
-    var firstUpdateSeconds: TimeInterval = 60
+    var firstUpdateSeconds: TimeInterval = 45
+    /// Upper bound on the rolling-update interval, whatever the stored setting says. Each rolling
+    /// update both refreshes the live ("NOW") card and looks for a topic boundary, so this bounds
+    /// how stale the live card gets and how late a finished card settles. Settings written by
+    /// older builds carry a 150 s interval, which left the live card unchanged for 2.5 minutes and
+    /// settled cards up to ~3 minutes after their topic ended.
+    var maxUpdateSeconds: TimeInterval = 70
     /// A topic shorter than this is re-titled instead of split off (see `TopicTimeline`).
     var minTopicSeconds: TimeInterval = 150
-    /// Slide tracking cadence and transcript window.
+    /// A card this long splits at a quoted `new_topic` boundary even when the new title resembles
+    /// its own (see `TopicTimeline.longTopicSeconds`).
+    var longTopicSeconds: TimeInterval = 330
     /// Slide-tracking cadence in transcript time (trackers measure evidence on the same clock, so
     /// the cadence only sets how quickly a change is noticed).
     var slideCheckSeconds: TimeInterval = 10
+    /// Seconds of recent transcript slide tracking matches against the deck.
     var slideWindowSeconds: TimeInterval = 60
     /// Minimum new lecture material between two timed quiz questions.
     var quizNewMaterialSeconds: TimeInterval = 240
     /// A pinged question that is never recorded stops blocking new pings after this long.
     var quizPendingTimeout: TimeInterval = 300
+    /// A timed question starts only when the next rolling update is at least this far off, so its
+    /// generation (several calls) doesn't hold the device when the live card is due.
+    var quizHeadroomSeconds: TimeInterval = 40
     /// Retry delay after a timed question couldn't be generated.
     var quizRetrySeconds: TimeInterval = 60
 }

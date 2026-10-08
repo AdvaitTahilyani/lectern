@@ -11,7 +11,7 @@ enum PlainMath {
         ("emptyset", "∅"), ("varnothing", "∅"), ("neq", "≠"), ("ne", "≠"), ("leq", "≤"), ("le", "≤"),
         ("geq", "≥"), ("ge", "≥"), ("times", "×"), ("cdot", "·"), ("ldots", "…"), ("dots", "…"), ("cdots", "…"),
         ("forall", "∀"), ("exists", "∃"), ("neg", "¬"), ("land", "∧"), ("lor", "∨"), ("vert", "|"), ("mid", "|"),
-        ("quad", " "), ("qquad", " "),
+        ("quad", " "), ("qquad", " "), ("log", "log"),
     ]
 
     /// LaTeX command names, for telling "\\to" or "\\text" apart from JSON escapes like "\\t".
@@ -29,12 +29,16 @@ enum PlainMath {
         var s = text
         // Math delimiters "$…$" around LaTeX-looking content (a lone "$", the end marker in
         // "$ ∈ FOLLOW(S)", is left alone).
-        s = s.replacing(/\$([^\s$][^$\n]{0,78}?[^\s$]|[^\s$])\$/) { match in
+        s = s.replacing(/\$([^\s$][^$\n]{0,198}?[^\s$]|[^\s$])\$/) { match in
             let inner = String(match.1)
             return inner.contains("\\") || inner.contains("_") || inner.contains("^") ? inner : String(match.0)
         }
-        // \text{…}, \mathrm{…}, \texttt{…} → contents
-        s = s.replacing(/\\(?:text|mathrm|mathit|mathbf|texttt|operatorname)\{([^{}]*)\}/) { String($0.1) }
+        // \text{…}, \mathrm{…}, \texttt{…} → contents, innermost first ("\mathbf{2.5 \text{ cycles}}")
+        for _ in 0..<3 {
+            let unwrapped = s.replacing(/\\(?:text|mathrm|mathit|mathbf|textbf|texttt|operatorname)\{([^{}]*)\}/) { String($0.1) }
+            if unwrapped == s { break }
+            s = unwrapped
+        }
         s = s.replacing(/\\([{}$_%&#])/) { String($0.1) }
         for (name, symbol) in commands.sorted(by: { $0.0.count > $1.0.count }) {
             s = s.replacing(try! Regex("\\\\\(name)(?![A-Za-z])"), with: symbol)

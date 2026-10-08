@@ -80,7 +80,7 @@ public struct PresentationConverter: PresentationConverting {
                 firstError = firstError ?? error
             }
         }
-        throw firstError ?? ImportError.noPresentationApp
+        throw firstError ?? (allowPowerPoint ? ImportError.noPresentationApp : ImportError.keynoteNotInstalled)
     }
 
     // MARK: - Notes

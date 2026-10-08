@@ -7,7 +7,7 @@ extension KeyedDecodingContainer where Key == NormalizedKey {
     func string(_ key: String) -> String {
         let k = NormalizedKey(stringValue: key)
         if let s = try? decode(String.self, forKey: k) { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let n = try? decode(Double.self, forKey: k) { return n.rounded() == n ? String(Int(n)) : String(n) }
+        if let n = try? decode(Double.self, forKey: k) { return lenientNumberText(n) }
         if let b = try? decode(Bool.self, forKey: k) { return String(b) }
         if let parts = try? decode([String].self, forKey: k) { return parts.joined(separator: " ") }
         return ""
@@ -57,7 +57,7 @@ struct LenientString: Decodable {
         if let s = try? single.decode(String.self) {
             value = s.trimmingCharacters(in: .whitespacesAndNewlines)
         } else if let n = try? single.decode(Double.self) {
-            value = n.rounded() == n ? String(Int(n)) : String(n)
+            value = lenientNumberText(n)
         } else if let b = try? single.decode(Bool.self) {
             value = String(b)
         } else if let object = try? single.decode([String: LenientString].self) {
@@ -83,4 +83,10 @@ enum LenientInts {
         }
         return result
     }
+}
+
+/// `n` as text: whole numbers without a decimal point. A value too large for `Int` (a model can
+/// write any number of digits) keeps its floating-point form instead of trapping.
+func lenientNumberText(_ n: Double) -> String {
+    n.rounded() == n && abs(n) < 1e15 ? String(Int(n)) : String(n)
 }

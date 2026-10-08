@@ -75,7 +75,9 @@ public struct DeckVocabulary: Sendable {
     nonisolated(unsafe) private static let tokenPattern = /[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9]{1,3}\))?/
 
     /// Identifier-shaped tokens; a match glued to a preceding letter or digit ("xff" in "0xff")
-    /// is not a token of its own.
+    /// is not a token of its own. A short parenthesized group stays attached only in notation like
+    /// `LL(1)`; after anything else it is a call's argument, and the name alone is the token
+    /// (`genExpr(e)` → `genExpr`).
     static func identifierTokens(in text: String) -> [String] {
         let cleaned = text.replacing(urlPattern, with: " ")
         return cleaned.matches(of: tokenPattern).compactMap { match in
@@ -84,7 +86,9 @@ public struct DeckVocabulary: Sendable {
                 let before = cleaned[cleaned.index(before: start)]
                 if before.isLetter || before.isNumber { return nil }
             }
-            return String(match.output)
+            let token = String(match.output)
+            if let open = token.firstIndex(of: "("), classify(token) == nil { return String(token[..<open]) }
+            return token
         }
     }
 

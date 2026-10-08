@@ -22,6 +22,8 @@ public actor MLXModelHost {
     private let scheduler = GenerationScheduler()
     /// Resident engines, least recently used first.
     private var engines: [(id: String, engine: MLXInferenceEngine)] = []
+    /// Resident models whose warm-up has run.
+    private var warmed: Set<String> = []
     private var pressureMonitor: MemoryPressureMonitor?
     /// When the last memory-pressure warning arrived; prompt-cache slots stay at one for a while.
     private var memoryWarningAt: ContinuousClock.Instant?
@@ -44,31 +46,86 @@ public actor MLXModelHost {
 
     /// Loads `id` and runs tiny generations (text and JSON) so the first real request is fast.
     /// `schemas` are JSON Schemas the caller will use; their grammars are compiled up front.
+    ///
+    /// A model that is already loaded and warmed is left alone: warming clears its prompt caches,
+    /// so repeating it (every new lecture, every settings change) would only make the next
+    /// rolling summary pay a full prefill.
     public func warmUp(_ id: String, schemas: [String] = []) async throws {
+        guard !isWarm(id) else { return }
         try await withGPU(priority: 0) {
-            try await engine(for: id).warmUp(schemas: schemas)
+            guard !isWarm(id) else { return }
+            let engine = try await engine(for: id)
+            try await engine.warmUp(schemas: schemas)
+            if engines.contains(where: { $0.id == id }) { warmed.insert(id) }
         }
+    }
+
+    /// Whether `id` is loaded.
+    private func isLoaded(_ id: String) -> Bool {
+        engines.contains { $0.id == id }
+    }
+
+    /// Whether `id` is loaded and has been warmed since it was loaded.
+    public func isWarm(_ id: String) -> Bool {
+        warmed.contains(id) && engines.contains { $0.id == id }
     }
 
     /// Unloads `id`, or every model when nil. A generation in progress finishes first.
     public func unload(_ id: String? = nil) {
         unloads += 1
         engines.removeAll { id == nil || $0.id == id }
+        warmed = warmed.filter { model in engines.contains { $0.id == model } }
         MLX.Memory.clearCache()
     }
 
     // MARK: - Generation
 
     /// Runs `request` on `id`, streaming visible text to `onText`.
+    ///
+    /// A `preemptible` request (background work whose text nobody is watching) gives the GPU back
+    /// when a more urgent request starts waiting, at the next prefill step or decoded token, and
+    /// queues again behind it; its evaluated prompt stays cached, so the retry continues its
+    /// prefill (unless memory pressure has cut the prompt caches to one slot). A question waits at
+    /// most one prefill step or token for background work, and a rolling summary never waits
+    /// for a long Ask-prefix warm-up or a quiz question. After ``maxPreemptions`` a request runs
+    /// to the end, so a stream of more urgent work cannot starve it.
     func generate(
         model id: String,
         request: LLMRequest,
         priority: Int,
+        preemptible: Bool = false,
         onText: @escaping @Sendable (String) -> Void
     ) async throws -> GenerationOutput {
-        guard modelManager.isDownloaded(id) else { throw LLMError.modelNotDownloaded(id) }
+        // A loaded model's files were validated when it loaded (removing a model unloads it
+        // first), so only a model that still has to load is checked; the check reads every
+        // weight file's header and must not run per request.
+        guard isLoaded(id) || modelManager.isDownloaded(id) else { throw LLMError.modelNotDownloaded(id) }
         let queuedAt = ContinuousClock.now
-        return try await withGPU(priority: priority) {
+        let canYield = preemptible && priority < GenerationScheduler.interactivePriority
+        let scheduler = scheduler
+        var preemptions = 0
+        while true {
+            let yields = canYield && preemptions < Self.maxPreemptions
+            let shouldYield: @Sendable () -> Bool = { yields && scheduler.hasWaiter(above: priority) }
+            do {
+                return try await generateOnce(model: id, request: request, priority: priority, queuedAt: queuedAt,
+                                              shouldYield: shouldYield, onText: onText)
+            } catch is GenerationPreempted {
+                preemptions += 1
+            }
+        }
+    }
+
+    /// One GPU turn for `request`.
+    private func generateOnce(
+        model id: String,
+        request: LLMRequest,
+        priority: Int,
+        queuedAt: ContinuousClock.Instant,
+        shouldYield: @escaping @Sendable () -> Bool,
+        onText: @escaping @Sendable (String) -> Void
+    ) async throws -> GenerationOutput {
+        try await withGPU(priority: priority) {
             let engine = try await engine(for: id)
             if let warned = memoryWarningAt, ContinuousClock.now - warned > Self.pressureCooldown {
                 memoryWarningAt = nil
@@ -76,9 +133,12 @@ public actor MLXModelHost {
             }
             let waited = ContinuousClock.now - queuedAt
             let seconds = Double(waited.components.seconds) + Double(waited.components.attoseconds) / 1e18
-            return try await engine.generate(request, queueSeconds: seconds, onText: onText)
+            return try await engine.generate(request, queueSeconds: seconds, shouldYield: shouldYield, onText: onText)
         }
     }
+
+    /// Times one background request yields to interactive work before it runs to the end.
+    static let maxPreemptions = 3
 
     // MARK: - Private
 
@@ -113,7 +173,7 @@ public actor MLXModelHost {
 
         // Free memory before loading more weights.
         while engines.count >= max(1, configuration.maxResidentModels) {
-            engines.removeFirst()
+            warmed.remove(engines.removeFirst().id)
         }
         MLX.Memory.clearCache()
         MLX.Memory.cacheLimit = configuration.bufferCacheLimitBytes

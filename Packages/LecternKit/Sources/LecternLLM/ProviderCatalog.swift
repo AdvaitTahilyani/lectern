@@ -116,16 +116,6 @@ public enum ProviderCatalog {
         suggestedModels(for: kind)[0].id
     }
 
-    /// The default endpoint for `kind` (nil for on-device).
-    public static func defaultBaseURL(for kind: ProviderKind) -> URL? {
-        switch kind {
-        case .onDevice: nil
-        case .localServer: OpenAICompatibleProvider.ollamaBaseURL
-        case .openAI: OpenAICompatibleProvider.openAIBaseURL
-        case .anthropic: AnthropicProvider.baseURL
-        }
-    }
-
     /// Lists the models a local OpenAI-compatible server (Ollama, LM Studio) reports at `GET /models`.
     /// Throws `LLMError.network` when the server isn't reachable.
     public static func fetchLocalServerModels(

@@ -56,7 +56,7 @@ struct OpeningStretch: Sendable {
     /// words that are just as common in logistics ("time", "question", "due", "exam", "grade").
     static let lexicon: Set<String> = Set([
         "algorithm", "address", "allocation", "array", "assembly", "ast", "backend", "binary", "bit",
-        "block", "boolean", "branch", "buffer", "byte", "cache", "call", "cfg", "child", "class", "closure", "code",
+        "block", "boolean", "branch", "buffer", "byte", "cache", "call", "cast", "cfg", "child", "closure", "code",
         "compile", "compiler", "complexity", "concurrency", "condition", "constant", "constraint", "control", "converge",
         "cycle", "data", "declaration", "definition", "derivation", "dfa", "dominance", "dominate", "dominator", "edge",
         "element", "evaluate", "expression", "field", "flow", "float", "frontier", "function", "grammar", "graph", "hash",
@@ -65,10 +65,10 @@ struct OpeningStretch: Sendable {
         "literal", "liveness", "load", "lock", "loop", "matrix", "memory", "merge", "method", "module", "network",
         "nfa", "node", "nonterminal", "object", "offset", "operand", "operator", "optimization", "optimize", "parse",
         "parser", "path", "phi", "pipeline", "pointer", "polymorphism", "precedence", "predecessor", "procedure",
-        "process", "production", "program", "protocol", "queue", "recursion", "recursive", "reduce", "reference",
+        "process", "production", "program", "proof", "protocol", "queue", "recursion", "recursive", "reduce", "reference",
         "register", "regular", "return", "root", "runtime", "scope", "semantics", "sequence", "set", "shift", "ssa",
         "stack", "statement", "store", "string", "struct", "subtree", "successor", "symbol", "syntax", "table",
-        "terminal", "thread", "token", "traversal", "tree", "tuple", "type", "value", "variable", "vector", "vertex",
-        "virtual",
+        "terminal", "thread", "token", "traversal", "tree", "tuple", "type", "undefined", "value", "variable", "vector", "verified",
+        "verify", "vertex", "virtual",
     ].flatMap(TranscriptRetriever.terms))
 }

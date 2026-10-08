@@ -11,6 +11,8 @@ struct AskView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
     @State private var scope: AskScope = .lecture
+    /// A streamed token changes the answer's length; scrolling follows at most every ~100 ms (P10).
+    @State private var scrollCoalescer = ScrollCoalescer()
     @State private var placeholder = AskView.placeholders.randomElement() ?? "Ask about this lecture…"
 
     enum AskScope: String, CaseIterable, Identifiable { case lecture, course; var id: String { rawValue } }
@@ -83,7 +85,7 @@ struct AskView: View {
                         }
                     }
                     if let streaming = session.streamingAnswer {
-                        StreamingText(committed: AnswerFormatter.attributed(streaming, sessionID: session.id), volatile: nil, isStreaming: true, style: .answer)
+                        StreamingAnswerBody(text: streaming)
                             .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
                             .id("streaming")
                     }
@@ -103,7 +105,7 @@ struct AskView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .defaultScrollAnchor(.bottom)
-            .onChange(of: session.streamingAnswer?.count) { _, _ in proxy.scrollSoon(to: "bottom", anchor: .bottom) }
+            .onChange(of: session.streamingAnswer?.count) { _, _ in scrollCoalescer.request { proxy.scrollSoon(to: "bottom", anchor: .bottom) } }
             .onChange(of: session.chat.count) { _, _ in proxy.scrollSoon(to: "bottom", anchor: .bottom, animation: reduceMotion ? nil : DS.Motion.settle) }
         }
     }
@@ -148,15 +150,17 @@ struct AnswerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            AnswerText(text: message.text, sessionID: sessionID).equatable()
+            AnswerBody(text: message.text, resolver: .lecture(sessionID: sessionID, citations: message.citations))
+                .equatable()
+                .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
             if !message.citations.isEmpty {
                 Divider()
                 CitationRow(citations: message.citations, sessionID: sessionID, thumbnail: thumbnail, onOpen: onOpen)
             }
             HStack(spacing: DS.Space.s) {
                 Spacer()
-                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy")
-                if !isLive, isLast { Button(action: onRegenerate) { Image(systemName: "arrow.clockwise") }.help("Regenerate") }
+                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy").accessibilityLabel("Copy answer")
+                if !isLive, isLast { Button(action: onRegenerate) { Image(systemName: "arrow.clockwise") }.help("Regenerate").accessibilityLabel("Regenerate answer") }
             }
             .buttonStyle(.borderless).controlSize(.small).foregroundStyle(.secondary)
             .opacity(hovered ? 1 : 0)
@@ -166,25 +170,8 @@ struct AnswerView: View {
     }
 }
 
-/// One finished answer. Equatable so it is re-parsed only when its text changes: the Ask thread
-/// re-renders on every streamed token, and hovering an answer re-renders `AnswerView`.
-private struct AnswerText: View, Equatable {
-    var text: String
-    var sessionID: UUID
-
-    var body: some View {
-        // Selectable, link-bearing text is exposed as ONE plain-string element: resolving
-        // accessibility labels through its link runs recurses in AppKit (C1 stack overflow).
-        Text(AnswerFormatter.attributed(text, sessionID: sessionID))
-            .font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(AnswerFormatter.plainText(text))
-    }
-}
-
 /// Glass composer: capsule for one line, rounded rect when it grows. ↩ sends, ⇧↩ newline, Esc clears.
+/// The field grows with its text up to `maxLines`, then scrolls inside itself.
 struct AskComposer: View {
     @Binding var text: String
     var isAnswering: Bool
@@ -192,22 +179,34 @@ struct AskComposer: View {
     var focused: FocusState<Bool>.Binding
     var onSend: () -> Void
     var onCancel: () -> Void
+    @State private var multiline = false
 
-    private var lines: Int { min(4, max(1, text.split(separator: "\n", omittingEmptySubsequences: false).count)) }
-    private var multiline: Bool { lines > 1 }
+    private static let maxLines = 6
 
     var body: some View {
         HStack(alignment: .bottom, spacing: DS.Space.s) {
-            // Height is derived from the line count, not measured from the width: an AppKit-backed
-            // field whose intrinsic height depends on its width can loop AppKit's constraint pass.
-            TextField(placeholder, text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
+            // Height comes from an invisible `Text` that wraps the same string at (almost) the same width;
+            // the field is overlaid on it, so its height is never measured from an AppKit-backed view
+            // (whose intrinsic height depends on its width and can loop AppKit's constraint pass). A
+            // soft-wrapped line therefore counts, which counting "\n" alone missed and clipped the first line.
+            // The trailing ZWSP gives a final newline a line of its own.
+            Text(text + "\u{200B}")
                 .font(DS.Typo.body)
-                .frame(height: CGFloat(lines) * 20)
-                .focused(focused)
-                .onSubmit { onSend() }
-                .onKeyPress(.escape) { text = ""; return .handled }
+                .lineLimit(1...Self.maxLines)
+                .padding(.trailing, 6)
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                .opacity(0)
+                .accessibilityHidden(true)
+                .onGeometryChange(for: Bool.self) { $0.size.height > 26 } action: { multiline = $0 }
+                .overlay {
+                    TextField(placeholder, text: $text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...Self.maxLines)
+                        .font(DS.Typo.body)
+                        .focused(focused)
+                        .onSubmit { onSend() }
+                        .onKeyPress(.escape) { text = ""; return .handled }
+                }
             Button(action: isAnswering ? onCancel : onSend) {
                 Image(systemName: isAnswering ? "stop.circle.fill" : "arrow.up.circle.fill").font(.title2)
             }

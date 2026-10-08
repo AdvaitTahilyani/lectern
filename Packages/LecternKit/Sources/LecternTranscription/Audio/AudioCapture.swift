@@ -31,20 +31,33 @@ public actor AudioCapture {
     /// Bumped by every `start` and `stop`, so a restart that outlives its session (it sleeps
     /// between attempts) can tell that the session it was repairing is gone.
     private var generation = 0
+    private let requestAccess: @Sendable () async throws -> Void
 
-    public init() {}
+    public init() {
+        requestAccess = { try await AudioCapture.ensureMicrophoneAccess() }
+    }
+
+    /// For tests: replaces the microphone permission check.
+    init(requestAccess: @escaping @Sendable () async throws -> Void) {
+        self.requestAccess = requestAccess
+    }
 
     /// Starts capturing. `deviceID` is a CoreAudio device UID; nil follows the system default.
-    /// - Throws: `TranscriptionError.microphoneAccessDenied`, `.inputDeviceNotFound`, `.audioEngineFailed`.
+    /// A `stop()` while this is still waiting for microphone permission cancels it.
+    /// - Throws: `TranscriptionError.microphoneAccessDenied`, `.inputDeviceNotFound`,
+    ///   `.audioEngineFailed`, or `CancellationError` when stopped before capture began.
     public func start(deviceID: String?) async throws -> AsyncThrowingStream<AudioCaptureEvent, Error> {
         guard continuation == nil, !isStarting else { throw TranscriptionError.alreadyRunning }
         isStarting = true      // the permission prompt below suspends this actor; block a second start
         defer { isStarting = false }
-        try await Self.ensureMicrophoneAccess()
+        generation += 1
+        let attempt = generation
+        try await requestAccess()
+        // `stop()` bumps the generation: a stop that arrived during the prompt wins.
+        guard generation == attempt else { throw CancellationError() }
 
         let (stream, continuation) = AsyncThrowingStream<AudioCaptureEvent, Error>.makeStream(bufferingPolicy: .unbounded)
         requestedDeviceUID = deviceID
-        generation += 1
         do {
             try startEngine(deviceUID: deviceID, continuation: continuation)
         } catch {
@@ -152,7 +165,7 @@ public actor AudioCapture {
         }
     }
 
-    private static func ensureMicrophoneAccess() async throws {
+    static func ensureMicrophoneAccess() async throws {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             return

@@ -21,7 +21,6 @@ actor DemoBrain: LectureIntelligence {
     private var pendingQuizBeat: Int?
     private var activity: BrainActivity = .idle
     private var beatTimes: [Int: TimeInterval] = [:]
-    private var userSlide: Int?
     private var backtrackOffered = false
     private var speakers: [UUID: SpeakerRole] = [:]
 
@@ -124,9 +123,10 @@ actor DemoBrain: LectureIntelligence {
 
     nonisolated func ask(_ question: String, history: [ChatMessage]) -> AsyncThrowingStream<AskEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AskEvent, Error>.makeStream()
-        Task {
+        let task = Task {
             await self.answer(question, into: continuation)
         }
+        continuation.onTermination = { _ in task.cancel() }
         return stream
     }
 
@@ -166,7 +166,6 @@ actor DemoBrain: LectureIntelligence {
     func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async {}
 
     private func userChoseSlide(_ page: Int) {
-        userSlide = page
         if backtrackOffered { continuation.yield(.backtrackSuggestion(nil)) }
     }
 

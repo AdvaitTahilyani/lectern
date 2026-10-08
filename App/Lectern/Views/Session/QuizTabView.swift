@@ -47,6 +47,8 @@ struct QuizTabView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(outcomeLabel(r.outcome)), \(TimeFormat.clock(r.askedAt)), \(r.question.concept)")
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
             if isOpen {
                 VStack(alignment: .leading, spacing: DS.Space.s) {
                     Text(r.question.prompt).font(DS.Typo.headline).fixedSize(horizontal: false, vertical: true)
@@ -67,7 +69,16 @@ struct QuizTabView: View {
             }
         }
         .padding(.vertical, DS.Space.xs)
-        .accessibilityElement(children: .combine)
+        // A group: combining would fold the citation chips into the row's expand button.
+        .accessibilityElement(children: .contain)
+    }
+
+    private func outcomeLabel(_ o: QuizOutcome?) -> String {
+        switch o {
+        case .correct: "Correct"
+        case .incorrect: "Not quite"
+        case .skipped, nil: "Skipped"
+        }
     }
 
     private func answerText(_ r: QuizRecord) -> String? {
@@ -151,8 +162,8 @@ struct ReviewMissedView: View {
                 HStack {
                     Button("Exit") { session.exitReview() }.keyboardShortcut(.cancelAction)
                     Spacer()
-                    Button("Skip") { session.reviewNext() }
-                    Button("Next") { session.reviewNext() }.lecternProminent().keyboardShortcut(.defaultAction)
+                    // Skipping and moving on are the same step; the label says which it is.
+                    Button(flow.freshGrade == nil ? "Skip" : "Next") { session.reviewNext() }.lecternProminent().keyboardShortcut(.defaultAction)
                 }
                 .padding(.horizontal, DS.Space.xl).padding(.bottom, DS.Space.l)
                 .frame(maxWidth: 560 + 2 * DS.Space.l)
@@ -162,9 +173,17 @@ struct ReviewMissedView: View {
         .animation(DS.Motion.settle, value: flow.index)
         .onChange(of: flow.index) { _, _ in shortAnswer = "" }
         .onKeyPress(characters: .decimalDigits) { press in
-            guard let n = Int(press.characters), (1...4).contains(n), flow.freshGrade == nil, flow.freshQuestion != nil else { return .ignored }
+            guard SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive), let n = Int(press.characters), (1...4).contains(n), flow.freshGrade == nil, !flow.isGrading, flow.freshQuestion != nil else { return .ignored }
             session.reviewSelect(n - 1)
             return .handled
+        }
+    }
+
+    private func retryRow(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DS.Colors.warning)
+            Text(message).font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(2)
+            Button("Try again") { session.reviewRetry(answer: shortAnswer) }.buttonStyle(.link).font(DS.Typo.footnote)
         }
     }
 
@@ -193,7 +212,11 @@ struct ReviewMissedView: View {
                 .transition(.opacity)
             } else if flow.isGrading {
                 HStack(spacing: DS.Space.s) { ProgressView().controlSize(.small); Text("Checking…").font(DS.Typo.footnote).foregroundStyle(.secondary) }
+            } else if let error = flow.error {
+                retryRow("Couldn't check that answer: \(error)")
             }
+        } else if let error = flow.error {
+            retryRow("Couldn't write a question: \(error)")
         } else {
             HStack(spacing: DS.Space.s) {
                 Image(systemName: "waveform").symbolEffect(.variableColor.iterative.reversing, isActive: !reduceMotion).foregroundStyle(.secondary)

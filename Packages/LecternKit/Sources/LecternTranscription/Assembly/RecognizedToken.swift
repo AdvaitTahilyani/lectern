@@ -21,6 +21,8 @@ struct TimedWord: Sendable, Hashable {
 /// marker arrives, so a word split across two decode steps is stitched back together.
 struct WordBuilder: Sendable {
     private(set) var words: [TimedWord] = []
+    /// A bare word-start marker (`▁` on its own, as before digits) was seen; the next piece starts a word.
+    private var markerPending = false
 
     static func startsWord(_ token: String) -> Bool {
         token.hasPrefix(" ") || token.hasPrefix("\u{2581}")
@@ -35,8 +37,12 @@ struct WordBuilder: Sendable {
             let piece = token.text
                 .replacingOccurrences(of: "\u{2581}", with: " ")
                 .trimmingCharacters(in: .whitespaces)
-            guard !piece.isEmpty else { continue }
-            if Self.startsWord(token.text) || words.isEmpty {
+            guard !piece.isEmpty else {
+                if Self.startsWord(token.text) { markerPending = true }
+                continue
+            }
+            if Self.startsWord(token.text) || markerPending || words.isEmpty {
+                markerPending = false
                 words.append(TimedWord(text: piece, start: token.start, end: token.end))
             } else {
                 words[words.count - 1].text += piece

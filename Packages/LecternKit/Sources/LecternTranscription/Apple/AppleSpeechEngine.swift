@@ -68,15 +68,8 @@ private struct AnalyzerSession: SessionRecognizer, @unchecked Sendable {
 }
 
 private actor AppleSpeechCore {
-    private struct LiveSession {
-        let capture: AudioCapture
-        let task: Task<Void, Never>
-    }
-
     private let requestedLocale: Locale
-    private var live: LiveSession?
-    /// Set while a session is being opened; opening suspends the actor, so this blocks a second start.
-    private var isStarting = false
+    private let live = LiveSessionSlot()
 
     init(locale: Locale) {
         requestedLocale = locale
@@ -195,9 +188,10 @@ private actor AppleSpeechCore {
     }
 
     func startLive(options: TranscriptionOptions) async throws -> AsyncThrowingStream<TranscriptionEvent, Error> {
-        guard live == nil, !isStarting else { throw TranscriptionError.alreadyRunning }
-        isStarting = true
-        defer { isStarting = false }
+        try await live.start { id in try await self.openLive(options: options, session: id) }
+    }
+
+    private func openLive(options: TranscriptionOptions, session id: UUID) async throws -> LiveSessionSlot.Opened {
         let session = try await openSession(options: options)
         let capture = AudioCapture()
         let audio: AsyncThrowingStream<AudioCaptureEvent, Error>
@@ -212,18 +206,18 @@ private actor AppleSpeechCore {
             await SessionRunner.runLive(audio: audio, recognizer: session.analyzer, diarization: session.diarization, sink: session.sink)
             await capture.stop()
         }
-        live = LiveSession(capture: capture, task: task)
-        session.sink.onTermination { [weak self] in
-            Task { await self?.stopLive() }
+        // The consumer dropped the stream (or it ended): stop this session, never a newer one.
+        session.sink.onTermination { [live] in
+            Task { await live.stop(session: id) }
         }
-        return session.stream
+        return LiveSessionSlot.Opened(stream: session.stream) {
+            await capture.stop()
+            await task.value
+        }
     }
 
     func stopLive() async {
-        guard let session = live else { return }
-        live = nil
-        await session.capture.stop()
-        await session.task.value
+        await live.stop()
     }
 
     // MARK: File transcription

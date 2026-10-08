@@ -6,6 +6,7 @@ import LecternCore
 struct LiveSessionView: View {
     @Bindable var session: LiveSessionModel
     @Environment(AppModel.self) private var app
+    @Environment(WindowNavigation.self) private var nav
     @Environment(\.dsAnimation) private var motion
     @State private var width: CGFloat = 0
     @State private var hasAppeared = false
@@ -18,6 +19,9 @@ struct LiveSessionView: View {
     /// (`_setCollapsed` ↔ `didChangeCollapsed` loop, QA H1).
     @State private var inspectorSettleUntil = Date.distantPast
 
+    /// ⌘F in the single tier, where the transcript pane has no inspector to host its search bar.
+    @State private var paneSearchShown = false
+
     @FocusState private var rootFocused: Bool
 
     var body: some View {
@@ -29,15 +33,34 @@ struct LiveSessionView: View {
             .focusEffectDisabled()
             .focused($rootFocused)
             .onKeyPress(characters: .decimalDigits) { press in
-                guard !session.isTypingInAsk, let quiz = session.quiz, quiz.acceptsAnswers, let n = Int(press.characters), (1...4).contains(n) else { return .ignored }
+                guard SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive), let quiz = session.quiz, quiz.acceptsAnswers, let n = Int(press.characters), (1...4).contains(n) else { return .ignored }
                 session.selectOption(n - 1)
                 return .handled
             }
-            .onKeyPress("s") { if session.quiz?.phase == .asking, !session.isTypingInAsk { session.snoozeQuiz(); return .handled }; return .ignored }
-            .onKeyPress(.escape) { if session.quiz != nil, !session.isTypingInAsk { session.skipQuiz(); return .handled }; return .ignored }
-            .onKeyPress(.space) { if session.isLive, !session.isTypingInAsk { session.togglePause(); return .handled }; return .ignored }
+            .onKeyPress("s") { if session.quiz?.phase == .asking, SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive) { session.snoozeQuiz(); return .handled }; return .ignored }
+            .onKeyPress(.escape) { if session.quiz != nil, SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive) { session.skipQuiz(); return .handled }; return .ignored }
+            // ←/→ correct the current slide from anywhere in the lecture (the root holds focus).
+            .onKeyPress(.leftArrow) {
+                guard session.pageCount > 0, SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive) else { return .ignored }
+                session.stepSlide(-1)
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                guard session.pageCount > 0, SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive) else { return .ignored }
+                session.stepSlide(1)
+                return .handled
+            }
+            .onKeyPress(.space) {
+                guard SessionShortcuts.spacePausesRecording(isLive: session.isLive, textInputActive: TextInputFocus.isActive, rootFocused: rootFocused) else { return .ignored }
+                session.togglePause()
+                return .handled
+            }
             .environment(\.openURL, OpenURLAction { url in session.open(url) ? .handled : .systemAction })
             .background(DS.Colors.canvas.ignoresSafeArea())
+            // ⌘L is a second shortcut for Ask (⌘K in the Lecture menu).
+            .background {
+                Button("") { session.focusAsk() }.keyboardShortcut("l", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            }
             .navigationTitle(session.title)
             .navigationSubtitle(session.subtitle)
             .toolbar { SessionToolbar(session: session, tier: tier) }
@@ -65,18 +88,13 @@ struct LiveSessionView: View {
             }
             .onChange(of: session.showSlides) { _, v in app.updatePreferences { $0.slidesVisible = v } }
             .onDisappear { Task { await session.flush() } }
-            // Presentation modifiers live on the root, which is never removed by tier changes:
-            // adding/removing a presentation inside layout re-enters AppKit's constraint pass.
-            .fileImporter(isPresented: $session.showDeckChooser, allowedContentTypes: [.pdf]) { r in
-                if case .success(let url) = r { session.addDeck(url: url) }
-            }
             .onAppear {
                 applyPendingNavigation()
                 Task { @MainActor in await Task.yield(); rootFocused = true }
                 Task { try? await Task.sleep(for: .seconds(1)); hasAppeared = true }
             }
             // A search hit or citation into the lecture already on screen (QA Q3-8).
-            .onChange(of: app.pendingNavigation) { _, _ in applyPendingNavigation() }
+            .onChange(of: nav.pendingNavigation) { _, _ in applyPendingNavigation() }
             // Session-wide keys need the root focused again once a text field lets go (QA F2).
             .onChange(of: session.isTypingInAsk) { _, typing in
                 if !typing { Task { @MainActor in try? await Task.sleep(for: .milliseconds(80)); rootFocused = true } }
@@ -87,7 +105,14 @@ struct LiveSessionView: View {
             .onChange(of: tier) { _, t in session.layoutTier = t }
             // The title editor lives in the Takeaways header; bring that pane up in the compact tier.
             .onChange(of: session.isEditingTitle) { _, editing in if editing, tier == .single { session.pane = .takeaways } }
-            .onReceive(NotificationCenter.default.publisher(for: .lecternExport)) { _ in
+            .onChange(of: session.pane) { _, pane in if pane != .transcript { paneSearchShown = false } }
+            .onWindowCommand(.lecternFind) {
+                guard tier == .single else { return }   // the inspector's transcript handles it otherwise
+                session.pane = .transcript
+                // The pane is created by the switch; its search field takes focus when shown on the next turn.
+                Task { @MainActor in await Task.yield(); paneSearchShown = true }
+            }
+            .onWindowCommand(.lecternExport) {
                 guard !session.isLive else { return }
                 ExportCoordinator.exportMarkdown(session: session.session, course: session.course)
             }
@@ -120,7 +145,7 @@ struct LiveSessionView: View {
         ZStack {
             switch session.pane {
             case .takeaways: TakeawaysColumn(session: session, tier: tier)
-            case .transcript: TranscriptView(session: session)
+            case .transcript: TranscriptView(session: session, showSearch: $paneSearchShown)
             case .slides: SlidesColumn(session: session)
             case .ask: Color.clear
             }
@@ -153,7 +178,7 @@ struct LiveSessionView: View {
     }
 
     private func applyPendingNavigation() {
-        if let nav = app.takePendingNavigation(for: session.id) { session.navigate(to: nav) }
+        if let landing = nav.takePendingNavigation(for: session.id) { session.navigate(to: landing) }
     }
 }
 
@@ -218,10 +243,10 @@ struct SessionToolbar: ToolbarContent {
                 }
                 .help("Export (⌘E)")
             }
-            if session.pendingQuizBadge != nil {
+            if session.quiz == nil, !session.queuedQuizzes.isEmpty {
                 Button { session.openPendingQuiz() } label: { Label("Quiz", systemImage: "questionmark.circle") }
-                    .badge(1)
-                    .help("A quick check is waiting")
+                    .badge(session.queuedQuizzes.count)
+                    .help(session.queuedQuizzes.count == 1 ? "A quick check is waiting" : "\(session.queuedQuizzes.count) quick checks are waiting")
             }
             Button { session.toggleInspector() } label: { Label("Inspector", systemImage: "sidebar.trailing") }
                 .help("Toggle inspector (⌘⌥I)")
@@ -237,10 +262,12 @@ struct SessionToolbar: ToolbarContent {
                             }
                         }
                     }
-                    Toggle("Keep Audio Recording", isOn: Binding(get: { app.preferences.keepAudioRecordings }, set: { v in app.updatePreferences { $0.keepAudioRecordings = v } }))
                 }
-                Divider()
-                Button("Lecture Info…") { session.isEditingTitle = true }
+                if !session.isLive {
+                    // The title editor only exists in review (it is in the Takeaways header there).
+                    Divider()
+                    Button("Edit Title") { session.isEditingTitle = true }
+                }
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }
@@ -309,7 +336,7 @@ struct InspectorView: View {
             }
         }
         .onChange(of: session.inspectorTab) { _, tab in if tab != .transcript { showSearch = false } }
-        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in
+        .onWindowCommand(.lecternFind) {
             session.inspectorTab = .transcript
             showSearch = true
         }

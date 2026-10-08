@@ -29,6 +29,10 @@ nonisolated struct AppServices: Sendable {
 
     /// Creates the lecture brain for a session. `slides` is nil when the session has no deck.
     var makeBrain: @Sendable (BrainContext, AppSettings, (any SlideSearching)?) -> any LectureIntelligence
+    /// The per-role providers `settings` select, for an existing brain whose session is `UUID`
+    /// (usage is attributed to it) when the user changes a provider or model. Nil when brains
+    /// have no providers to switch (demo).
+    var makeRoleProviders: (@Sendable (AppSettings, UUID?) -> RoleProviders)? = nil
 
     // MARK: Slides
 
@@ -47,7 +51,7 @@ nonisolated struct AppServices: Sendable {
 
     // MARK: Providers & models
 
-    /// "Test connection" for a provider config; `apiKey` comes from the Keychain (nil for local).
+    /// "Test connection" for a provider config. `apiKey` is the key being tested (typed, not necessarily saved yet; nil for local).
     var providerHealthCheck: @Sendable (ProviderConfig, String?) async throws -> ProviderHealth
     /// On-device model catalog + download manager (Parakeet, MLX LLMs).
     var onDeviceModels: any OnDeviceModelManaging
@@ -71,8 +75,8 @@ nonisolated struct AppServices: Sendable {
     var mediaSpaceBrowser: any MediaSpaceBrowserProviding
     /// Converts .pptx / .key decks to PDF (+ presenter notes). Nil disables those formats.
     var presentationConverter: (any PresentationConverting)?
-    /// Creates the course-wide assistant over a course's lectures.
-    var makeCourseAssistant: @Sendable ([CourseLecture]) -> any CourseAssisting
+    /// Creates the course-wide assistant over a course's lectures, given the course's display name.
+    var makeCourseAssistant: @Sendable ([CourseLecture], String?) -> any CourseAssisting
 
     // MARK: Slides folder, jargon correction, API cost
 
@@ -159,11 +163,15 @@ nonisolated struct UsageMonthSummary: Sendable, Hashable {
         var outputTokens: Int
         var cachedInputTokens: Int
         var costUSD: Double
+        /// Some of this cost was worked out locally (cancelled streams, unpriced models), not reported.
+        var isEstimate: Bool = false
     }
     /// e.g. "September 2026".
     var monthName: String
     var totalUSD: Double
     var lines: [Line]
+    /// Set when the usage history couldn't be read or saved, so the totals may be incomplete.
+    var storageProblem: String? = nil
 
     static let empty = UsageMonthSummary(monthName: "", totalUSD: 0, lines: [])
 }
@@ -307,7 +315,7 @@ extension AppServices {
             recordingImporter: DemoRecordingImporter(speed: DemoConfiguration.current.speed),
             mediaSpaceBrowser: DemoMediaSpaceBrowser(),
             presentationConverter: DemoPresentationConverter(samplePDF: { try await demoStore.sampleDeckURL() }),
-            makeCourseAssistant: { lectures in DemoCourseAssistant(lectures: lectures, speed: DemoConfiguration.current.speed) }
+            makeCourseAssistant: { lectures, _ in DemoCourseAssistant(lectures: lectures, speed: DemoConfiguration.current.speed) }
         )
     }
 }

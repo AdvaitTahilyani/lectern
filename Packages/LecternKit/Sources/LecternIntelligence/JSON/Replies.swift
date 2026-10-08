@@ -90,7 +90,7 @@ struct OptionCheckReply: ModelReply {
     "required":["correct_options"]}
     """
 
-    static let shape = #"{"correct_options":[0]}"#
+    static let shape = #"{"correct_options":[2]}"#
 }
 
 // MARK: - Opening recap card
@@ -338,6 +338,6 @@ extension LectureBrain {
     /// the first real call (a schema's first use otherwise pays a one-time setup cost).
     public static let jsonSchemas: [String] = [
         SegmentationReply.schema, DetailReply.schema, RecapReply.schema, LectureSummaryReply.schema,
-        MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema,
+        MultipleChoiceReply.schema, ShortAnswerReply.schema, GradeReply.schema, CardReply.schema, OptionCheckReply.schema,
     ]
 }

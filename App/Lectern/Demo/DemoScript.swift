@@ -45,7 +45,7 @@ nonisolated struct DemoScript: Sendable {
         }
     }
 
-    /// Catch-up recap for a time window, built from the beats spoken in it (`sentenceTimes` maps
+    /// Catch-up recap for a time window, built from the beats spoken in it (`beatTimes` maps
     /// the beat index to the session time its first sentence was finalized).
     func recap(from: TimeInterval, to: TimeInterval, beatTimes: [Int: TimeInterval]) -> Recap {
         let covered = beats.indices.filter { i in

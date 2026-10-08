@@ -24,7 +24,6 @@ struct BM25Index: Sendable {
         averageLength = lengths.isEmpty ? 1 : max(1, Double(lengths.reduce(0, +)) / Double(lengths.count))
     }
 
-    var count: Int { lengths.count }
 
     /// Documents containing at least one query term, best first.
     func search(_ queryTerms: [String]) -> [Hit] {

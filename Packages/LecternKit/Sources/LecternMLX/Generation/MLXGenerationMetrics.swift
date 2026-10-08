@@ -7,8 +7,6 @@ public struct MLXGenerationMetrics: Sendable, Hashable {
         case endOfTurn
         /// `maxTokens` was reached.
         case length
-        /// The consumer cancelled.
-        case cancelled
     }
 
     /// Prompt length after applying the chat template.

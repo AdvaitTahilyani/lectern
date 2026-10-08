@@ -94,6 +94,17 @@ public protocol LectureIntelligence: Actor {
     /// Settings changes mid-session (quiz interval etc.).
     func update(quiz: QuizSettings, summaryIntervalSeconds: Double)
 
+    /// The user picked another provider or model for a role: every call started from now on uses
+    /// `providers` (calls already running finish on the old ones). Cards, chat and quiz state are
+    /// kept.
+    func update(providers: RoleProviders)
+
+    /// Writes details for up to `limit` settled takeaways that have none (oldest first), as
+    /// background work that gives way to anything someone is waiting for. Details arrive through
+    /// `.takeaways` updates; cards that couldn't be done are reported in one `.error`. Cancelling
+    /// stops after the current card.
+    func enrichTakeaways(limit: Int) async
+
     /// Session clock ticks from the app (seconds of recording), used for the quiz timer.
     func tick(sessionTime: TimeInterval)
 
@@ -119,6 +130,14 @@ public protocol LectureIntelligence: Actor {
     /// A deck was added to a lecture that already has a brain (Add Deck during a live lecture or in
     /// Review). Later prompts, Ask and quizzes use it; slide tracking starts from here.
     func attachDeck(_ deck: SlideDeck, slides: (any SlideSearching)?) async
+}
+
+public extension LectureIntelligence {
+    /// For brains without providers (scripted demo, test doubles): nothing to switch.
+    func update(providers: RoleProviders) {}
+
+    /// For brains whose cards come with details (scripted demo, test doubles).
+    func enrichTakeaways(limit: Int) async {}
 }
 
 // MARK: - "While you were away"

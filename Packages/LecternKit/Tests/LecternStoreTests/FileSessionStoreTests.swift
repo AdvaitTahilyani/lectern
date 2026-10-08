@@ -307,29 +307,47 @@ import Testing
 
     // MARK: Files
 
-    @Test func importSlidesCopiesIntoTheSessionFolderAndReplaces() async throws {
+    @Test func importSlidesGivesEveryDeckAFileOfItsOwn() async throws {
         let store = store()
         let id = UUID()
         let first = try Fixtures.makePDF(contents: "%PDF first")
         let name = try await store.importSlides(from: first, into: id)
-        #expect(name == "slides.pdf")
+        #expect(name.hasPrefix("slides-") && name.hasSuffix(".pdf"))
         let folder = try await store.folder(for: id)
         #expect(try String(contentsOf: folder.appending(path: name), encoding: .utf8) == "%PDF first")
         #expect(FileManager.default.fileExists(atPath: first.path), "the original is copied, not moved")
 
-        _ = try await store.importSlides(from: try Fixtures.makePDF(contents: "%PDF second"), into: id)
-        #expect(try String(contentsOf: folder.appending(path: name), encoding: .utf8) == "%PDF second")
-        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["slides.pdf"])
+        // A second deck (or a replacement) never overwrites the first one's file (audit B21).
+        let second = try await store.importSlides(from: try Fixtures.makePDF(contents: "%PDF second"), into: id)
+        #expect(second != name)
+        #expect(try String(contentsOf: folder.appending(path: name), encoding: .utf8) == "%PDF first")
+        #expect(try String(contentsOf: folder.appending(path: second), encoding: .utf8) == "%PDF second")
+        #expect(try Set(FileManager.default.contentsOfDirectory(atPath: folder.path)) == [name, second])
+    }
+
+    @Test func removeSlidesDeletesOnlySlideFiles() async throws {
+        let store = store()
+        let session = Fixtures.session()
+        try await store.save(session)
+        let name = try await store.importSlides(from: try Fixtures.makePDF(), into: session.id)
+        try await store.removeSlides(named: name, from: session.id)
+        let folder = try await store.folder(for: session.id)
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: name).path))
+        try await store.removeSlides(named: name, from: session.id)   // already gone: no-op
+        await #expect(throws: StoreError.self) { try await store.removeSlides(named: "session.json", from: session.id) }
+        await #expect(throws: StoreError.self) { try await store.removeSlides(named: "../slides-x.pdf", from: session.id) }
+        #expect(try await store.loadSession(id: session.id) == session)
     }
 
     @Test func importingAMissingFileFailsAndKeepsTheOldDeck() async throws {
         let store = store()
         let id = UUID()
-        _ = try await store.importSlides(from: try Fixtures.makePDF(contents: "%PDF keep"), into: id)
+        let kept = try await store.importSlides(from: try Fixtures.makePDF(contents: "%PDF keep"), into: id)
         let missing = FileManager.default.temporaryDirectory.appending(path: "nope-\(UUID()).pdf")
         await #expect(throws: StoreError.self) { try await store.importSlides(from: missing, into: id) }
         let folder = try await store.folder(for: id)
-        #expect(try String(contentsOf: folder.appending(path: "slides.pdf"), encoding: .utf8) == "%PDF keep")
+        #expect(try String(contentsOf: folder.appending(path: kept), encoding: .utf8) == "%PDF keep")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [kept], "no staging file left behind")
     }
 
     @Test func deleteRemovesTheWholeSessionFolder() async throws {

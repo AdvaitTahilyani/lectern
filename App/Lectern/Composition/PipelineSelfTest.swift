@@ -278,10 +278,12 @@ nonisolated enum PipelineSelfTest {
             }
             let limit = options.minutes.map { $0 * 60 }
             let feedStart = clock.now
-            for try await event in try await engine.transcribeFile(at: options.audio, options: TranscriptionOptions(diarize: true)) {
+            // `-minutes`: stop reading the file at the limit (a plain `break` would only leave the
+            // switch, and the recognizer would transcribe the rest of the file).
+            feed: for try await event in try await engine.transcribeFile(at: options.audio, options: TranscriptionOptions(diarize: true)) {
                 switch event {
                 case .final(let segment):
-                    if let limit, segment.start > limit { break }
+                    if let limit, segment.start > limit { break feed }
                     // Release the segment no earlier than its (sped-up) recorded end time.
                     let due = feedStart + .seconds(segment.end / options.speed)
                     if clock.now < due { try await clock.sleep(until: due) }
@@ -298,7 +300,6 @@ nonisolated enum PipelineSelfTest {
                 case .warning(let w): print("[pipeline] warning: \(w)")
                 case .volatile, .level: break
                 }
-                if let limit, lastEnd > limit { break }
             }
             await engine.stop()
             let feedDone = clock.now
@@ -403,8 +404,14 @@ nonisolated enum PipelineSelfTest {
             var right: (shown: String, submitted: String)
             switch question.kind {
             case let .multipleChoice(options, correct):
+                // A wrong option needs at least two options (and a valid key).
+                guard options.count >= 2, options.indices.contains(correct) else {
+                    trial.error = "multiple choice with \(options.count) option(s) and answer index \(correct): not graded"
+                    trials.append(trial)
+                    continue
+                }
                 let bad = (correct + 1 + (k / 2) % (options.count - 1)) % options.count
-                func letter(_ i: Int) -> String { String(Character(UnicodeScalar(UInt8(65 + i)))) + ") " + options[i] }
+                func letter(_ i: Int) -> String { optionLabel(i) + ") " + options[i] }
                 wrong = (letter(bad), String(bad))
                 right = (letter(correct), String(correct))
             case let .shortAnswer(reference):
@@ -463,6 +470,11 @@ nonisolated enum PipelineSelfTest {
     private static func cell(_ text: String, limit: Int = 400) -> String {
         let flat = text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "|", with: "\\|")
         return flat.count > limit ? String(flat.prefix(limit)) + "…" : flat
+    }
+
+    /// "A", "B", … for the first 26 options, then "27", "28", ….
+    private static func optionLabel(_ i: Int) -> String {
+        i < 26 ? String(Character(UnicodeScalar(UInt8(65 + i)))) : String(i + 1)
     }
 
     private static func fmt(_ seconds: Double) -> String { String(format: "%.1f", seconds) }
@@ -560,7 +572,7 @@ nonisolated enum PipelineSelfTest {
             md += "- question: \(q.prompt)\n"
             switch q.kind {
             case let .multipleChoice(options, correct):
-                for (j, o) in options.enumerated() { md += "  - \(Character(UnicodeScalar(UInt8(65 + j)))). \(o)\(j == correct ? "  ← marked correct" : "")\n" }
+                for (j, o) in options.enumerated() { md += "  - \(optionLabel(j)). \(o)\(j == correct ? "  ← marked correct" : "")\n" }
             case let .shortAnswer(reference):
                 md += "- reference answer: \(reference)\n"
             }

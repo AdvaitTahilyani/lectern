@@ -9,10 +9,7 @@ nonisolated struct UIPreferences: Codable, Sendable, Hashable {
 
     var appearance: Appearance = .system
     var showMenuBarWhileRecording = true
-    var keepAudioRecordings = false
-    var voiceIsolation = true
     var quizStyle: QuizStyle = .card
-    var quizTimeToAnswer: Double = 90
     var followUpWhenWrong = true
     var showStreaks = true
     var focusPanelAllSpaces = true
@@ -36,4 +33,6 @@ nonisolated enum ModelStatus: Sendable, Hashable {
     case downloading(progress: Double)
     case cloud(provider: String)
     case unavailable(reason: String)
+    /// Model state hasn't been reported yet.
+    case checking
 }

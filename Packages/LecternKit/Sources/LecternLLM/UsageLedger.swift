@@ -79,6 +79,15 @@ public actor UsageLedger {
     private var noticeListeners: [UUID: AsyncStream<CapNotice>.Continuation] = [:]
     /// The last save failure, if the most recent save failed (usage is still kept in memory).
     public private(set) var saveError: String?
+    /// Set when the file on disk couldn't be used when the ledger loaded: its history is missing
+    /// from the totals (a damaged file is set aside, an unreadable one is left alone and never overwritten).
+    public private(set) var loadProblem: String?
+    private var isReadOnly = false
+    /// Estimated cost of calls in flight, so concurrent calls can't all pass a cap check before any
+    /// of them is recorded.
+    private var reservations: [UUID: (usd: Double, since: Date)] = [:]
+    /// A reservation whose call never reported back (a bug, not a slow call) stops counting after this.
+    static let reservationLifetime: TimeInterval = 15 * 60
 
     private static let logger = Logger(subsystem: "app.lectern", category: "usage")
 
@@ -90,9 +99,10 @@ public actor UsageLedger {
 
     // MARK: Recording
 
-    /// Adds one call; returns its cost in US dollars.
+    /// Adds one call; returns its cost in US dollars. `isEstimate` marks usage that was worked out
+    /// locally because the provider reported none (a cancelled or failed stream).
     @discardableResult
-    public func record(provider: ProviderKind, model: String, usage: LLMUsage, sessionID: UUID? = nil) -> Double {
+    public func record(provider: ProviderKind, model: String, usage: LLMUsage, sessionID: UUID? = nil, isEstimate: Bool = false) -> Double {
         let pricing = ProviderCatalog.pricing(for: provider, model: model)
         let cost = pricing.cost(of: usage)
         let date = now()
@@ -102,7 +112,7 @@ public actor UsageLedger {
         var entry = f.months[month, default: MonthUsage(month: month)].models[key]
             ?? ModelUsage(provider: provider, model: model, totals: UsageTotals(), isEstimate: false)
         entry.totals.add(usage, cost: cost)
-        entry.isEstimate = entry.isEstimate || pricing.isEstimate
+        entry.isEstimate = entry.isEstimate || pricing.isEstimate || isEstimate
         f.months[month, default: MonthUsage(month: month)].models[key] = entry
         if let sessionID {
             var s = f.sessions[sessionID.uuidString] ?? SessionUsage(lastUsed: date)
@@ -130,7 +140,37 @@ public actor UsageLedger {
     /// Dollars attributed to one session (lecture).
     public func cost(forSession id: UUID) -> Double { loaded().sessions[id.uuidString]?.totals.costUSD ?? 0 }
 
-    public func totals(forSession id: UUID) -> UsageTotals { loaded().sessions[id.uuidString]?.totals ?? UsageTotals() }
+    // MARK: Reservations
+
+    /// Holds `estimatedUSD` against the monthly cap while a call is in flight. Returns nil, holding
+    /// nothing, when what's already spent or held plus this call could pass `capUSD`. The check and
+    /// the hold are one step, so concurrent calls from any role or lecture share the same budget.
+    public func reserve(estimatedUSD: Double, withinCapUSD capUSD: Double) -> UUID? {
+        let committed = month().totalUSD + reservedUSD()
+        guard SpendCapDecision.decide(spentUSD: committed, capUSD: capUSD, estimateUSD: estimatedUSD, fallbackAvailable: true) == .proceed else { return nil }
+        let id = UUID()
+        reservations[id] = (max(0, estimatedUSD), now())
+        return id
+    }
+
+    /// Ends a hold once the call has been recorded (or has ended without a cost).
+    public func release(_ reservation: UUID) { reservations[reservation] = nil }
+
+    /// Total of the holds still in flight.
+    public func reservedUSD() -> Double {
+        let cutoff = now().addingTimeInterval(-Self.reservationLifetime)
+        reservations = reservations.filter { $0.value.since >= cutoff }
+        return reservations.values.reduce(0) { $0 + $1.usd }
+    }
+
+    // MARK: Health
+
+    /// A one-line description of anything wrong with the ledger's storage, or nil when it is healthy:
+    /// the totals may be incomplete, or this session's usage isn't being saved.
+    public func storageProblem() -> String? {
+        _ = loaded()
+        return saveError ?? loadProblem
+    }
 
     // MARK: Cap notice
 
@@ -184,15 +224,24 @@ public actor UsageLedger {
     private func loaded() -> LedgerFile {
         if let file { return file }
         var f = LedgerFile()
-        if let data = try? Data(contentsOf: fileURL) {
+        if FileManager.default.fileExists(atPath: fileURL.path) {
             do {
-                f = try JSONDecoder.ledger.decode(LedgerFile.self, from: data)
+                let data = try Data(contentsOf: fileURL)
+                do {
+                    f = try JSONDecoder.ledger.decode(LedgerFile.self, from: data)
+                } catch {
+                    // Keep the unreadable file for inspection rather than overwriting it.
+                    let aside = fileURL.deletingPathExtension().appendingPathExtension("unreadable.json")
+                    try? FileManager.default.removeItem(at: aside)
+                    try? FileManager.default.moveItem(at: fileURL, to: aside)
+                    loadProblem = "The usage history file was damaged and set aside, so earlier spending isn't counted."
+                    Self.logger.error("usage.json was unreadable (\(error.localizedDescription, privacy: .public)); moved aside and starting fresh")
+                }
             } catch {
-                // Keep the unreadable file for inspection rather than overwriting it.
-                let aside = fileURL.deletingPathExtension().appendingPathExtension("unreadable.json")
-                try? FileManager.default.removeItem(at: aside)
-                try? FileManager.default.moveItem(at: fileURL, to: aside)
-                Self.logger.error("usage.json was unreadable (\(error.localizedDescription, privacy: .public)); moved aside and starting fresh")
+                // Present but can't be read (permissions, I/O): don't write over it.
+                isReadOnly = true
+                loadProblem = "The usage history file can't be read, so earlier spending isn't counted and new usage isn't being saved."
+                Self.logger.error("usage.json couldn't be read: \(error.localizedDescription, privacy: .public)")
             }
         }
         let cutoff = now().addingTimeInterval(-Self.sessionRetention)
@@ -202,7 +251,7 @@ public actor UsageLedger {
     }
 
     private func save() {
-        guard let file else { return }
+        guard let file, !isReadOnly else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder.ledger.encode(file).write(to: fileURL, options: .atomic)

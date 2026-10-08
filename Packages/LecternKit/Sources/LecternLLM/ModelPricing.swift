@@ -36,6 +36,30 @@ public struct ModelPricing: Sendable, Hashable {
     }
 }
 
+extension LLMRequest {
+    /// A deliberately generous token count for the prompt (one token per 3 UTF-8 bytes, plus message
+    /// framing), so an estimated cost never under-counts. Real counts come from the provider.
+    var estimatedInputTokens: Int {
+        messages.reduce(0) { $0 + Self.estimatedTokens(utf8Bytes: $1.content.utf8.count) + 4 } + 3
+    }
+
+    static func estimatedTokens(utf8Bytes: Int) -> Int { (max(0, utf8Bytes) + 2) / 3 }
+}
+
+extension ModelPricing {
+    /// The most `request` could cost: the whole prompt at the fresh-input price (no cache discount)
+    /// plus every allowed output token.
+    public func estimatedMaximumCost(of request: LLMRequest) -> Double {
+        cost(of: LLMUsage(inputTokens: request.estimatedInputTokens, outputTokens: max(0, request.maxTokens)))
+    }
+
+    /// Usage to book for a call whose provider never reported any (cancelled or failed mid-stream,
+    /// or a response without a usage block): the prompt estimate plus `outputBytes` of generated text.
+    func estimatedUsage(of request: LLMRequest, outputBytes: Int) -> LLMUsage {
+        LLMUsage(inputTokens: request.estimatedInputTokens, outputTokens: LLMRequest.estimatedTokens(utf8Bytes: outputBytes))
+    }
+}
+
 extension ProviderCatalog {
     /// Prompt-cache multipliers per provider: (cache read, cache write).
     ///

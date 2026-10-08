@@ -52,6 +52,14 @@ struct SupportTests {
         #expect(builder.words[0].end == 0.3)
     }
 
+    @Test func aBareWordMarkerStartsTheNextWordEvenAcrossUpdates() {
+        var builder = WordBuilder()
+        builder.append([RecognizedToken(text: " in", start: 0, end: 0.2), RecognizedToken(text: " ", start: 0.2, end: 0.3)])
+        builder.append([RecognizedToken(text: "1", start: 0.3, end: 0.4), RecognizedToken(text: "9", start: 0.4, end: 0.5)])
+        #expect(builder.words.map(\.text) == ["in", "19"])
+        #expect(builder.words[1].start == 0.3)
+    }
+
     @Test func resamplerConvertsToSixteenKilohertzMono() throws {
         let source = AVAudioFormatFactory.make(sampleRate: 48_000, channels: 2)
         let resampler = try MonoResampler(from: source)

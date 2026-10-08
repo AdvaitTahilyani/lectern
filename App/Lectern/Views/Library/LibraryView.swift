@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// Home: grid of lectures grouped by course, searchable (DESIGN.md §4.1).
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
+    @Environment(WindowNavigation.self) private var nav
     @State private var selectedSession: UUID?
     @State private var isDropTargeted = false
     @State private var thumbnails = ThumbnailCache()
@@ -25,11 +26,11 @@ struct LibraryView: View {
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: DS.Space.l)]
 
     var body: some View {
-        @Bindable var app = app
+        @Bindable var nav = nav
         Group {
             if let error = app.libraryError, app.sessions.isEmpty {
                 EmptyStateView(symbol: "externaldrive.badge.exclamationmark", title: "Can't read the library", message: error, action: ("Try Again", { Task { await app.loadLibrary() } }))
-            } else if !app.searchText.trimmingCharacters(in: .whitespaces).isEmpty, app.searchText.count >= 2 {
+            } else if nav.searchText.trimmingCharacters(in: .whitespaces).count >= 2 {
                 searchResults
             } else if visibleSessions.isEmpty, app.isLibraryLoaded {
                 emptyState
@@ -58,8 +59,21 @@ struct LibraryView: View {
             if removal.isImport {
                 Text("The import stops and what was processed so far is moved to the Trash.")
             } else {
-                Text("\(removal.verb == "Discard" ? "Its recording and transcript" : "The lecture, with its transcript, takeaways and slides,") will be moved to the Trash.")
+                Text("\(removal.verb == "Discard" ? "Its transcript, takeaways and slides" : "The lecture, with its transcript, takeaways and slides,") will be moved to the Trash.")
             }
+        }
+        // The Trash refused a lecture: nothing was deleted. Erasing it for good is a separate,
+        // explicit choice, offered only here.
+        .confirmationDialog(
+            app.permanentDeletionOffer.map { "Couldn't move “\($0.title)” to the Trash" } ?? "",
+            isPresented: Binding(get: { app.permanentDeletionOffer != nil }, set: { if !$0 { app.declinePermanentDeletion() } }),
+            titleVisibility: .visible,
+            presenting: app.permanentDeletionOffer
+        ) { _ in
+            Button("Delete Permanently", role: .destructive) { app.confirmPermanentDeletion() }
+            Button("Keep Lecture", role: .cancel) { app.declinePermanentDeletion() }
+        } message: { offer in
+            Text("\(offer.reason) You can keep the lecture, or delete it permanently, which can't be undone.")
         }
         .overlay {
             RoundedRectangle(cornerRadius: DS.Radius.float, style: .continuous)
@@ -75,23 +89,23 @@ struct LibraryView: View {
         // Course Ask is this view's inspector (inside the NavigationStack), never a second inspector
         // on the split view: two inspector items in one window loop AppKit's constraint pass once
         // a session view (which has its own inspector) is pushed.
-        .inspector(isPresented: $app.showCourseAsk) {
-            if let courseID = app.contextCourseID {
+        .inspector(isPresented: $nav.showCourseAsk) {
+            if let courseID = app.contextCourseID(for: nav) {
                 SizeNeutral { CourseAskView(model: app.courseAsk(for: courseID), course: app.course(id: courseID)) }
                     .inspectorColumnWidth(min: DS.Layout.inspector.min, ideal: DS.Layout.inspector.ideal, max: DS.Layout.inspector.max)
             }
         }
-        .searchable(text: $app.searchText, placement: .toolbar, prompt: "Search lectures, transcripts…")
+        .searchable(text: $nav.searchText, placement: .toolbar, prompt: "Search lectures, transcripts…")
         .searchFocused($searchFocused)
-        .onReceive(NotificationCenter.default.publisher(for: .lecternFind)) { _ in
-            guard app.path.isEmpty else { return }
+        .onWindowCommand(.lecternFind) {
+            guard nav.path.isEmpty else { return }
             Task { @MainActor in await Task.yield(); searchFocused = true }
         }
-        .searchScopes($app.searchScope, activation: .onSearchPresentation) {
+        .searchScopes($nav.searchScope, activation: .onSearchPresentation) {
             ForEach(LibrarySearchScope.allCases) { Text($0.label).tag($0) }
         }
-        .onChange(of: app.searchText) { _, _ in app.searchTextChanged(); scheduleNoResults() }
-        .onChange(of: app.searchScope) { _, _ in app.searchTextChanged() }
+        .onChange(of: nav.searchText) { _, _ in runSearch(); scheduleNoResults() }
+        .onChange(of: nav.searchScope) { _, _ in runSearch() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -150,7 +164,7 @@ struct LibraryView: View {
     // MARK: Data
 
     private var selectedCourse: Course? {
-        if case .course(let id) = app.sidebarSelection { return app.course(id: id) }
+        if case .course(let id) = nav.sidebarSelection { return app.course(id: id) }
         return nil
     }
 
@@ -192,30 +206,31 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder
     private func section(title: String, subtitle: String?, count: Int?, sessions: [LectureSession], collapsible: UUID?) -> some View {
         let collapsed = collapsible.map { app.preferences.collapsedCourses.contains($0) } ?? false
-        VStack(alignment: .leading, spacing: DS.Space.m) {
-            Button {
-                guard let id = collapsible else { return }
-                withAnimation(DS.Motion.settle) {
-                    app.updatePreferences { if $0.collapsedCourses.contains(id) { $0.collapsedCourses.remove(id) } else { $0.collapsedCourses.insert(id) } }
-                }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                    Text(title).font(DS.Typo.title3).fontWeight(.semibold)
-                    if let subtitle, !subtitle.isEmpty { Text("— \(subtitle)").font(DS.Typo.title3).foregroundStyle(.secondary).lineLimit(1) }
-                    Spacer()
-                    if let count { Text("\(count)").font(DS.Typo.subheadline).foregroundStyle(.secondary) }
-                    if collapsible != nil {
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                            .rotationEffect(.degrees(collapsed ? 0 : 90))
-                    }
-                }
-                .contentShape(Rectangle())
+        let header = HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+            Text(title).font(DS.Typo.title3).fontWeight(.semibold)
+            if let subtitle, !subtitle.isEmpty { Text("— \(subtitle)").font(DS.Typo.title3).foregroundStyle(.secondary).lineLimit(1) }
+            Spacer()
+            if let count { Text("\(count)").font(DS.Typo.subheadline).foregroundStyle(.secondary) }
+            if collapsible != nil {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
             }
-            .buttonStyle(.plain)
-            .disabled(collapsible == nil)
+        }
+        .contentShape(Rectangle())
+        return VStack(alignment: .leading, spacing: DS.Space.m) {
+            // Only a course section collapses; a disabled button would grey the other titles out.
+            if let id = collapsible {
+                Button {
+                    withAnimation(DS.Motion.settle) {
+                        app.updatePreferences { if $0.collapsedCourses.contains(id) { $0.collapsedCourses.remove(id) } else { $0.collapsedCourses.insert(id) } }
+                    }
+                } label: { header }
+                .buttonStyle(.plain)
+            } else {
+                header
+            }
             if !collapsed {
                 LazyVGrid(columns: columns, spacing: DS.Space.l) {
                     ForEach(sessions) { s in card(for: s) }
@@ -232,6 +247,7 @@ struct LibraryView: View {
                 ImportProgressCard(session: s, job: job, course: app.course(id: s.courseID), onCancel: { pendingRemoval = PendingRemoval(session: s, verb: "Cancel the import of", isImport: true) }, onDismiss: { app.dismissFailedImport(s.id) })
             } else if app.isInterrupted(s) {
                 InterruptedCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s),
+                                canFinish: s.status != .importing || app.canFinishInterruptedImport(s),
                                 onResume: { app.resumeInterrupted(s.id) }, onFinish: { app.finishInterrupted(s.id) }, onDiscard: { pendingRemoval = PendingRemoval(session: s, verb: "Discard") })
             } else {
                 LectureCard(session: s, course: app.course(id: s.courseID), courseColor: app.courseColor(app.course(id: s.courseID)), thumbnail: thumbnail(for: s), isSelected: selectedSession == s.id, isLive: isLive, liveElapsed: isLive ? app.liveSession?.elapsed ?? 0 : 0)
@@ -259,10 +275,8 @@ struct LibraryView: View {
     }
 
     private func thumbnail(for s: LectureSession) -> NSImage? {
-        guard let deck = s.deck else { return nil }
-        if let store = thumbnails.stores[s.id] { return store.image(page: 1, width: 300) }
-        thumbnails.load(sessionID: s.id, fileName: deck.fileName, store: app.services.store)
-        return nil
+        guard let deck = s.decks.first else { return nil }
+        return thumbnails.thumbnail(sessionID: s.id, fileName: deck.fileName, store: app.services.store)
     }
 
     private var interruptedBanner: some View {
@@ -279,6 +293,10 @@ struct LibraryView: View {
 
     // MARK: Empty & search
 
+    private func runSearch() {
+        nav.searchTextChanged(search: app.services.search, library: app.sessions)
+    }
+
     private var emptyState: some View {
         Group {
             if let c = selectedCourse {
@@ -291,19 +309,21 @@ struct LibraryView: View {
 
     private var searchResults: some View {
         Group {
-            if app.searchResults.isEmpty {
-                if showNoResults && !app.isSearching {
-                    EmptyStateView(symbol: "magnifyingglass", title: "No matches", message: "No matches for “\(app.searchText)”")
+            if nav.searchResults.isEmpty {
+                if showNoResults && !nav.isSearching {
+                    EmptyStateView(symbol: "magnifyingglass", title: "No matches", message: "No matches for “\(nav.searchText)”")
                 } else {
                     Color.clear
                 }
             } else {
-                List(app.searchResults) { hit in
+                List(nav.searchResults) { hit in
                     SearchHitRow(hit: hit, session: app.sessions.first { $0.id == hit.sessionID }, course: app.course(id: app.sessions.first { $0.id == hit.sessionID }?.courseID))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { app.openSession(hit.sessionID, at: hit.time, slide: hit.slide) }
                         .focusable()
                         .onKeyPress(.return) { app.openSession(hit.sessionID, at: hit.time, slide: hit.slide); return .handled }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { app.openSession(hit.sessionID, at: hit.time, slide: hit.slide) }
                 }
                 .listStyle(.inset)
             }
@@ -336,24 +356,6 @@ struct LibraryView: View {
     }
 }
 
-/// Lazily opens each session's deck for card thumbnails; requests are deduplicated so view
-/// bodies can ask repeatedly without spawning extra work.
-@Observable
-@MainActor
-final class ThumbnailCache {
-    private(set) var stores: [UUID: SlideImageStore] = [:]
-    @ObservationIgnored private var requested: Set<UUID> = []
-
-    func load(sessionID: UUID, fileName: String, store: any SessionStoring) {
-        guard requested.insert(sessionID).inserted else { return }
-        Task {
-            if let folder = try? await store.folder(for: sessionID) {
-                stores[sessionID] = SlideImageStore(url: folder.appendingPathComponent(fileName))
-            }
-        }
-    }
-}
-
 // MARK: - Rows & cards
 
 struct SearchHitRow: View {
@@ -373,6 +375,18 @@ struct SearchHitRow: View {
             }
         }
         .padding(.vertical, DS.Space.xs)
+        // The chips here are inert (the row opens on double-click or ↩): one element, not three buttons.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenSummary)
+    }
+
+    private var spokenSummary: String {
+        var parts = [session?.title ?? "Lecture", hit.snippet]
+        if let t = hit.time { parts.append("at \(TimeFormat.clock(t))") }
+        if let s = hit.slide { parts.append("slide \(s)") }
+        if let course { parts.append(course.code) }
+        parts.append(fieldLabel)
+        return parts.joined(separator: ", ")
     }
 
     private var fieldLabel: String {
@@ -388,7 +402,7 @@ struct SearchHitRow: View {
     }
 }
 
-/// Library card for a session being imported: staged progress (Downloading → Transcribing → Summarizing).
+/// Library card for a session being imported: staged progress (Downloading, or Preparing audio for a local file → Transcribing → Summarizing).
 struct ImportProgressCard: View {
     var session: LectureSession
     var job: ImportJob
@@ -396,7 +410,9 @@ struct ImportProgressCard: View {
     var onCancel: () -> Void
     var onDismiss: () -> Void
 
-    private let stages = ["Downloading", "Transcribing", "Summarizing"]
+    private var stages: [String] {
+        if case .mediaSpace = session.source { ["Downloading", "Transcribing", "Summarizing"] } else { ["Preparing audio", "Transcribing", "Summarizing"] }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
@@ -455,26 +471,36 @@ struct InterruptedCard: View {
     var course: Course?
     var courseColor: Color
     var thumbnail: NSImage?
+    /// False for an import interrupted before any transcript was saved: there is nothing to finish.
+    var canFinish = true
     var onResume: () -> Void
     var onFinish: () -> Void
     var onDiscard: () -> Void
+
+    private var interruptedLabel: String {
+        if session.status == .importing {
+            return canFinish ? "Import was interrupted; its transcript was saved" : "Import was interrupted before anything was transcribed"
+        }
+        return "Interrupted at \(TimeFormat.clock(session.transcript.last?.end ?? session.duration))"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             LectureCard(session: session, course: course, courseColor: courseColor, thumbnail: thumbnail, isSelected: false, isLive: false)
             HStack(spacing: DS.Space.s) {
                 Image(systemName: "exclamationmark.arrow.circlepath").foregroundStyle(DS.Colors.warning)
-                Text(session.status == .importing ? "Import was interrupted" : "Interrupted at \(TimeFormat.clock(session.transcript.last?.end ?? session.duration))")
+                Text(interruptedLabel)
                     .font(DS.Typo.footnote).foregroundStyle(.secondary)
                 Spacer()
                 if session.status != .importing { Button("Resume", action: onResume).controlSize(.small) }
-                Button("Finish", action: onFinish).controlSize(.small)
+                if canFinish { Button(session.status == .importing ? "Finish Import" : "Finish", action: onFinish).controlSize(.small) }
+                else { Button("Discard", role: .destructive, action: onDiscard).controlSize(.small) }
             }
             .padding(.horizontal, DS.Space.xs)
         }
         .contextMenu {
             if session.status != .importing { Button("Resume Recording", action: onResume) }
-            Button("Finish and Summarize", action: onFinish)
+            if canFinish { Button("Finish and Summarize", action: onFinish) }
             Divider()
             Button("Discard…", role: .destructive, action: onDiscard)
         }

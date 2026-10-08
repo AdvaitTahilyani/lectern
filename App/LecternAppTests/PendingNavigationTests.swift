@@ -25,14 +25,15 @@ struct PendingNavigationTests {
         let app = AppModel(services: .demo, isDemo: true)
         let id = Self.seeded.id
         app.openSession(id, at: 426, slide: 7)
-        #expect(app.pendingNavigation?.time == 426)
-        #expect(app.pendingNavigation?.slide == 7)
-        #expect(app.takePendingNavigation(for: UUID()) == nil, "another lecture's view never consumes it")
-        let nav = app.takePendingNavigation(for: id)
+        let window = app.activeNavigation
+        #expect(window.pendingNavigation?.time == 426)
+        #expect(window.pendingNavigation?.slide == 7)
+        #expect(window.takePendingNavigation(for: UUID()) == nil, "another lecture's view never consumes it")
+        let nav = window.takePendingNavigation(for: id)
         #expect(nav?.sessionID == id)
-        #expect(app.pendingNavigation == nil)
+        #expect(window.pendingNavigation == nil)
         app.openSession(id)
-        #expect(app.pendingNavigation == nil, "a plain open has nothing to apply")
+        #expect(window.pendingNavigation == nil, "a plain open has nothing to apply")
     }
 
     @Test func repeatedRequestsToTheSamePlaceStayDistinct() {

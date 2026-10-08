@@ -24,6 +24,8 @@ public struct PDFSlideIngestor: SlideIngesting {
     public var sparseTextCharacters: Int
     /// Upper bound on pages recognized simultaneously.
     public var maxConcurrentOCR: Int
+    /// Reads the text of one rendered page (Vision). Replaceable so tests can make pages fail.
+    var recognizeText: @Sendable (CGImage) async throws -> RecognizedPageText = { try await SlideTextRecognizer.recognize($0) }
 
     private static let logger = Logger(subsystem: "app.lectern", category: "slides.ingest")
 
@@ -70,11 +72,14 @@ public struct PDFSlideIngestor: SlideIngesting {
         let extractionShare = ocrPages.isEmpty ? 0.95 : 0.4
         progress(extractionShare)
 
-        // 3. OCR image-only pages.
+        // 3. OCR image-only pages. Pages it fails on are flagged on the deck, so the app can say
+        // which slides have no searchable text instead of reporting a fully indexed deck.
+        var unrecognized: Set<Int> = []
         if !ocrPages.isEmpty {
-            let results = try await recognize(pages: ocrPages, url: url) { done in
+            let (results, failed) = try await recognize(pages: ocrPages, url: url) { done in
                 progress(extractionShare + (0.95 - extractionShare) * Double(done) / Double(ocrPages.count))
             }
+            unrecognized = failed
             for (index, recognized) in results {
                 let lines = SlideTextCleaner.removingFurniture(
                     from: SlideTextCleaner.lines(from: recognized.text), footerKeys: footerKeys
@@ -94,7 +99,8 @@ public struct PDFSlideIngestor: SlideIngesting {
         }
 
         let slidePages = (0..<pageCount).map {
-            SlidePage(number: $0 + 1, title: titles[$0], text: cleaned[$0].joined(separator: "\n"))
+            SlidePage(number: $0 + 1, title: titles[$0], text: cleaned[$0].joined(separator: "\n"),
+                      textRecognitionFailed: unrecognized.contains($0) ? true : nil)
         }
         let deck = SlideDeck(
             fileName: url.lastPathComponent,
@@ -110,11 +116,11 @@ public struct PDFSlideIngestor: SlideIngesting {
 
     /// Recognizes `pages` (0-based indices) with at most `maxConcurrentOCR` in flight. Rendering
     /// uses its own `CGPDFDocument` and happens serially; only recognition runs concurrently.
-    /// Individual page failures are logged and leave that page empty; if every page fails, the
-    /// error is thrown.
+    /// Individual page failures are logged and returned (0-based) as `failed`, leaving that page's
+    /// text as PDFKit extracted it; if every page fails, the error is thrown.
     private func recognize(
         pages: [Int], url: URL, onPageDone: @Sendable (Int) -> Void
-    ) async throws -> [Int: RecognizedPageText] {
+    ) async throws -> (results: [Int: RecognizedPageText], failed: Set<Int>) {
         let renderer = try PDFPageRenderer(url: url, password: password)
         var results: [Int: RecognizedPageText] = [:]
         var failures: [(page: Int, error: any Error)] = []
@@ -135,8 +141,9 @@ public struct PDFSlideIngestor: SlideIngesting {
                     try enqueueNext()
                     return
                 }
+                let recognizeText = recognizeText
                 group.addTask {
-                    do { return (index, .success(try await SlideTextRecognizer.recognize(image))) } catch {
+                    do { return (index, .success(try await recognizeText(image))) } catch {
                         return (index, .failure(error))
                     }
                 }
@@ -161,7 +168,7 @@ public struct PDFSlideIngestor: SlideIngesting {
                 pages: failures.map(\.page).sorted(), reason: first.error.localizedDescription
             )
         }
-        return results
+        return (results, Set(failures.map { $0.page - 1 }))
     }
 
     // MARK: Deck title

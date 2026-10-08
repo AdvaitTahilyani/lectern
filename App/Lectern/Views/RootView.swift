@@ -8,18 +8,22 @@ struct RootView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.controlActiveState) private var controlActiveState
     @State private var didCheckOnboarding = false
+    /// This window's own navigation (sidebar, screen, search); other windows have theirs (B32).
+    @State private var nav = WindowNavigation(columnVisibility: AppModelActivation.shared.map { $0.preferences.sidebarVisible ? .all : .detailOnly } ?? .all)
 
     var body: some View {
         @Bindable var app = app
-        NavigationSplitView(columnVisibility: $app.columnVisibility) {
+        @Bindable var nav = nav
+        NavigationSplitView(columnVisibility: $nav.columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: DS.Layout.sidebar.min, ideal: DS.Layout.sidebar.ideal, max: DS.Layout.sidebar.max)
         } detail: {
             // Exactly one of Library / Setup / Session is in the hierarchy (a NavigationStack kept
             // the Library rendered underneath a session and it bled through — QA V1).
             ZStack {
-                switch app.path.last {
+                switch nav.path.last {
                 case nil:
                     LibraryView().transition(.opacity)
                 case .setup:
@@ -32,16 +36,25 @@ struct RootView: View {
                     }
                 }
             }
-            .animation(DS.Motion.reduced, value: app.path.last)
+            .animation(DS.Motion.reduced, value: nav.path.last)
         }
         .navigationSplitViewStyle(.balanced)
-        .task { await app.loadLibrary() }
-        .onAppear { checkOnboarding() }
-        .onChange(of: app.columnVisibility) { _, v in app.updatePreferences { $0.sidebarVisible = v != .detailOnly } }
+        .environment(nav)
+        .task { await app.loadLibraryOnce() }
+        .onAppear {
+            app.register(nav)
+            app.openMainWindow = { openWindow(id: "main") }
+            checkOnboarding()
+        }
+        .onDisappear { app.unregister(nav) }
+        .onChange(of: controlActiveState, initial: true) { _, state in if state == .key { app.windowBecameKey(nav) } }
+        // The window hosting a recording hides its sidebar itself; that is not the user's preference.
+        .onChange(of: nav.columnVisibility) { _, v in if nav !== app.liveWindow, nav.isKey || nav === app.activeNavigation { app.updatePreferences { $0.sidebarVisible = v != .detailOnly } } }
         .onReceive(NotificationCenter.default.publisher(for: .lecternOpenOnboarding)) { _ in openWindow(id: "onboarding") }
         .onReceive(NotificationCenter.default.publisher(for: .lecternOpenSettings)) { _ in openSettings() }
-        .sheet(isPresented: $app.showImportSheet) { ImportSheet().environment(app) }
-        .sheet(isPresented: Binding(get: { app.importDraft.showMediaSpace }, set: { if !$0 { app.mediaSpaceBrowserDidFinish(nil) } })) {
+        // The import flow belongs to the window that started it.
+        .sheet(isPresented: Binding(get: { app.showImportSheet && app.importPresenter === nav }, set: { app.showImportSheet = $0 })) { ImportSheet().environment(app) }
+        .sheet(isPresented: Binding(get: { app.importDraft.showMediaSpace && app.importPresenter === nav }, set: { if !$0 { app.mediaSpaceBrowserDidFinish(nil) } })) {
             MediaSpaceSheet { source in app.mediaSpaceBrowserDidFinish(source) }.environment(app)
         }
     }
@@ -60,14 +73,15 @@ struct RootView: View {
 
 struct SidebarView: View {
     @Environment(AppModel.self) private var app
+    @Environment(WindowNavigation.self) private var nav
     @Environment(\.openSettings) private var openSettings
     @State private var editingCourse: Course?
     @State private var creatingCourse = false
     @State private var deletingCourse: Course?
 
     var body: some View {
-        @Bindable var app = app
-        List(selection: $app.sidebarSelection) {
+        @Bindable var nav = nav
+        List(selection: $nav.sidebarSelection) {
             Label("All Lectures", systemImage: "books.vertical").tag(SidebarItem.all)
             Section("Courses") {
                 ForEach(app.courses) { course in
@@ -79,7 +93,7 @@ struct SidebarView: View {
                     .badge(app.lectureCount(in: course.id))
                     .tag(SidebarItem.course(course.id))
                     .contextMenu {
-                        Button("Ask \(course.code)…") { app.sidebarSelection = .course(course.id); app.showCourseAsk = true }
+                        Button("Ask \(course.code)…") { nav.sidebarSelection = .course(course.id); nav.showCourseAsk = true }
                         Divider()
                         Button("Rename…") { editingCourse = course }
                         Button("Slides folder…") { app.chooseSlidesFolder(for: course.id) }
@@ -116,14 +130,22 @@ struct SidebarView: View {
         .sheet(item: $editingCourse) { course in CourseEditorSheet(course: course) }
         .sheet(isPresented: $creatingCourse) { CourseEditorSheet(course: nil) }
         .confirmationDialog(deletingCourse.map { "Delete \($0.code)?" } ?? "", isPresented: Binding(get: { deletingCourse != nil }, set: { if !$0 { deletingCourse = nil } }), titleVisibility: .visible) {
-            Button("Delete Course and \(deletingCourse.map { app.lectureCount(in: $0.id) } ?? 0) Lectures", role: .destructive) {
-                if let c = deletingCourse { app.deleteCourse(c.id) }
-                deletingCourse = nil
+            // A recording or import in the course would be orphaned by deleting it, so the
+            // destructive button is withheld until that work is finished or cancelled.
+            if deletingCourse.flatMap({ app.courseDeletionBlocker($0.id) }) == nil {
+                Button(Self.deleteCourseTitle(lectures: deletingCourse.map { app.lectureCount(in: $0.id) } ?? 0), role: .destructive) {
+                    if let c = deletingCourse { app.deleteCourse(c.id) }
+                    deletingCourse = nil
+                }
             }
             Button("Cancel", role: .cancel) { deletingCourse = nil }
         } message: {
-            Text("This removes the course and every lecture in it, including transcripts and takeaways.")
+            Text(deletingCourse.flatMap { app.courseDeletionBlocker($0.id) } ?? "This moves the course's lectures to the Trash and removes the course, including transcripts and takeaways.")
         }
+    }
+
+    static func deleteCourseTitle(lectures: Int) -> String {
+        "Delete Course and \(lectures) Lecture\(lectures == 1 ? "" : "s")"
     }
 
     static let colorNames = ["Indigo", "Teal", "Orange", "Pink", "Green", "Purple", "Brown", "Cyan"]

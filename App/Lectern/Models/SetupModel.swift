@@ -61,11 +61,17 @@ final class SetupModel {
     }
 
     /// File extensions accepted by the drop zone / chooser (PDF plus whatever the converter handles).
-    var acceptedExtensions: Set<String> { Set(["pdf"]).union(services.presentationConverter?.supportedExtensions ?? []) }
+    var acceptedExtensions: Set<String> { DeckIntake.acceptedExtensions(services) }
 
-    /// Presenter notes extracted from a converted deck, keyed by 1-based slide.
-    private(set) var presenterNotes: [Int: String] = [:]
     private var convertTask: Task<Void, Never>?
+    /// Bumped by every deck selection (and removal): results of an older one's conversion or
+    /// indexing are dropped, never applied to the newer deck (audit B27).
+    private var selection = 0
+    /// The converted PDF of the selected PowerPoint/Keynote deck, owned here until the deck is
+    /// replaced, removed or handed to the lecture (audit B28).
+    private var conversion: ConvertedPresentation?
+    /// Slides of the indexed deck whose text OCR couldn't read (audit B43).
+    private(set) var pagesMissingText: [Int] = []
 
     /// Decks offered from the chosen course's slides folder (re-scanned whenever Setup opens or
     /// the course changes; no folder watching).
@@ -91,7 +97,10 @@ final class SetupModel {
     func beginMonitoring() {
         microphonePermission = services.microphonePermission()
         inputDevices = services.inputDevices()
-        if inputDeviceID == nil { inputDeviceID = inputDevices.first { $0.isDefault }?.id ?? inputDevices.first?.id }
+        // The meter shows, and Start records from, this device; an unplugged choice falls back to the default.
+        if inputDeviceID == nil || !inputDevices.contains(where: { $0.id == inputDeviceID }) {
+            inputDeviceID = inputDevices.first { $0.isDefault }?.id ?? inputDevices.first?.id
+        }
         guard levelTask == nil, microphonePermission == .granted else { return }
         let monitor = services.makeLevelMonitor()
         levelMonitor = monitor
@@ -142,39 +151,57 @@ final class SetupModel {
     func setDragTargeted(_ on: Bool) { isDragTargeted = on }
 
     /// Entry point for any accepted file: PDFs index directly; PPTX/Keynote are converted first.
+    /// Each call starts a fresh selection: whatever an earlier one was still doing is cancelled
+    /// and its results are ignored.
     func loadDeck(url: URL) {
+        let generation = beginSelection()
         let ext = url.pathExtension.lowercased()
         if ext != "pdf", let converter = services.presentationConverter, converter.supportedExtensions.contains(ext) {
-            convert(url: url, with: converter)
+            convert(url: url, with: converter, generation: generation)
             return
         }
         guard ext == "pdf" else { failDeck("Couldn't read that file"); return }
-        loadPDF(url: url)
+        loadPDF(url: url, displayName: nil, notes: [:], generation: generation)
     }
 
-    private func convert(url: URL, with converter: any PresentationConverting) {
+    /// Cancels the current selection's work and releases what it owns.
+    private func beginSelection() -> Int {
+        selection += 1
         convertTask?.cancel()
         indexTask?.cancel()
+        conversion?.dispose()
+        conversion = nil
+        pagesMissingText = []
+        return selection
+    }
+
+    private func convert(url: URL, with converter: any PresentationConverting, generation: Int) {
         deckError = nil
         deck = nil
         deckURL = url
+        deckDisplayName = url.lastPathComponent
         slideImages = nil
         indexing = .converting
         convertTask = Task { [weak self] in
             do {
                 let result = try await converter.convertToPDF(url)
-                guard let self, !Task.isCancelled else { return }
-                self.presenterNotes = result.notes
-                self.loadPDF(url: result.pdf, displayName: url.lastPathComponent)
+                let converted = ConvertedPresentation(pdf: result.pdf, notes: result.notes)
+                guard let self, generation == self.selection, !Task.isCancelled else {
+                    converted.dispose()
+                    return
+                }
+                self.conversion = converted
+                // The notes travel with this conversion, never onto a later PDF.
+                self.loadPDF(url: converted.pdf, displayName: url.lastPathComponent, notes: converted.notes, generation: generation)
             } catch is CancellationError {
             } catch {
-                self?.failDeck(error.localizedDescription)
+                guard let self, generation == self.selection else { return }
+                self.failDeck(error.localizedDescription)
             }
         }
     }
 
-    private func loadPDF(url: URL, displayName: String? = nil) {
-        indexTask?.cancel()
+    private func loadPDF(url: URL, displayName: String?, notes: [Int: String], generation: Int) {
         deckError = nil
         deckDisplayName = displayName ?? url.lastPathComponent
         deckURL = url
@@ -192,20 +219,23 @@ final class SetupModel {
             do {
                 let ingested = try await services.slideIngestor.ingest(pdfAt: url) { p in
                     Task { @MainActor in
-                        if case .indexing(_, let total) = self.indexing { self.indexing = .indexing(done: Int((p * Double(total)).rounded()), total: total) }
+                        guard generation == self.selection, case .indexing(_, let total) = self.indexing else { return }
+                        self.indexing = .indexing(done: Int((p * Double(total)).rounded()), total: total)
                     }
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, generation == self.selection else { return }
                 var deck = ingested
-                for (page, note) in self.presenterNotes {
+                for (page, note) in notes {
                     if let i = deck.pages.firstIndex(where: { $0.number == page }) { deck.pages[i].notes = note }
                 }
                 if let name = self.deckDisplayName { deck.originalFileName = name }
                 self.deck = deck
+                self.pagesMissingText = deck.pagesMissingText
                 self.indexing = .done(count: deck.pages.count)
                 self.suggestTitle(from: deck)
             } catch is CancellationError {
             } catch {
+                guard generation == self.selection else { return }
                 self.failDeck(error.localizedDescription)
             }
         }
@@ -244,10 +274,9 @@ final class SetupModel {
     }
 
     private func failDeck(_ message: String) {
-        convertTask?.cancel()
+        _ = beginSelection()
         deckURL = nil
         deckDisplayName = nil
-        presenterNotes = [:]
         deck = nil
         slideImages = nil
         indexing = nil
@@ -256,9 +285,7 @@ final class SetupModel {
     }
 
     func removeDeck() {
-        indexTask?.cancel()
-        convertTask?.cancel()
-        presenterNotes = [:]
+        _ = beginSelection()
         deckDisplayName = nil
         deckURL = nil
         deck = nil
@@ -292,14 +319,23 @@ final class SetupModel {
         LectureSession(courseID: courseID, title: resolvedTitle, status: .live, deck: deck)
     }
 
+    /// The deck file a starting lecture takes over, with its conversion (whose temporary PDF the
+    /// lecture deletes once it has copied it). Setup no longer owns either afterwards.
+    func takeStartingDeck() -> (url: URL, conversion: ConvertedPresentation?)? {
+        guard let deckURL, deck != nil else { return nil }
+        let taken = (deckURL, conversion)
+        conversion = nil
+        return taken
+    }
+
     /// Clears the draft after a session starts (course is kept as the default for next time).
     func reset() {
         endMonitoring()
         title = ""
         titleIsSuggested = false
+        _ = beginSelection()
         deckURL = nil
         deckDisplayName = nil
-        presenterNotes = [:]
         deck = nil
         slideImages = nil
         indexing = nil

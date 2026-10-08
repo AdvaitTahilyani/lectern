@@ -16,12 +16,14 @@ final class ImportJob: Identifiable {
 
     let id: UUID
     private(set) var session: LectureSession
-    private(set) var state: State = .running(.downloading(fraction: 0))
+    private(set) var state: State
     private var task: Task<Void, Never>?
 
     init(session: LectureSession) {
         id = session.id
         self.session = session
+        // A local file has nothing to download: it starts at extracting its audio.
+        if case .mediaSpace = session.source { state = .running(.downloading(fraction: 0)) } else { state = .running(.extractingAudio) }
     }
 
     var stage: ImportStage? { if case .running(let s) = state { s } else { nil } }
@@ -58,7 +60,7 @@ final class ImportJob: Identifiable {
         }
     }
 
-    /// Index of the current visible stage: 0 downloading, 1 transcribing, 2 summarizing.
+    /// Index of the current visible stage: 0 downloading (MediaSpace) or preparing audio (a file), 1 transcribing, 2 summarizing.
     var stageIndex: Int {
         guard case .running(let s) = state else { return state == .finished ? 3 : 0 }
         switch s {
@@ -69,14 +71,36 @@ final class ImportJob: Identifiable {
         }
     }
 
-    /// Runs the import of `draft` (the job's session plus anything prepared since the job was
-    /// created, such as the ingested deck). Jargon correction happens inside the importer, before
-    /// summarizing, so takeaways are written from the corrected transcript.
-    func start(_ draft: LectureSession, source: RecordingSource, services: AppServices, onFinished: @escaping (LectureSession) -> Void, onFailed: @escaping (String) -> Void) {
+    /// Runs the whole import under this job's one task: first `prepare` (copying the deck and
+    /// saving the draft), then `run` (the importer). Cancelling the job cancels both, and nothing
+    /// that comes after a cancellation starts or saves: `prepare` must check for cancellation after
+    /// each suspension and return nil if it sees one.
+    ///
+    /// - Parameters:
+    ///   - draft: the session the import builds on (the job's session plus anything prepared since,
+    ///     such as the ingested deck, which `prepare` adds).
+    ///   - prepare: runs before the import; nil result means "cancelled, stop".
+    ///   - run: the import itself: `RecordingImporting.importRecording` or `resumeImport`. Jargon
+    ///     correction happens inside the importer, before summarizing, so takeaways are written from
+    ///     the corrected transcript.
+    func start(
+        _ draft: LectureSession,
+        prepare: (@MainActor (LectureSession) async -> LectureSession?)? = nil,
+        run: @escaping @Sendable (LectureSession, @escaping @Sendable (ImportStage) -> Void) async throws -> LectureSession,
+        onFinished: @escaping (LectureSession) -> Void,
+        onFailed: @escaping (String) -> Void
+    ) {
         session = draft
         task = Task { [weak self] in
+            var current = draft
+            if let prepare {
+                guard let prepared = await prepare(current), !Task.isCancelled else { return }
+                current = prepared
+                self?.session = prepared
+            }
+            guard !Task.isCancelled else { return }
             do {
-                let result = try await services.recordingImporter.importRecording(source, into: draft) { stage in
+                let result = try await run(current) { stage in
                     Task { @MainActor in
                         guard let self, case .running = self.state else { return }
                         withAnimation(DS.Motion.numeric) { self.state = .running(stage) }
@@ -96,9 +120,22 @@ final class ImportJob: Identifiable {
         }
     }
 
+    /// Stops the import. Everything it was doing stops at its next cancellation check; use
+    /// `waitUntilStopped()` before touching what it was writing.
     func cancel() {
         task?.cancel()
         state = .cancelled
+    }
+
+    /// Returns once the import's task has ended, so no write of it can still be in flight.
+    func waitUntilStopped() async {
+        await task?.value
+    }
+
+    /// Adds what the app learned after the failure (e.g. that the transcript was kept) to the
+    /// message shown on the failed card.
+    func amendFailure(_ message: String) {
+        if case .failed = state { state = .failed(message) }
     }
 }
 
@@ -172,15 +209,11 @@ final class ImportDraft {
         }
     }
 
-    func setFile(_ url: URL) {
-        source = .file(url)
-        if title.isEmpty { title = suggestedTitle }
-    }
+    // The title field shows `suggestedTitle` as its placeholder and an empty title falls back to it, so
+    // choosing a source never fills the field: a later "Change" would otherwise keep the first one's name.
+    func setFile(_ url: URL) { source = .file(url) }
 
-    func setMediaSpace(_ s: MediaSpaceSource) {
-        source = .mediaSpace(s)
-        if title.isEmpty { title = suggestedTitle }
-    }
+    func setMediaSpace(_ s: MediaSpaceSource) { source = .mediaSpace(s) }
 
     func setDeck(_ url: URL?) {
         deckURL = url

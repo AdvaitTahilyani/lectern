@@ -69,13 +69,13 @@ enum Prompts {
 
     Rules:
     - A topic is one concept, one step of an algorithm, or one slide section (slides sharing a \
-    title), typically about 5 minutes of lecture (usually 3-8). Related ideas are still separate \
+    title), typically 3-5 minutes of lecture and rarely more than 7. Related ideas are still separate \
     topics: in a parsing lecture, "LL(1) parsing", "FIRST sets", "FOLLOW sets" and "Building the \
     parse table" are four topics. When the lecturer starts explaining a new named concept, the \
     next step of an algorithm, or moves to a slide with a new title, start a new topic.
     - Do not split for an example of the current concept, a student question or a short aside.
     - If the new lines only return to or restate one of the EARLIER TOPICS, reply "continue".
-    - If the current topic has run much longer than 5 minutes, look hard for where a new \
+    - If the current topic has run longer than 5 minutes, look hard for where a new \
     concept, step or slide section started.
     - Admin and chit-chat (homework, exams, quizzes, logistics, "can everyone hear me", the class \
     ending, students chatting) never become a topic and never appear in a summary: for those lines \
@@ -200,16 +200,16 @@ enum Prompts {
         return [system(summariesInstructions, lecture: input.lecture, digest: input.digest), .user(user)]
     }
 
-    /// Escalating nudge as the live topic ages past the ~5-minute target.
+    /// Escalating nudge as the live topic ages past the 3–5-minute target.
     static func splitPressure(title: String, duration: TimeInterval) -> String {
         let minutes = Int((duration / 60).rounded())
         switch duration {
-        case ..<(4 * 60):
+        case ..<(3.5 * 60):
             return " A worked example or a student question about the current concept is not a new topic."
-        case ..<(7 * 60):
-            return " \"\(title)\" has run \(minutes) min; topics in this lecture typically last about 5."
+        case ..<(5.5 * 60):
+            return " \"\(title)\" has run \(minutes) min; topics in this lecture typically last 3-5."
         default:
-            return " \"\(title)\" has run \(minutes) min, longer than a typical topic (about 5). Unless the new lines are clearly still the same single idea, reply \"new_topic\" at the first point where a new concept, step or slide section begins."
+            return " \"\(title)\" has run \(minutes) min, longer than a typical topic (3-5). Unless the new lines are clearly still the same single idea, reply \"new_topic\" at the first point where a new concept, step or slide section begins."
         }
     }
 
@@ -566,7 +566,42 @@ enum Prompts {
 
     // MARK: - Ask role
 
+    /// Ask's system prompt. The lecture's transcript (up to a recent boundary) follows the deck
+    /// digest in the same system message, so a follow-up question reuses all of it from the cache.
     static let askInstructions = """
+    You are a teaching assistant for the lecture below. A student is asking about it, either live \
+    or while reviewing. You have the slides, the transcript of the lecture so far and the topic \
+    list. Answer the way a strong TA would.
+
+    - Teach the idea. Explain how it works and why it is designed that way: the mechanism, the \
+    reason and the trade-off. Don't just restate a slide. Use a small example or the actual \
+    numbers when that makes it clearer.
+    - The lecture is your main source: follow its framing, terms and examples. Search the whole \
+    transcript, not just the slide: lecturers often explain a mechanism in passing. Lectures often \
+    only sketch an idea, so fill the gaps from your own knowledge of the subject. Mark what goes \
+    beyond the lecture briefly, e.g. "(beyond the lecture)" or "In general, …".
+    - If the lecture doesn't cover the question at all, begin with "This wasn't covered in the \
+    lecture." and then answer from general knowledge.
+    - The transcript comes from speech recognition, so words are often misheard (e.g. "has table" \
+    for "hash table"). Read through such errors and use the slides' spelling. If the lecturer \
+    misspoke or a number doesn't add up, give the correct one and say so. Lines starting with \
+    "Student:" are audience questions or comments, not the lecturer.
+    - Cite where it helps the student find the source: [S12] for slide 12, [T14:32] or [T1:02:05] \
+    for the transcript line with that timestamp ("S" is only for slide numbers). Usually one \
+    citation per point, at the end of its sentence, not after every clause. Only cite slides and \
+    times that appear in the material. Never cite general knowledge.
+    - Start directly with the answer. Never open with "Based on…", "To answer your question" or \
+    "Here are…".
+    - Be concise but complete: usually 80-250 words, and answer every part of the question. For a \
+    calculation, show the formula and each step with numbers. Numbers you use to illustrate a \
+    claim must actually show it.
+    - Short paragraphs or bullets. Bold a key term or two at most. No headings. No LaTeX or \
+    "$…$": write symbols directly (α, ε, →, ≤, ×).
+    """
+
+    /// The Ask instructions before October 2026 (short, lecture-only answers from retrieved
+    /// excerpts). Only `AskDesign.compact` uses them, to compare against in the Ask evaluation.
+    static let compactAskInstructions = """
     You are the study assistant in a lecture app. Answer the student's questions about the lecture \
     they are attending, using the lecture context sent with each question: topic summaries, slides \
     and transcript excerpts.
@@ -583,32 +618,63 @@ enum Prompts {
     symbols directly (α, ε, →, ∈).
     """
 
+    /// Heading of the transcript block at the end of Ask's system message. It must not contain
+    /// anything that changes as the lecture goes on, so a longer transcript keeps the old prefix.
+    static let askTranscriptHeading = "LECTURE TRANSCRIPT ([m:ss] is lecture time):"
+
     struct AskContext: Sendable {
+        var instructions: String = Prompts.askInstructions
         var lecture: Lecture
         var digest: String
+        /// The transcript from the start of the lecture, rendered into the system message (append-only
+        /// as the lecture goes on). Nil when the design retrieves excerpts instead.
+        var transcript: String? = nil
         var topics: String?
         var slides: String?
         var excerpts: String?
         var recent: String?
+        /// When set, `recent` is everything after the system transcript, starting at this time.
+        var continuesFrom: TimeInterval? = nil
+        /// The newest transcript time, for "what did I miss" and "just now" questions.
+        var now: TimeInterval? = nil
         var question: String
         /// "S25–S34": deck pages the lecture hasn't reached yet.
         var unshownSlides: String? = nil
     }
 
+    /// Byte-stable system message for one Ask call: instructions, lecture, deck digest and the
+    /// transcript so far. Later calls with more transcript extend it, never change it.
+    static func askSystem(_ context: AskContext) -> LLMMessage {
+        let base = system(context.instructions, lecture: context.lecture, digest: context.digest)
+        guard let transcript = context.transcript else { return base }
+        return .system(base.content + "\n\n" + askTranscriptHeading + "\n" + transcript)
+    }
+
+    /// System prefix, then prior turns, then the question with the material picked for it.
     static func ask(_ context: AskContext, history: [LLMMessage]) -> [LLMMessage] {
         var parts: [String] = ["LECTURE CONTEXT FOR THIS QUESTION"]
         parts.append("TOPICS SO FAR:\n" + (context.topics ?? "(none yet)"))
         if let slides = context.slides { parts.append("SLIDES:\n" + slides) }
         if let excerpts = context.excerpts { parts.append("TRANSCRIPT EXCERPTS:\n" + excerpts) }
-        if let recent = context.recent { parts.append("MOST RECENT TRANSCRIPT:\n" + recent) }
-        if context.slides == nil, context.excerpts == nil, context.recent == nil {
+        if let recent = context.recent {
+            let heading = context.continuesFrom.map { "TRANSCRIPT, CONTINUED FROM [\(TimeFormat.clock($0))]:" } ?? "MOST RECENT TRANSCRIPT:"
+            parts.append(heading + "\n" + recent)
+        }
+        if context.transcript == nil, context.slides == nil, context.excerpts == nil, context.recent == nil {
             parts.append("(No slides or transcript matched this question.)")
         }
         if let unshown = context.unshownSlides {
             parts.append("SLIDES NOT YET SHOWN: \(unshown). If you use them, say the lecture hasn't reached them yet.")
         }
+        if let now = context.now { parts.append("Latest transcript time: [\(TimeFormat.clock(now))].") }
         parts.append("=====\nQUESTION: " + context.question)
-        return [system(askInstructions, lecture: context.lecture, digest: context.digest)] + history + [.user(parts.joined(separator: "\n\n"))]
+        return [askSystem(context)] + history + [.user(parts.joined(separator: "\n\n"))]
+    }
+
+    /// Prefills Ask's system prefix ahead of the next question (on-device only); the reply is
+    /// discarded.
+    static func askWarmUp(_ context: AskContext) -> [LLMMessage] {
+        [askSystem(context), .user("(Preparing for the student's next question. Reply with OK.)")]
     }
 
     // MARK: - Course-wide Ask

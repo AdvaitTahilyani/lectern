@@ -135,6 +135,12 @@ private func fix(_ text: String) -> String { corrector.correct(text) }
         #expect(vocabulary.terms.first { $0.text == "genExpr" }?.occurrences == 2)
     }
 
+    /// A call with a short argument is not notation like `LL(1)`: the name is the term.
+    @Test func callsWithShortArgumentsStillYieldTheirName() {
+        let vocabulary = DeckVocabulary(pageTexts: ["x = genExpr(e); new_reg_name(t1); CFG(x); LL(1)"], titles: [])
+        #expect(Set(vocabulary.terms.map(\.text)) == ["genExpr", "new_reg_name", "CFG", "LL(1)"])
+    }
+
     @Test func spokenFormsSplitSpellAndExpand() {
         #expect(DeckVocabulary.camelComponents("loadAO") == ["load", "AO"])
         #expect(DeckVocabulary.camelComponents("XMLParser") == ["XML", "Parser"])

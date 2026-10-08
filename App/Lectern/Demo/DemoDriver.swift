@@ -11,9 +11,8 @@ import SwiftUI
 /// Commands: `screenshot:<dir>`, `open-setup`, `sample-deck`, `start`, `finish`, `open-review:<n>`,
 /// `open-library`, `tab:<transcript|ask|quiz>`, `pane:<takeaways|transcript|slides>`, `ask:<text>`,
 /// `answer:<1-4>`, `resize:<w>x<h>`, `appearance:<system|light|dark>`, `focus-panel`, `away:<sec>`,
-/// `settings`, `settings-tab:<name>`, `import`, `mediaspace`, `course-ask`, `dismiss`, `onboarding`,
-/// `select-course:<n>`, `sidebar:<show|hide>`, `inspector:<show|hide>`, `expand:<n>`, `stop-popover`,
-/// `review-missed`, `quit`.
+/// `settings`, `import`, `course-ask`, `ask-course:<text>`, `select-course:<n>`,
+/// `sidebar:<show|hide>`, `inspector:<show|hide>`, `expand:<n>`, `quit`.
 @MainActor
 final class DemoDriver {
     static let notificationName = Notification.Name("com.advait.Lectern.demo")
@@ -49,7 +48,7 @@ final class DemoDriver {
             let index = Int(arg) ?? 0
             let finished = app.sessions.filter { $0.status == .finished }
             if finished.indices.contains(index) { app.openSession(finished[index].id) }
-        case "open-library": app.path = []
+        case "open-library": app.activeNavigation.path = []
         case "tab":
             if let tab = InspectorTab(rawValue: arg) { currentSession?.inspectorTab = tab; currentSession?.isInspectorShown = true }
         case "pane":
@@ -69,13 +68,13 @@ final class DemoDriver {
         case "away": app.liveSession?.simulateAway(seconds: Double(arg) ?? 180)
         case "settings": NotificationCenter.default.post(name: .lecternOpenSettings, object: nil)
         case "import": app.showImport()
-        case "course-ask": if !app.showCourseAsk { app.toggleCourseAsk() }
+        case "course-ask": if !app.activeNavigation.showCourseAsk { app.toggleCourseAsk() }
         case "ask-course":
             if let id = app.contextCourseID { let m = app.courseAsk(for: id); m.prepare(sessions: app.sessions); m.ask(arg) }
         case "select-course":
             let i = Int(arg) ?? 0
-            if app.courses.indices.contains(i) { app.sidebarSelection = .course(app.courses[i].id) }
-        case "sidebar": app.columnVisibility = arg == "show" ? .all : .detailOnly
+            if app.courses.indices.contains(i) { app.activeNavigation.sidebarSelection = .course(app.courses[i].id) }
+        case "sidebar": app.activeNavigation.columnVisibility = arg == "show" ? .all : .detailOnly
         case "inspector": if (currentSession?.isInspectorShown ?? false) != (arg == "show") { currentSession?.toggleInspector() }
         case "expand":
             if let s = currentSession, let t = s.settledTakeaways.dropFirst(Int(arg) ?? 0).first { s.expandTakeaway(t.id) }
@@ -85,7 +84,7 @@ final class DemoDriver {
     }
 
     private var currentSession: LiveSessionModel? {
-        if case .session(let id) = app.path.last { return app.session(for: id) }
+        if let id = app.activeNavigation.visibleSessionID { return app.session(for: id) }
         return nil
     }
 

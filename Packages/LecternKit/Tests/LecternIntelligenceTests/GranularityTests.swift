@@ -7,9 +7,10 @@ import Testing
     @Test func splitPressureEscalatesPastTheFiveMinuteTarget() {
         #expect(Prompts.splitPressure(title: "t", duration: 3 * 60).contains("not a new topic"))
         #expect(!Prompts.splitPressure(title: "t", duration: 3 * 60).contains("has run"))
-        #expect(Prompts.splitPressure(title: "t", duration: 5 * 60).contains("typically last about 5"))
-        let strong = Prompts.splitPressure(title: "t", duration: 9 * 60)
-        #expect(strong.contains("has run 9 min") && strong.contains("reply \"new_topic\""))
+        #expect(Prompts.splitPressure(title: "t", duration: 4 * 60).contains("typically last 3-5"))
+        // Firm from 5.5 min, so no card reaches the 8-11 minutes seen in the CS 433 lecture.
+        let strong = Prompts.splitPressure(title: "t", duration: 6 * 60)
+        #expect(strong.contains("has run 6 min") && strong.contains("reply \"new_topic\""))
     }
 
     @Test func pressureAppearsOnlyInTheTailSoThePrefixStaysStable() {

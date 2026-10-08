@@ -122,7 +122,7 @@ struct FocusPanelView: View {
         .animation(DS.Motion.morph, value: session.liveTakeaway?.title)
         .padding(DS.Space.l)
         .frame(width: panelSize.width, height: panelSize.height, alignment: .top)
-        .onChange(of: session.quiz?.phase == .asking, initial: true) { _, _ in onResize(panelSize) }
+        .onChange(of: panelSize, initial: true) { _, size in onResize(size) }
         .lecternGlass(.regular, in: .rect(cornerRadius: DS.Radius.panel))
         .opacity(idle && !hovered && session.quiz == nil && app.preferences.focusPanelDimWhenIdle ? 0.85 : 1)
         .animation(DS.Motion.quick, value: idle)
@@ -132,16 +132,41 @@ struct FocusPanelView: View {
         }
         .onAppear { scheduleIdle() }
         .onKeyPress(characters: .decimalDigits) { press in
-            guard let quiz = session.quiz, quiz.phase == .asking, let n = Int(press.characters), (1...4).contains(n) else { return .ignored }
+            guard SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive), let quiz = session.quiz, quiz.phase == .asking, let n = Int(press.characters), (1...4).contains(n) else { return .ignored }
             session.selectOption(n - 1)
             return .handled
         }
-        .onKeyPress(.escape) { session.skipQuiz(); return .handled }
-        .onKeyPress("s") { session.snoozeQuiz(); return .handled }
+        .onKeyPress(.escape) { guard SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive), session.quiz != nil else { return .ignored }; session.skipQuiz(); return .handled }
+        .onKeyPress("s") { guard SessionShortcuts.singleKeysAllowed(textInputActive: TextInputFocus.isActive), session.quiz?.phase == .asking else { return .ignored }; session.snoozeQuiz(); return .handled }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Focus panel")
     }
 
-    private var panelSize: CGSize { session.quiz?.phase == .asking ? DS.Layout.focusPanelWithQuiz : DS.Layout.focusPanel }
+    /// The base panel, plus the quiz strip (and its divider) while a question is waiting for an answer.
+    /// The strip's height is computed from the question (fixed-height rows), never measured: the panel is
+    /// resized explicitly, and a measured size feeding the panel's own frame is the loop the controller avoids.
+    private var panelSize: CGSize {
+        guard let quiz = session.quiz, quiz.phase == .asking else { return DS.Layout.focusPanel }
+        return CGSize(width: DS.Layout.focusPanel.width, height: DS.Layout.focusPanel.height + Self.quizStripHeight(for: quiz.question) + DS.Space.s * 2 + 1)
+    }
+
+    private static let stripHeaderHeight: CGFloat = 20
+    private static let stripPromptHeight: CGFloat = 34
+    private static let optionRowHeight: CGFloat = 34
+    private static let maxOptionRows = 6
+
+    /// Header, prompt (two lines) and one fixed-height row per option, with the strip's spacing.
+    static func quizStripHeight(for question: QuizQuestion) -> CGFloat {
+        let gap = DS.Space.xs
+        let head = stripHeaderHeight + gap + stripPromptHeight + gap
+        switch question.kind {
+        case .multipleChoice(let options, _):
+            let rows = CGFloat(min(options.count, maxOptionRows))
+            return head + rows * optionRowHeight + max(0, rows - 1) * (DS.Space.xxs + 2)
+        case .shortAnswer:
+            return head + 16
+        }
+    }
 
     private var header: some View {
         HStack(spacing: DS.Space.s) {
@@ -152,7 +177,10 @@ struct FocusPanelView: View {
             HStack(spacing: DS.Space.xs) {
                 Button { session.togglePause() } label: { Image(systemName: session.recordingState == .paused ? "play.fill" : "pause.fill") }
                     .help(session.recordingState == .paused ? "Resume" : "Pause")
-                Button { NSApp.activate(); NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true || $0.isMainWindow }?.makeKeyAndOrderFront(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                Button {
+                    showMainWindow { app.openMainWindow?() }
+                    if app.activeNavigation.visibleSessionID != session.id { app.openSession(session.id) }
+                } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     .help("Open Lectern")
                 Button(action: onClose) { Image(systemName: "xmark") }.help("Close").keyboardShortcut("w", modifiers: .command)
             }
@@ -167,31 +195,39 @@ struct FocusPanelView: View {
     private func quizStrip(_ quiz: LiveSessionModel.ActiveQuiz) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack(spacing: DS.Space.xs) {
-                DeadlineRing(deadline: quiz.deadline, total: app.preferences.quizTimeToAnswer, paused: false)
-                Text(quiz.question.prompt).font(DS.Typo.subheadline).lineLimit(1)
+                Text("Quick check").font(DS.Typo.caption).fontWeight(.semibold).foregroundStyle(.secondary)
+                if !session.queuedQuizzes.isEmpty {
+                    Text("+\(session.queuedQuizzes.count) more").font(DS.Typo.footnote).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button("Snooze") { session.snoozeQuiz() }.help("Ask again in 5 minutes (S)")
+                Button("Skip") { session.skipQuiz() }.help("Skip this question (Esc)")
             }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.mini)
+            .frame(height: Self.stripHeaderHeight)
+            Text(quiz.question.prompt).font(DS.Typo.subheadline).lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: Self.stripPromptHeight, maxHeight: Self.stripPromptHeight, alignment: .topLeading)
             if case .multipleChoice(let options, _) = quiz.question.kind {
-                HStack(spacing: DS.Space.xs) {
-                    ForEach(Array(options.enumerated()), id: \.offset) { i, option in
+                VStack(spacing: DS.Space.xxs + 2) {
+                    ForEach(Array(options.prefix(Self.maxOptionRows).enumerated()), id: \.offset) { i, option in
                         Button { session.selectOption(i) } label: {
-                            HStack(spacing: DS.Space.xxs) {
-                                KeyCap(text: "\(i + 1)")
-                                if i == 0 { Text(option).font(DS.Typo.caption).lineLimit(1) }
+                            HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                                KeyCap(text: "\(i + 1)").foregroundStyle(quiz.selectedOption == i ? .white : .primary)
+                                Text(option).font(DS.Typo.caption).lineLimit(2).multilineTextAlignment(.leading)
+                                Spacer(minLength: 0)
                             }
                             .padding(.horizontal, DS.Space.xs)
-                            .frame(height: 24)
+                            .frame(height: Self.optionRowHeight)
+                            .foregroundStyle(quiz.selectedOption == i ? .white : .primary)
                             .background(quiz.selectedOption == i ? AnyShapeStyle(DS.Colors.accent) : AnyShapeStyle(.quaternary), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .help(option)
+                        .accessibilityLabel("Option \(i + 1): \(option)")
                     }
-                    Spacer()
-                    Button("Snooze") { session.snoozeQuiz() }
-                    Button("Skip") { session.skipQuiz() }
                 }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.mini)
             } else {
                 Text("Answer in Lectern").font(DS.Typo.footnote).foregroundStyle(.secondary)
             }

@@ -60,6 +60,10 @@ public enum SessionStatus: String, Codable, Sendable, Hashable {
 }
 
 /// One lecture. Persisted as a single JSON document by `LecternStore`.
+///
+/// Coding is written out by hand (below): a new stored property must also be added to
+/// `CodingKeys`, `init(from:)`, `encode(to:)` and `TolerantSessionFile` in LecternStore, or it is
+/// silently not saved.
 public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
     public var id: UUID
     public var courseID: UUID?
@@ -71,9 +75,19 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
     public var duration: TimeInterval
     public var status: SessionStatus
 
-    /// Parsed slide deck, if the user attached one. The PDF file itself is stored next to the
-    /// session document under `deck.fileName`.
-    public var deck: SlideDeck?
+    /// The lecture's slide decks, in lecture order (some classes use two or more). Each keeps its
+    /// own 1-based page numbers; its PDF is stored next to the session document under `fileName`.
+    public var decks: [SlideDeck]
+
+    /// All decks as one: pages numbered 1…N across the decks in order, each page carrying its
+    /// source file and local page number (`SlidePage.sourceFile` / `sourcePage`). Slide numbers
+    /// everywhere else (tracking, citations, takeaways, quizzes) are these combined numbers. With a
+    /// single deck this is that deck unchanged. Setting it replaces `decks` (a combined deck is
+    /// split back by source file; see `SlideDeck.splitting`).
+    public var deck: SlideDeck? {
+        get { SlideDeck.combining(decks) }
+        set { decks = SlideDeck.splitting(newValue, previous: decks) }
+    }
 
     /// Finalized transcript segments in chronological order.
     public var transcript: [TranscriptSegment]
@@ -89,6 +103,9 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
     /// Model-written summary of the whole lecture, generated after it ends (or lazily when a
     /// finished lecture without one is reopened).
     public var summary: LectureSummary?
+    /// Progress and problems of an imported lecture (`nil` for recorded ones). While the status is
+    /// `.importing` it says how far the import got; afterwards it lists what went wrong.
+    public var importRecord: ImportRecord?
 
     public init(
         id: UUID = UUID(),
@@ -107,7 +124,9 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
         currentSlide: Int? = nil,
         vocabulary: [String] = [],
         source: SessionSource? = nil,
-        summary: LectureSummary? = nil
+        summary: LectureSummary? = nil,
+        importRecord: ImportRecord? = nil,
+        decks: [SlideDeck]? = nil
     ) {
         self.id = id
         self.courseID = courseID
@@ -117,7 +136,7 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
         self.endedAt = endedAt
         self.duration = duration
         self.status = status
-        self.deck = deck
+        self.decks = decks ?? SlideDeck.splitting(deck, previous: [])
         self.transcript = transcript
         self.takeaways = takeaways
         self.quiz = quiz
@@ -126,11 +145,68 @@ public struct LectureSession: Codable, Sendable, Identifiable, Hashable {
         self.vocabulary = vocabulary
         self.source = source
         self.summary = summary
+        self.importRecord = importRecord
     }
 
     /// Plain transcript text, one paragraph per segment.
     public var transcriptText: String {
         transcript.map(\.text).joined(separator: "\n")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, courseID, title, createdAt, startedAt, endedAt, duration, status, deck, decks
+        case transcript, takeaways, quiz, chat, currentSlide, vocabulary, source, summary, importRecord
+    }
+
+    /// The original fields decode strictly; `decks` and `importRecord` (added later) decode
+    /// tolerantly, and a file from before decks (one `deck`) migrates to `decks == [deck]`.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        courseID = try c.decodeIfPresent(UUID.self, forKey: .courseID)
+        title = try c.decode(String.self, forKey: .title)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        startedAt = try c.decodeIfPresent(Date.self, forKey: .startedAt)
+        endedAt = try c.decodeIfPresent(Date.self, forKey: .endedAt)
+        duration = try c.decode(TimeInterval.self, forKey: .duration)
+        status = try c.decode(SessionStatus.self, forKey: .status)
+        let legacy = try c.decodeIfPresent(SlideDeck.self, forKey: .deck)
+        let stored = (try? c.decodeIfPresent([SlideDeck].self, forKey: .decks)) ?? nil
+        decks = SlideDeck.migrating(decks: stored, legacy: legacy)
+        transcript = try c.decode([TranscriptSegment].self, forKey: .transcript)
+        takeaways = try c.decode([Takeaway].self, forKey: .takeaways)
+        quiz = try c.decode([QuizRecord].self, forKey: .quiz)
+        chat = try c.decode([ChatMessage].self, forKey: .chat)
+        currentSlide = try c.decodeIfPresent(Int.self, forKey: .currentSlide)
+        vocabulary = try c.decode([String].self, forKey: .vocabulary)
+        source = try c.decodeIfPresent(SessionSource.self, forKey: .source)
+        summary = try c.decodeIfPresent(LectureSummary.self, forKey: .summary)
+        importRecord = (try? c.decodeIfPresent(ImportRecord.self, forKey: .importRecord)) ?? nil
+    }
+
+    /// A single deck is written as `deck` alone, exactly as before decks existed. Several decks are
+    /// written as `decks`, plus the combined `deck` so an older build still reads every page's text.
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(courseID, forKey: .courseID)
+        try c.encode(title, forKey: .title)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(startedAt, forKey: .startedAt)
+        try c.encodeIfPresent(endedAt, forKey: .endedAt)
+        try c.encode(duration, forKey: .duration)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(deck, forKey: .deck)
+        if decks.count > 1 { try c.encode(decks, forKey: .decks) }
+        try c.encode(transcript, forKey: .transcript)
+        try c.encode(takeaways, forKey: .takeaways)
+        try c.encode(quiz, forKey: .quiz)
+        try c.encode(chat, forKey: .chat)
+        try c.encodeIfPresent(currentSlide, forKey: .currentSlide)
+        try c.encode(vocabulary, forKey: .vocabulary)
+        try c.encodeIfPresent(source, forKey: .source)
+        try c.encodeIfPresent(summary, forKey: .summary)
+        try c.encodeIfPresent(importRecord, forKey: .importRecord)
     }
 }
 
@@ -206,7 +282,9 @@ public struct SlideDeck: Codable, Sendable, Hashable {
     }
 
     public func page(_ number: Int) -> SlidePage? {
-        pages.first { $0.number == number }
+        // Pages are normally numbered 1…N in order, so look there first.
+        if pages.indices.contains(number - 1), pages[number - 1].number == number { return pages[number - 1] }
+        return pages.first { $0.number == number }
     }
 }
 
@@ -219,14 +297,41 @@ public struct SlidePage: Codable, Sendable, Identifiable, Hashable {
     public var text: String
     /// Presenter notes, when the deck came from a PPTX/Keynote file that had them.
     public var notes: String?
+    /// In a combined deck (`LectureSession.deck` with several decks): the stored PDF this page comes
+    /// from and its 1-based page number there. `nil` means the deck's own `fileName` and `number`.
+    public var sourceFile: String?
+    public var sourcePage: Int?
+    /// `true` when the page is an image that text recognition failed on: its text is missing or
+    /// partial, so search, slide following and jargon fixing know little about it.
+    public var textRecognitionFailed: Bool?
 
     public var id: Int { number }
 
-    public init(number: Int, title: String?, text: String, notes: String? = nil) {
+    public init(number: Int, title: String?, text: String, notes: String? = nil, sourceFile: String? = nil, sourcePage: Int? = nil, textRecognitionFailed: Bool? = nil) {
         self.number = number
         self.title = title
         self.text = text
         self.notes = notes
+        self.sourceFile = sourceFile
+        self.sourcePage = sourcePage
+        self.textRecognitionFailed = textRecognitionFailed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case number, title, text, notes, sourceFile, sourcePage, textRecognitionFailed
+    }
+
+    /// The original fields decode strictly; the fields added later decode tolerantly (missing or
+    /// unreadable → nil), so they can never cost a saved page.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        number = try c.decode(Int.self, forKey: .number)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        text = try c.decode(String.self, forKey: .text)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        sourceFile = (try? c.decodeIfPresent(String.self, forKey: .sourceFile)) ?? nil
+        sourcePage = (try? c.decodeIfPresent(Int.self, forKey: .sourcePage)) ?? nil
+        textRecognitionFailed = (try? c.decodeIfPresent(Bool.self, forKey: .textRecognitionFailed)) ?? nil
     }
 }
 
@@ -369,6 +474,20 @@ public struct QuizQuestion: Codable, Sendable, Identifiable, Hashable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         explanation = (try? c.decodeIfPresent(String.self, forKey: .explanation)) ?? nil
         grounding = (try? c.decodeIfPresent(QuizGrounding.self, forKey: .grounding)) ?? nil
+        // A saved answer key that points outside the options would trap at grading time, so such a
+        // question is reported as damaged data (the store skips just that record) rather than loaded.
+        guard isWellFormed else {
+            throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "The answer key is outside the options.")
+        }
+    }
+
+    /// Whether the question can be shown and graded: a multiple-choice answer key must index into its
+    /// options (and there must be options to choose from). Short-answer questions are always well formed.
+    public var isWellFormed: Bool {
+        switch kind {
+        case .multipleChoice(let options, let correctIndex): options.indices.contains(correctIndex)
+        case .shortAnswer: true
+        }
     }
 }
 

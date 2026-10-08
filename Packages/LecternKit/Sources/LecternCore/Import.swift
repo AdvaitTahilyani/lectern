@@ -43,6 +43,36 @@ public protocol RecordingImporting: Sendable {
         into session: LectureSession,
         progress: @escaping @Sendable (ImportStage) -> Void
     ) async throws -> LectureSession
+
+    /// Finishes an interrupted import from the transcript it had saved (`session.transcript`,
+    /// `session.importRecord`), without the recording: writes the takeaways and returns the
+    /// finished lecture. Throws `ImportResumeError.nothingToResume` when no transcript was saved.
+    func resumeImport(
+        _ session: LectureSession,
+        progress: @escaping @Sendable (ImportStage) -> Void
+    ) async throws -> LectureSession
+}
+
+public extension RecordingImporting {
+    /// For importers that keep no checkpoints.
+    func resumeImport(
+        _ session: LectureSession,
+        progress: @escaping @Sendable (ImportStage) -> Void
+    ) async throws -> LectureSession {
+        throw ImportResumeError.unsupported
+    }
+}
+
+public enum ImportResumeError: LocalizedError, Sendable, Equatable {
+    case unsupported
+    case nothingToResume
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupported: "This import can't be resumed."
+        case .nothingToResume: "The import was interrupted before anything was transcribed, so there is nothing to finish."
+        }
+    }
 }
 
 /// Converts presentation files the ingestor can't read directly (PPTX, Keynote) into a PDF, and

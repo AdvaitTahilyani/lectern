@@ -8,6 +8,8 @@ struct TopicTimeline: Sendable {
     /// A `new_topic` less than this far into the live topic re-titles it instead of splitting, so
     /// over-eager splits never leave a sliver of a card behind.
     var minTopicSeconds: TimeInterval
+    /// Past this length a quoted `new_topic` splits the live card even when its title is similar.
+    var longTopicSeconds: TimeInterval
 
     static let maxSummaryChars = 220
     static let maxTitleChars = 64
@@ -38,7 +40,7 @@ struct TopicTimeline: Sendable {
         var relevantPages: Set<Int> = []
     }
 
-    init(takeaways: [Takeaway], minTopicSeconds: TimeInterval = 60) {
+    init(takeaways: [Takeaway], minTopicSeconds: TimeInterval = 60, longTopicSeconds: TimeInterval = .infinity) {
         let sorted = takeaways.sorted { $0.start < $1.start }
         // Only the last takeaway may be live.
         self.takeaways = sorted.enumerated().map { index, t in
@@ -47,6 +49,7 @@ struct TopicTimeline: Sendable {
             return t
         }
         self.minTopicSeconds = minTopicSeconds
+        self.longTopicSeconds = longTopicSeconds
     }
 
     var live: Takeaway? { takeaways.last.flatMap { $0.isLive ? $0 : nil } }
@@ -110,7 +113,14 @@ struct TopicTimeline: Sendable {
             replaceLive(current)
             return .refined
         }
-        let isSameTitle = !resumesAfterAside && (title.caseInsensitiveCompare(current.title) == .orderedSame
+        let isExactTitle = title.caseInsensitiveCompare(current.title) == .orderedSame
+        // A long-running card that the model says has moved on is split at the quoted boundary
+        // even when the new title reads like the old one ("AMAT" → "AMAT examples"): otherwise one
+        // card keeps absorbing every sub-topic and runs past ten minutes.
+        let searchable = chunk.window.lowerBound..<(chunk.new.isEmpty ? chunk.window.upperBound : chunk.new.upperBound)
+        let isLongSplit = reply.action == .newTopic && !isExactTitle && latestEnd - current.start >= longTopicSeconds
+            && locate(reply.boundaryQuote, chunk, preferFrom: chunkStart, within: searchable) != nil
+        let isSameTitle = !resumesAfterAside && !isLongSplit && (isExactTitle
             || Self.isNearDuplicate(title: title, summary: summary, of: current))
         if !resumesAfterAside, reply.action == .continueTopic || isSameTitle || reply.newLinesKind == .admin {
             if reply.newLinesKind == .admin {
@@ -124,7 +134,6 @@ struct TopicTimeline: Sendable {
             return .refined
         }
 
-        let searchable = chunk.window.lowerBound..<(chunk.new.isEmpty ? chunk.window.upperBound : chunk.new.upperBound)
         let match = locate(reply.boundaryQuote, chunk, preferFrom: chunkStart, within: searchable)
         let boundaryTime = match?.time ?? chunk.segments[chunkStart].start
         guard resumesAfterAside || boundaryTime - current.start >= minTopicSeconds else {
@@ -307,13 +316,13 @@ struct TopicTimeline: Sendable {
         })
     }
 
-    /// Jaccard similarity of `terms`.
     /// Whether a short card's text shares more with the card before it than with the topic after it.
     static func leansToPrevious(sliver: String, previous: Takeaway, next: String) -> Bool {
         let before = similarity(sliver, previous.title + " " + previous.summary)
         return before > 0 && before > similarity(sliver, next)
     }
 
+    /// Jaccard similarity of `terms`.
     private static func similarity(_ a: String, _ b: String) -> Double {
         let x = terms(a), y = terms(b)
         guard !x.isEmpty, !y.isEmpty else { return 0 }

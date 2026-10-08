@@ -11,7 +11,7 @@ import Foundation
 /// | Quiz question / grade | ~450 + ≤ 1,800 | topic transcript ≤ 2,000 + slides ≤ 600 | ≤ 450 | ≤ ~5.5k |
 /// | Recap | ~500 + ≤ 1,800 | transcript ≤ 1,600 + topics ≤ 300 + announcements ≤ 200 | 350 | ≤ ~5k |
 /// | Lecture summary | ~500 + ≤ 1,800 | topics ≤ 2,000 + quiz ≤ 500 + flagged ≤ 300 + ~250 | 800 | ≤ ~6k |
-/// | Ask | ~350 + ≤ 1,800 | history ≤ 1,200 + retrieved context ≤ 2,600 | 800 | ≤ ~7k |
+/// | Ask | ~650 + ≤ 1,800 + transcript ≤ 20,000 | history ≤ 2,000 + topics ≤ 1,200 + slides ≤ 1,500 + newest transcript (≤ ~5.5 min) | 1,500 (+ 1,100 thinking) | ≤ ~29k, ~2-4k of it new per question |
 /// | Course Ask | ~450 + lecture index ≤ 800 | history ≤ 1,200 + retrieved context ≤ 3,200 | 800 | ≤ ~6.5k |
 enum TokenBudget {
     /// Measured on Gemma 4 over 76 real lecture calls: ≈ 3.4 characters per token.
@@ -39,10 +39,24 @@ enum TokenBudget {
     static let summaryQuiz = 500
     static let summaryAnnouncements = 300
 
+    /// Course Ask's prior turns.
     static let askHistory = 1_200
-    static let askTranscript = 1_600
-    static let askSlides = 800
-    static let askTakeaways = 400
+
+    /// Lecture Ask: the transcript in the cached system prefix. 20k tokens is about 80-90 minutes
+    /// of lecture; a longer lecture keeps its first 20k there and retrieves from the rest.
+    static let askTranscriptPrefix = 20_000
+    static let askConversation = 2_000
+    static let askTopics = 1_200
+    static let askSlides = 1_500
+    static let askSlideChars = 1_200
+    /// Only past `askTranscriptPrefix`: retrieved windows, then the newest transcript.
+    static let askRetrieved = 2_400
+    static let askLatest = 1_600
+
+    /// The October 2026 Ask design (`AskDesign.compact`), kept for comparison in the evaluation.
+    static let compactAskTranscript = 1_600
+    static let compactAskSlides = 800
+    static let compactAskTakeaways = 400
 
     static let courseIndex = 800
     static let courseTranscript = 1_800

@@ -19,7 +19,6 @@ public struct OpenAICompatibleProvider: LLMProvider {
 
     public static let openAIBaseURL = URL(string: "https://api.openai.com/v1")!
     public static let ollamaBaseURL = URL(string: "http://localhost:11434/v1")!
-    public static let lmStudioBaseURL = URL(string: "http://localhost:1234/v1")!
 
     static let truncatedMessage =
         "The model ran out of output tokens before producing an answer (reasoning may have used the budget)."

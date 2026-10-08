@@ -103,7 +103,7 @@ struct TakeawaysColumn: View {
                 followLive = session.isLive
                 if session.isLive { scrollToBottomSoon(proxy) }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .lecternJumpToLive)) { _ in jumpToLive(proxy) }
+            .onWindowCommand(.lecternJumpToLive) { jumpToLive(proxy) }
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if session.isLive { dock }
@@ -123,8 +123,8 @@ struct TakeawaysColumn: View {
         .focusSection()
         .onKeyPress(.downArrow) { moveFocus(1); return .handled }
         .onKeyPress(.upArrow) { moveFocus(-1); return .handled }
-        .onKeyPress(.return) { if let t = focusedTakeaway { toggle(t); return .handled }; return .ignored }
-        .onKeyPress(.space) { if let t = focusedTakeaway { toggle(t); return .handled }; return .ignored }
+        .onKeyPress(.return) { if let t = focusedTakeaway, !TextInputFocus.isActive { toggle(t); return .handled }; return .ignored }
+        .onKeyPress(.space) { if let t = focusedTakeaway, !TextInputFocus.isActive { toggle(t); return .handled }; return .ignored }
         .onKeyPress(.escape) {
             if session.expandedTakeawayID != nil, session.quiz == nil { session.expandTakeaway(nil); return .handled }
             return .ignored
@@ -184,13 +184,12 @@ struct TakeawaysColumn: View {
                     if let quiz = session.quiz {
                         QuizCard(
                             quiz: quiz, streak: session.streak, showStreak: app.preferences.showStreaks, sessionID: session.id,
-                            timeToAnswer: app.preferences.quizTimeToAnswer,
+                            waiting: session.queuedQuizzes.count,
                             thumbnail: { session.slideImages?.image(page: $0, width: 32) },
                             onSelect: { session.selectOption($0) },
                             onShortAnswerChange: { session.updateShortAnswer($0) },
                             onSubmitShort: { session.submitShortAnswer() },
-                            onSnooze: { session.snoozeQuiz() }, onSkip: { session.skipQuiz() }, onDismiss: { session.dismissQuiz() },
-                            onHover: { session.setQuizHovered($0) },
+                            onSnooze: { session.snoozeQuiz() }, onSkip: { session.skipQuiz() }, onDismiss: { session.skipQuiz() },
                             onOpenURL: { _ = session.open($0) },
                             compactWidth: tier == .single
                         )
@@ -231,9 +230,9 @@ struct TakeawaysColumn: View {
                         Image(systemName: "sparkles").foregroundStyle(DS.Colors.accent)
                         Text("Lecture summary").font(DS.Typo.headline)
                         Spacer()
-                        Button { session.copySummary() } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).controlSize(.small).help("Copy summary (⌘⇧C)")
+                        Button { session.copySummary() } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).controlSize(.small).help("Copy summary (⌘⇧C)").accessibilityLabel("Copy summary")
                     }
-                    Text(s.overview).font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing).fixedSize(horizontal: false, vertical: true)
+                    AnswerBody(text: s.overview).equatable().font(DS.Typo.body).lineSpacing(DS.Typo.summaryLineSpacing)
                     if !s.keyConcepts.isEmpty {
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
                             Text("Key terms").font(DS.Typo.caption).foregroundStyle(.secondary)
@@ -252,7 +251,7 @@ struct TakeawaysColumn: View {
                             ForEach(Array(s.flagged.enumerated()), id: \.offset) { _, f in
                                 HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                                     Image(systemName: "flag.fill").font(.caption2).foregroundStyle(DS.Colors.warning)
-                                    Text(f).font(DS.Typo.subheadline).fontWeight(.medium).fixedSize(horizontal: false, vertical: true)
+                                    Text(AnswerRendering.attributed(f, resolver: .unlinked)).font(DS.Typo.subheadline).fontWeight(.medium).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.horizontal, DS.Space.s).padding(.vertical, DS.Space.xs)
                                 .background(DS.Colors.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
@@ -301,7 +300,7 @@ struct TakeawaysColumn: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                     Image(systemName: "arrow.uturn.backward.circle.fill").font(.caption).foregroundStyle(DS.Colors.review)
-                    Text(item).font(DS.Typo.subheadline).fixedSize(horizontal: false, vertical: true)
+                    Text(AnswerRendering.attributed(item, resolver: .unlinked)).font(DS.Typo.subheadline).fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !session.missedConcepts.isEmpty {
@@ -413,8 +412,14 @@ struct RecapCard: View {
                     .padding(.horizontal, DS.Space.s).padding(.vertical, DS.Space.xs)
                     .background(DS.Colors.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                 }
+                if !r.slides.isEmpty {
+                    FlowLayout(spacing: DS.Space.xs) {
+                        ForEach(Array(TakeawaysColumn.slideRuns(r.slides).enumerated()), id: \.offset) { _, run in
+                            SlideChip(page: run.first, endPage: run.last == run.first ? nil : run.last) { session.showSlide(run.first) }
+                        }
+                    }
+                }
                 HStack(spacing: DS.Space.s) {
-                    if let first = r.slides.first { SlideChip(page: first, endPage: r.slides.last) { session.showSlide(first) } }
                     Spacer()
                     Button("Show in transcript") { session.seekTranscript(to: r.from) }.buttonStyle(.link).font(DS.Typo.footnote)
                     Button("Dismiss") { session.dismissRecap() }.buttonStyle(.link).font(DS.Typo.footnote)

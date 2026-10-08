@@ -1,19 +1,38 @@
 import Foundation
 import Synchronization
 
+/// The diarizer as `DiarizationFeed` uses it (`SpeakerDiarizer`; a fake in tests).
+protocol SpeakerDiarizing: Sendable {
+    func append(_ samples: [Float]) async throws -> DiarizationProgress?
+    func finish() async throws -> DiarizationProgress?
+}
+
+extension SpeakerDiarizer: SpeakerDiarizing {}
+
 /// Runs speaker diarization beside recognition: audio goes in, labels come out through the sink.
 ///
 /// Diarization has its own task so a slow model step never delays transcription. If it fails, the
-/// session continues without speaker labels and a warning says so.
+/// session continues without speaker labels and a warning says so. Its queue is bounded: if it
+/// falls more than `maxLag` behind the audio fed to it, speaker labeling stops for the session
+/// (with a warning) rather than queueing audio without limit.
 final class DiarizationFeed: Sendable {
     fileprivate struct Progress {
+        /// Audio handed to `feed` / taken by the diarizer: the difference is the queue.
+        var fed: TimeInterval = 0
+        var processed: TimeInterval = 0
         var through: TimeInterval = 0
         var isRunning = true
+        var gaveUp = false
     }
+
+    /// Default for `maxLag`: speaker labels this late are no longer useful live.
+    static let defaultMaxLag: TimeInterval = 120
 
     private let input: AsyncStream<[Float]>.Continuation
     private let task: Task<Void, Never>
     private let progress = ProgressBox()
+    private let sink: EventSink
+    private let maxLag: TimeInterval
 
     /// Loads the diarization model for a session. Returns nil, after emitting a warning through
     /// `sink`, if speaker labels cannot be provided.
@@ -30,18 +49,22 @@ final class DiarizationFeed: Sendable {
         }
     }
 
-    private init(diarizer: SpeakerDiarizer, sink: EventSink) {
+    init(diarizer: any SpeakerDiarizing, sink: EventSink, maxLag: TimeInterval = defaultMaxLag) {
         let (stream, continuation) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .unbounded)
         input = continuation
+        self.sink = sink
+        self.maxLag = maxLag
         let progress = progress
         task = Task {
             defer { progress.state.withLock { $0.isRunning = false } }
             do {
                 for await samples in stream {
-                    if let update = try await diarizer.append(samples) {
-                        sink.diarizationAdvanced(update)
-                        progress.state.withLock { $0.through = update.through }
+                    let update = try await diarizer.append(samples)
+                    progress.state.withLock { p in
+                        p.processed += Double(samples.count) / MonoResampler.targetSampleRate
+                        if let update { p.through = update.through }
                     }
+                    if let update { sink.diarizationAdvanced(update) }
                 }
                 if let update = try await diarizer.finish() { sink.diarizationAdvanced(update) }
             } catch is CancellationError {
@@ -66,7 +89,24 @@ final class DiarizationFeed: Sendable {
     }
 
     func feed(_ samples: [Float]) {
-        input.yield(samples)
+        enum Decision { case feed, drop, giveUp }
+        let decision = progress.state.withLock { p -> Decision in
+            if p.gaveUp { return .drop }
+            p.fed += Double(samples.count) / MonoResampler.targetSampleRate
+            guard p.isRunning, p.fed - p.processed > maxLag else { return .feed }
+            p.gaveUp = true
+            return .giveUp
+        }
+        switch decision {
+        case .feed:
+            input.yield(samples)
+        case .drop:
+            break
+        case .giveUp:
+            cancel()
+            sink.stopLabeling()
+            sink.send(.warning("Speaker labels stopped: speaker detection fell more than \(Int(maxLag)) s behind."))
+        }
     }
 
     /// Ends the audio, waits for the diarizer to drain, and releases the remaining labels.

@@ -5,9 +5,21 @@ import Foundation
 struct HTTPFetcher: Sendable {
     var session: URLSession
 
-    func data(from url: URL) async throws -> Data {
-        let (data, response) = try await session.data(from: url)
+    /// - Parameter byteRange: when set, only that slice of the resource is requested. A server
+    ///   that ignores the header and sends the whole file is cut down to the slice here.
+    func data(from url: URL, byteRange: Range<Int>? = nil) async throws -> Data {
+        guard let byteRange else {
+            let (data, response) = try await session.data(from: url)
+            try Self.validate(response)
+            return data
+        }
+        var request = URLRequest(url: url)
+        request.setValue("bytes=\(byteRange.lowerBound)-\(byteRange.upperBound - 1)", forHTTPHeaderField: "Range")
+        let (data, response) = try await session.data(for: request)
         try Self.validate(response)
+        if (response as? HTTPURLResponse)?.statusCode == 200, data.count >= byteRange.upperBound {
+            return data.subdata(in: byteRange)   // the server sent the whole file
+        }
         return data
     }
 

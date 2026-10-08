@@ -18,6 +18,7 @@ public enum ImportError: LocalizedError, Sendable, Equatable {
     case unsupportedFileType(String)
     case invalidPresentation(String)
     case noPresentationApp
+    case keynoteNotInstalled
     case automationDenied(app: String)
     case conversionFailed(app: String, message: String)
     case conversionTimedOut(app: String)
@@ -48,6 +49,8 @@ public enum ImportError: LocalizedError, Sendable, Equatable {
             "The presentation file is damaged or unreadable (\(detail))."
         case .noPresentationApp:
             "Converting slides needs Keynote or Microsoft PowerPoint, and neither is installed. Export the deck to PDF and import that instead."
+        case .keynoteNotInstalled:
+            "Converting a Keynote file needs Keynote, and it isn't installed. Export the deck to PDF from Keynote and import that instead."
         case .automationDenied(let app):
             "Lectern isn't allowed to control \(app). Open System Settings > Privacy & Security > Automation, enable \(app) under Lectern, and try again."
         case .conversionFailed(let app, let message):

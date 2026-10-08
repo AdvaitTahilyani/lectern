@@ -10,6 +10,11 @@ public enum StoreError: LocalizedError {
     case unsupportedSchemaVersion(found: Int, supported: Int, url: URL)
     /// The PDF chosen for import does not exist.
     case sourceFileMissing(URL)
+    /// The Trash refused the lecture's folder. Nothing was deleted: removing it for good needs the
+    /// user's explicit consent (`FileSessionStore.deletePermanently(sessionID:)`).
+    case trashFailed(URL, underlying: any Error)
+    /// `removeSlides` was asked to delete a file that isn't a stored slide deck.
+    case notASlideFile(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +26,10 @@ public enum StoreError: LocalizedError {
             "\"\(url.lastPathComponent)\" was saved by a newer version of Lectern (format \(found); this version reads up to \(supported))."
         case .sourceFileMissing(let url):
             "The file \"\(url.lastPathComponent)\" could not be found."
+        case .trashFailed(_, let underlying):
+            "The lecture could not be moved to the Trash (\(underlying.localizedDescription)), so it was kept."
+        case .notASlideFile(let name):
+            "\"\(name)\" is not a slide deck file of the lecture."
         }
     }
 }

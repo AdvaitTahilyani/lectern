@@ -46,9 +46,10 @@ public actor ModelManager {
     /// Files needed to run a model with mlx-swift-lm.
     static let downloadPatterns = ["*.safetensors", "*.json", "*.jinja"]
 
-    /// Downloads a model snapshot into the cache, reporting byte progress. Injectable for tests.
-    typealias SnapshotDownloader =
-        @Sendable (Repo.ID, @escaping @Sendable (ModelDownloadProgress) -> Void) async throws -> Void
+    /// Downloads the snapshot of a model (by Hugging Face repo id) into the cache, reporting byte
+    /// progress. Injectable for tests.
+    public typealias SnapshotDownloader =
+        @Sendable (String, @escaping @Sendable (ModelDownloadProgress) -> Void) async throws -> Void
 
     private let cache: HubCache
     private let downloader: SnapshotDownloader
@@ -62,7 +63,8 @@ public actor ModelManager {
         let cache = cacheDirectory.map { HubCache(cacheDirectory: $0) } ?? .default
         let client = HubClient(cache: cache)
         self.cache = cache
-        self.downloader = { repo, report in
+        self.downloader = { id, report in
+            guard let repo = Repo.ID(rawValue: id) else { throw ModelManagerError.invalidModelID(id) }
             _ = try await client.downloadSnapshot(
                 of: repo, kind: .model, revision: "main",
                 matching: ModelManager.downloadPatterns,
@@ -74,7 +76,9 @@ public actor ModelManager {
         }
     }
 
-    init(cacheDirectory: URL, downloader: @escaping SnapshotDownloader) {
+    /// A manager over `cacheDirectory` that fetches snapshots with `downloader` (tests use a fake
+    /// one and a temporary directory, so nothing touches the real model cache).
+    public init(cacheDirectory: URL, downloader: @escaping SnapshotDownloader) {
         self.cache = HubCache(cacheDirectory: cacheDirectory)
         self.downloader = downloader
     }
@@ -160,11 +164,19 @@ public actor ModelManager {
         abandonDownload(id)
     }
 
-    /// Deletes all local files of `id` (cancelling a download in progress). Unload the model
-    /// from ``MLXModelHost`` first if it is loaded.
-    public func delete(_ id: String) throws {
+    /// Deletes all local files of `id`, first stopping any download of it and waiting for the
+    /// transfer to finish writing, so a late write can't bring removed files back. Unload the
+    /// model from ``MLXModelHost`` first if it is loaded.
+    public func delete(_ id: String) async throws {
         guard let repo = Repo.ID(rawValue: id) else { throw ModelManagerError.invalidModelID(id) }
-        abandonDownload(id)
+        // A download that starts while we wait is stopped too; once nothing is running the
+        // removal below happens with no suspension, so nothing can slip in.
+        while true {
+            let winding = abandonDownload(id)
+            guard let winding else { break }
+            await winding.value
+            if downloads[id] == nil, cancelled[id] == winding { cancelled[id] = nil }
+        }
         let folder = cache.repoDirectory(repo: repo, kind: .model)
         if FileManager.default.fileExists(atPath: folder.path) {
             try FileManager.default.removeItem(at: folder)
@@ -184,7 +196,10 @@ public actor ModelManager {
             let result: Result<URL, Error>
             do {
                 try Task.checkCancellation()
-                try await downloader(repo) { fanOut.publish($0) }
+                // A file that is present but empty or cut off would be skipped as already
+                // downloaded; clear those so this transfer repairs them.
+                self.removeInvalidFiles(of: repo)
+                try await downloader(id) { fanOut.publish($0) }
                 if let local = self.localDirectory(for: id) {
                     result = .success(local)
                 } else {
@@ -200,12 +215,27 @@ public actor ModelManager {
 
     /// Cancels the transfer of `id` and ends it for everyone now, instead of when the transfer
     /// notices the cancellation. Otherwise a download started right after would join the dying
-    /// one and fail with `CancellationError`.
-    private func abandonDownload(_ id: String) {
-        guard let active = downloads[id] else { return }
+    /// one and fail with `CancellationError`. Returns the task still winding down (the transfer
+    /// being cancelled, or one cancelled earlier), if any.
+    @discardableResult
+    private func abandonDownload(_ id: String) -> Task<Void, Never>? {
+        guard let active = downloads[id] else { return cancelled[id] }
         active.task?.cancel()
         cancelled[id] = active.task
         finish(id: id, active: active, result: .failure(CancellationError()))
+        return active.task
+    }
+
+    /// Deletes unusable files from the current snapshot of `repo` (and what they point to).
+    private nonisolated func removeInvalidFiles(of repo: Repo.ID) {
+        guard let commit = cache.resolveRevision(repo: repo, kind: .model, ref: "main"),
+            let snapshot = try? cache.snapshotPath(repo: repo, kind: .model, commitHash: commit)
+        else { return }
+        for file in SnapshotValidation.invalidFiles(in: snapshot) {
+            let target = file.resolvingSymlinksInPath()
+            try? FileManager.default.removeItem(at: target)
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     /// Ends `active` (a no-op if it already ended) and tells its observers and waiters.
@@ -239,22 +269,13 @@ private final class ActiveDownload {
 }
 
 extension ModelManager {
-    /// Whether `snapshot` holds a config, tokenizer and every weight shard.
-    static func isComplete(_ snapshot: URL) -> Bool {
-        let files = FileManager.default
-        func exists(_ name: String) -> Bool {
-            files.fileExists(atPath: snapshot.appending(path: name).path)
-        }
-        guard exists("config.json"), exists("tokenizer.json") || exists("tokenizer_config.json")
-        else { return false }
+    /// Whether `snapshot` holds a parseable config, a tokenizer and every weight shard, each
+    /// non-empty and well-formed (see ``SnapshotValidation``).
+    static func isComplete(_ snapshot: URL) -> Bool { SnapshotValidation.isComplete(snapshot) }
 
-        let index = snapshot.appending(path: "model.safetensors.index.json")
-        if let data = try? Data(contentsOf: index),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let weightMap = json["weight_map"] as? [String: String]
-        {
-            return Set(weightMap.values).allSatisfy(exists)
-        }
-        return exists("model.safetensors")
+    /// Bytes on disk are present but `id` is not a usable snapshot: a partial, damaged or
+    /// interrupted download that a new download will resume or repair.
+    public nonisolated func isIncomplete(_ id: String) -> Bool {
+        !isDownloaded(id) && diskUsage(of: id) > 0
     }
 }

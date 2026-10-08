@@ -24,7 +24,8 @@ import Testing
     func brain(_ provider: ScriptedProvider, quiz: QuizSettings = QuizSettings(enabled: true, intervalMinutes: 5, allowShortAnswer: false),
                records: [QuizRecord] = [], seed: UInt64 = 1) -> LectureBrain {
         Fixtures.brain(provider, context: Fixtures.context(transcript: transcript, takeaways: takeaways, quiz: records),
-                       quiz: quiz, interval: 10_000, tuning: BrainTuning(firstUpdateSeconds: 10_000, quizNewMaterialSeconds: 240), seed: seed)
+                       quiz: quiz, interval: 10_000, tuning: BrainTuning(wordsPerUpdate: 10_000, firstUpdateSeconds: 10_000, maxUpdateSeconds: 10_000, quizNewMaterialSeconds: 240),
+                       seed: seed)
     }
 
     // MARK: Generation

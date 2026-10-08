@@ -38,11 +38,6 @@ enum JSONExtractor {
         return found
     }
 
-    /// The object's strict JSON (see `extract(from:)`), or nil.
-    static func extractObject(from text: String) -> String? {
-        extract(from: text)?.json
-    }
-
     /// Extracts and decodes `T`. Keys are matched case-, underscore- and hyphen-insensitively
     /// (`boundary_quote`, `boundaryQuote` and `Boundary-Quote` are the same key).
     static func decode<T: Decodable>(_ type: T.Type, from text: String, rejectingTruncated: Bool = false) throws -> T {

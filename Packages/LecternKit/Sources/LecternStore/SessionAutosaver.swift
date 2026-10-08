@@ -9,6 +9,12 @@ import LecternCore
 /// stopping the recording, closing the window, quitting.
 ///
 /// Saves are serialized, so a slow write can never be overtaken by a newer one.
+///
+/// Two things keep the cost of a long lecture (whose whole file is rewritten on each save) bounded:
+/// a snapshot identical to the last one written is never written again, and when writes turn out
+/// slow (a long lecture, a slow or network disk) the spacing between background saves stretches to
+/// about twenty times the last write's duration, at most four times `interval`, so saving never
+/// occupies more than a small share of the time. `flush()` is never delayed.
 public actor SessionAutosaver {
     private let store: any SessionStoring
     private let interval: Duration
@@ -17,6 +23,9 @@ public actor SessionAutosaver {
     private var pending: LectureSession?
     private var timer: Task<Void, Never>?
     private var lastWrite: Task<Void, any Error>?
+    /// The snapshot most recently written successfully, and how long writing it took.
+    private var lastSaved: LectureSession?
+    private var lastWriteDuration: Duration = .zero
 
     /// - Parameters:
     ///   - interval: minimum spacing between background saves (default 5 s).
@@ -66,9 +75,14 @@ public actor SessionAutosaver {
 
     // MARK: Internals
 
+    /// `interval`, stretched while writes are slow (see the type's documentation).
+    var effectiveInterval: Duration {
+        min(interval * 4, max(interval, lastWriteDuration * 20))
+    }
+
     private func scheduleIfNeeded() {
         guard timer == nil, pending != nil else { return }
-        let interval = interval
+        let interval = effectiveInterval
         timer = Task { [weak self] in
             do { try await Task.sleep(for: interval) } catch { return }
             await self?.timerFired()
@@ -88,6 +102,7 @@ public actor SessionAutosaver {
     private func saveNow() async throws {
         guard let snapshot = pending else { return }
         pending = nil
+        if snapshot == lastSaved { return }   // nothing changed since the last write
         let previous = lastWrite
         let store = store
         let write = Task {
@@ -95,8 +110,11 @@ public actor SessionAutosaver {
             try await store.save(snapshot)
         }
         lastWrite = write
+        let started = ContinuousClock.now
         do {
             try await write.value
+            lastWriteDuration = ContinuousClock.now - started
+            lastSaved = snapshot
         } catch {
             if pending == nil { pending = snapshot }   // keep it for the retry unless something newer arrived
             if lastWrite == write { lastWrite = nil }  // the failure is reported once, here

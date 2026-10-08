@@ -107,4 +107,93 @@ import Testing
         let removed = words(cues.map(\.text)) - words(segments.map(\.text))
         #expect((50...150).contains(removed))
     }
+
+    // MARK: Audit B38
+
+    @Test func repeatedSpeechAfterALongGapIsKept() {
+        let cues = [CaptionCue(start: 0, end: 1, text: "Look at this example."),
+                    CaptionCue(start: 100, end: 101, text: "Look at this example.")]
+        let merged = CaptionMerger().merge(cues)
+        #expect(merged.count == 2)
+        #expect(merged.first?.end == 1)
+        #expect(merged.last?.start == 100)
+    }
+
+    @Test func overlappingPhraseAfterASilenceIsNotTrimmed() {
+        // The suffix of the first cue equals the prefix of the second, but 60 s apart: not rolling.
+        let cues = [CaptionCue(start: 0, end: 2, text: "now consider the first set of"),
+                    CaptionCue(start: 62, end: 64, text: "first set of rules applies here")]
+        #expect(CaptionMerger().deduplicated(cues).map(\.text) == ["now consider the first set of", "first set of rules applies here"])
+    }
+
+    @Test func rollingRepeatsStillMergeWhenCuesAbut() {
+        let cues = [CaptionCue(start: 0, end: 2, text: "same words"), CaptionCue(start: 2.4, end: 3, text: "same words")]
+        #expect(CaptionMerger().deduplicated(cues).count == 1)
+    }
+
+    // MARK: Audit B39
+
+    @Test func noteBlockWithATimingExampleCreatesNoCue() {
+        let vtt = "WEBVTT\n\nNOTE sample timestamps\n00:00.000 --> 00:01.000\ncomment only\n\n00:02.000 --> 00:03.000\nReal caption\n"
+        #expect(WebVTT.parse(vtt).map(\.text) == ["Real caption"])
+    }
+
+    @Test func styleAndRegionBlocksAreSkippedAndCueIdentifiersAreNot() {
+        let vtt = """
+        WEBVTT
+
+        STYLE
+        ::cue { color: red }
+
+        REGION
+        id:r1
+
+        id-1
+        00:01.000 --> 00:02.000
+        First
+
+        NOTES are not comments
+        00:03.000 --> 00:04.000
+        A cue whose identifier merely starts with NOTE
+        """
+        #expect(WebVTT.parse(vtt).map(\.text) == ["First", "A cue whose identifier merely starts with NOTE"])
+    }
+
+    @Test func nonFiniteAndReversedTimestampsAreRejected() {
+        #expect(WebVTT.parse("WEBVTT\n\n00:nan --> 00:inf\nMalformed\n").isEmpty)
+        #expect(WebVTT.parse("WEBVTT\n\n00:09.000 --> 00:01.000\nBackwards\n").isEmpty)
+        #expect(WebVTT.parse("WEBVTT\n\n00:00:99999999999999999999 --> 00:00:99999999999999999999\nHuge\n").isEmpty)
+    }
+
+    @Test func timestampMapShiftsLaterChunksRelativeToTheFirst() {
+        // Two chunks that each restart their local clock; the maps put the second 300 s later.
+        let vtt = """
+        WEBVTT
+        X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:900000
+
+        00:00:01.000 --> 00:00:02.000
+        first chunk
+
+        WEBVTT
+        X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:27900000
+
+        00:00:01.000 --> 00:00:02.000
+        second chunk
+        """
+        let cues = WebVTT.parse(vtt)
+        #expect(cues.map(\.text) == ["first chunk", "second chunk"])
+        #expect(cues[0].start == 1)        // the stream's own 10 s start offset is not added
+        #expect(cues[1].start == 301)      // (27900000 − 900000) / 90000 + 1
+    }
+
+    @Test func onlyRealMarkupIsStrippedFromCueText() {
+        #expect(WebVTT.cleanText("if i < n and a<b then x << 2") == "if i < n and a<b then x << 2")
+        #expect(WebVTT.cleanText("<v Prof>so <c.yellow>i < n</c> <00:01.000>holds</v>") == "so i < n holds")
+        #expect(WebVTT.cleanText("<i>a</i> &lt;b&gt; &amp;lt; Q&amp;A") == "a <b> &lt; Q&A")
+    }
+
+    @Test func timestampMapWithANonZeroLocalClock() {
+        #expect(WebVTT.timestampMapOffset(in: ["WEBVTT", "X-TIMESTAMP-MAP=MPEGTS:180000,LOCAL:00:00:01.000"]) == 1)
+        #expect(WebVTT.timestampMapOffset(in: ["WEBVTT", "X-TIMESTAMP-MAP=LOCAL:bad"]) == nil)
+    }
 }

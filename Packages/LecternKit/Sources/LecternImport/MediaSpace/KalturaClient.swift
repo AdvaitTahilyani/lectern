@@ -56,7 +56,6 @@ public struct KalturaClient: Sendable {
         do {
             return try HLSParser.parseMaster(try await fetcher.string(from: url), baseURL: url)
         } catch let error where Self.isRecoverable(error) {
-            if case ImportError.sessionExpired = error { throw error }
             return nil
         }
     }
@@ -88,12 +87,16 @@ public struct KalturaClient: Sendable {
     /// WebVTT rendition.
     public func captions(for source: MediaSpaceSource) async throws -> [TranscriptSegment] {
         var cues: [CaptionCue] = []
+        var unreadable: DecodingError?
         do {
             cues = try await apiCaptionCues(for: source)
+        } catch let error as DecodingError {
+            unreadable = error   // reported only if the HLS rendition has nothing either
         } catch let error where Self.isRecoverable(error) {
             // Fall through to the HLS rendition.
         }
         if cues.isEmpty { cues = try await hlsCaptionCues(for: source) }
+        if cues.isEmpty, let unreadable { throw unreadable }
         return CaptionMerger().merge(cues)
     }
 

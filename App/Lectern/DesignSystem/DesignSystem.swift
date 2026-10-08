@@ -40,7 +40,6 @@ nonisolated enum DS {
         static let threeColumnMin: CGFloat = 1180
         static let twoColumnMin: CGFloat = 860
         static let focusPanel = CGSize(width: 340, height: 160)
-        static let focusPanelWithQuiz = CGSize(width: 340, height: 248)
         static let settingsWidth: CGFloat = 620
         static let onboarding = CGSize(width: 560, height: 640)
     }

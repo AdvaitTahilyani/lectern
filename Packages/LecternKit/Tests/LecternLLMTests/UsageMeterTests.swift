@@ -199,10 +199,15 @@ private func approx(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
         #expect(await ledger.month().models["anthropic/claude-haiku-4-5"]?.totals.calls == 2)
     }
 
-    @Test func callsWithoutUsageAreNotRecorded() async throws {
+    @Test func callsWithoutUsageAreBookedAsAnEstimateNotForFree() async throws {
         let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
-        _ = try await MeteredProvider(FakeProvider(kind: .openAI, model: "gpt-5.4-nano", usage: nil), ledger: ledger).complete(simpleRequest)
-        #expect(await ledger.month().models.isEmpty)
+        let metered = MeteredProvider(FakeProvider(kind: .openAI, model: "gpt-5.4-nano", usage: nil), ledger: ledger)
+        _ = try await metered.complete(simpleRequest)
+        _ = try await collect(metered.stream(simpleRequest))
+        let entry = try #require(await ledger.month().models["openAI/gpt-5.4-nano"])
+        #expect(entry.totals.calls == 2)
+        #expect(entry.isEstimate)
+        #expect(entry.totals.inputTokens > 0 && entry.totals.costUSD > 0)
     }
 
     @Test(arguments: [
@@ -281,5 +286,219 @@ private func approx(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
         let provider = OpenAICompatibleProvider.openAI(apiKey: "sk-test", model: "gpt-5.4-nano", baseURL: server.baseURL, session: server.session)
         let result = try await collect(provider.stream(simpleRequest))
         #expect(result.usage == LLMUsage(inputTokens: 100, outputTokens: 2, cachedInputTokens: 64))
+    }
+}
+
+// MARK: - Reservations, incomplete streams, ledger health
+
+/// Holds callers until opened.
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
+    }
+}
+
+/// A cloud provider whose calls take as long as the test lets them.
+private final class SlowProvider: LLMProvider, Sendable {
+    let kind: ProviderKind = .anthropic
+    let model = "claude-haiku-4-5"
+    let gate = Gate()
+    let entered = Mutex(0)
+
+    func complete(_ request: LLMRequest) async throws -> LLMResponse {
+        entered.withLock { $0 += 1 }
+        await gate.wait()
+        return LLMResponse(text: "slow", usage: LLMUsage(inputTokens: 20, outputTokens: 10))
+    }
+    func stream(_ request: LLMRequest) -> AsyncThrowingStream<LLMStreamEvent, Error> {
+        AsyncThrowingStream { c in
+            let task = Task {
+                entered.withLock { $0 += 1 }
+                await gate.wait()
+                c.yield(.delta("slow"))
+                c.yield(.done(LLMUsage(inputTokens: 20, outputTokens: 10)))
+                c.finish()
+            }
+            c.onTermination = { _ in task.cancel() }
+        }
+    }
+    func healthCheck() async throws {}
+}
+
+/// Streams some text, then fails or hangs.
+private final class BrokenStream: LLMProvider, Sendable {
+    enum Ending: Sendable { case fail(LLMError), hang }
+    let kind: ProviderKind = .anthropic
+    let model = "claude-haiku-4-5"
+    let deltas: [String]
+    let ending: Ending
+    init(deltas: [String], ending: Ending) { self.deltas = deltas; self.ending = ending }
+
+    func complete(_ request: LLMRequest) async throws -> LLMResponse { throw LLMError.network("unused") }
+    func stream(_ request: LLMRequest) -> AsyncThrowingStream<LLMStreamEvent, Error> {
+        let (deltas, ending) = (deltas, ending)
+        return AsyncThrowingStream { c in
+            let task = Task {
+                for d in deltas { c.yield(.delta(d)) }
+                switch ending {
+                case .fail(let error): c.finish(throwing: error)
+                case .hang:
+                    while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+                    c.finish()
+                }
+            }
+            c.onTermination = { _ in task.cancel() }
+        }
+    }
+    func healthCheck() async throws {}
+}
+
+private func waitUntil(_ condition: @Sendable () async -> Bool) async {
+    for _ in 0..<500 where !(await condition()) { try? await Task.sleep(for: .milliseconds(10)) }
+}
+
+@Suite struct CapReservationTests {
+    // A 100-token Haiku call is estimated at about $0.0005 at most.
+    private func capped(_ cloud: any LLMProvider, ledger: UsageLedger, cap: Double, onDevice: (any LLMProvider)?) -> CappedProvider {
+        CappedProvider(MeteredProvider(cloud, ledger: ledger), ledger: ledger, cap: { cap }, fallback: { onDevice })
+    }
+
+    @Test func concurrentCallsShareTheBudgetInsteadOfAllPassingTheSameCheck() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        let cloud = SlowProvider()
+        let onDevice = FakeProvider(kind: .onDevice, model: AppSettings.defaultOnDeviceModel, usage: nil)
+        let provider = capped(cloud, ledger: ledger, cap: 0.001, onDevice: onDevice)   // room for one call
+
+        let calls = (0..<3).map { _ in Task { try await provider.complete(simpleRequest).text } }
+        await waitUntil { onDevice.calls.withLock { $0 } == 2 }
+        #expect(cloud.entered.withLock { $0 } == 1, "only one call fits under the cap")
+        #expect(onDevice.calls.withLock { $0 } == 2)
+        #expect(await ledger.reservedUSD() > 0)
+
+        await cloud.gate.open()
+        var texts: [String] = []
+        for call in calls { texts.append(try await call.value) }
+        #expect(texts.filter { $0 == "slow" }.count == 1)
+        #expect(await ledger.reservedUSD() == 0, "holds end with the calls")
+        #expect(await ledger.spentThisMonth() < 0.001)
+    }
+
+    @Test func aSingleCallThatCouldCrossTheCapIsNotLetThrough() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        let cloud = FakeProvider(kind: .anthropic, model: "claude-haiku-4-5")
+        let onDevice = FakeProvider(kind: .onDevice, model: AppSettings.defaultOnDeviceModel, usage: nil)
+        let big = LLMRequest(messages: [.user("Hi")], maxTokens: 100_000)   // up to $0.50 of output
+        _ = try await capped(cloud, ledger: ledger, cap: 0.10, onDevice: onDevice).complete(big)
+        #expect(cloud.calls.withLock { $0 } == 0)
+        #expect(onDevice.calls.withLock { $0 } == 1)
+        await #expect(throws: MonthlyCapReached.self) { _ = try await capped(cloud, ledger: ledger, cap: 0.10, onDevice: nil).complete(big) }
+        #expect(await ledger.reservedUSD() == 0)
+    }
+
+    @Test func holdsAreReleasedWhenACallFailsOrIsCancelled() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        let failing = capped(BrokenStream(deltas: [], ending: .fail(.http(status: 500, message: "boom"))), ledger: ledger, cap: 1, onDevice: nil)
+        await #expect(throws: LLMError.self) { _ = try await collect(failing.stream(simpleRequest)) }
+        #expect(await ledger.reservedUSD() == 0)
+
+        let slow = SlowProvider()
+        let hanging = capped(slow, ledger: ledger, cap: 1, onDevice: nil)
+        let call = Task { try await hanging.complete(simpleRequest) }
+        await waitUntil { slow.entered.withLock { $0 } == 1 }
+        #expect(await ledger.reservedUSD() > 0)
+        await slow.gate.open()
+        _ = try await call.value
+        #expect(await ledger.reservedUSD() == 0)
+    }
+
+    @Test func staleHoldsStopCounting() async throws {
+        let clock = Clock(date("2026-09-15T12:00:00Z"))
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc, now: { clock.now })
+        _ = try #require(await ledger.reserve(estimatedUSD: 0.5, withinCapUSD: 1))
+        #expect(await ledger.reserve(estimatedUSD: 0.6, withinCapUSD: 1) == nil)
+        clock.set(date("2026-09-15T12:20:00Z"))
+        #expect(await ledger.reservedUSD() == 0)
+        #expect(await ledger.reserve(estimatedUSD: 0.6, withinCapUSD: 1) != nil)
+    }
+}
+
+@Suite struct IncompleteUsageTests {
+    private func entry(_ ledger: UsageLedger) async -> ModelUsage? { await ledger.month().models["anthropic/claude-haiku-4-5"] }
+
+    @Test func aStreamCancelledAfterSomeTextIsBookedAsAnEstimate() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        let metered = MeteredProvider(BrokenStream(deltas: ["partial answer"], ending: .hang), ledger: ledger)
+        let reader = Task {
+            for try await event in metered.stream(simpleRequest) {
+                if case .delta = event { return }
+            }
+        }
+        _ = try await reader.value   // got the first text; now walk away
+        await waitUntil { await entry(ledger) != nil }
+        let booked = try #require(await entry(ledger))
+        #expect(booked.totals.calls == 1)
+        #expect(booked.isEstimate)
+        #expect(booked.totals.inputTokens > 0 && booked.totals.outputTokens > 0 && booked.totals.costUSD > 0)
+    }
+
+    @Test func aStreamThatBreaksAfterTextIsBookedButARejectedRequestIsNot() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        let broken = MeteredProvider(BrokenStream(deltas: ["some ", "text"], ending: .fail(.network("connection lost"))), ledger: ledger)
+        await #expect(throws: LLMError.self) { for try await _ in broken.stream(simpleRequest) {} }
+        let booked = try #require(await entry(ledger))
+        #expect(booked.totals.calls == 1 && booked.isEstimate)
+
+        let rejected = MeteredProvider(BrokenStream(deltas: [], ending: .fail(.http(status: 401, message: "bad key"))), ledger: UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc))
+        await #expect(throws: LLMError.self) { for try await _ in rejected.stream(simpleRequest) {} }
+        #expect(await rejected.ledger.month().models.isEmpty, "a request the server refused cost nothing")
+    }
+
+    @Test func actualUsageIsNeverMarkedAsEstimated() async throws {
+        let ledger = UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc)
+        _ = try await MeteredProvider(FakeProvider(kind: .anthropic, model: "claude-haiku-4-5"), ledger: ledger).complete(simpleRequest)
+        #expect(await entry(ledger)?.isEstimate == false)
+    }
+}
+
+@Suite struct LedgerHealthTests {
+    @Test func aDamagedFileIsReportedNotSilentlyForgotten() async throws {
+        let url = temporaryLedgerURL()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{ nope".utf8).write(to: url)
+        let ledger = UsageLedger(fileURL: url, calendar: utc)
+        #expect(await ledger.storageProblem()?.contains("damaged") == true)
+        #expect(await UsageLedger(fileURL: temporaryLedgerURL(), calendar: utc).storageProblem() == nil)
+    }
+
+    @Test func anUnreadableFileIsNeverOverwritten() async throws {
+        let url = temporaryLedgerURL()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let original = try JSONEncoder().encode(["version": 1])
+        try original.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+
+        let ledger = UsageLedger(fileURL: url, calendar: utc)
+        await ledger.record(provider: .anthropic, model: "claude-haiku-4-5", usage: LLMUsage(inputTokens: 10, outputTokens: 1))
+        #expect(await ledger.storageProblem() != nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        #expect(try Data(contentsOf: url) == original)
+    }
+
+    @Test func aFailedSaveIsReported() async throws {
+        let blocker = FileManager.default.temporaryDirectory.appending(path: "usage-blocker-\(UUID().uuidString)")
+        try Data().write(to: blocker)   // a file where the ledger's folder should be
+        let ledger = UsageLedger(fileURL: blocker.appending(path: "usage.json"), calendar: utc)
+        await ledger.record(provider: .anthropic, model: "claude-haiku-4-5", usage: LLMUsage(inputTokens: 10, outputTokens: 1))
+        #expect(await ledger.storageProblem() != nil)
+        #expect(await ledger.spentThisMonth() > 0, "usage is still counted in memory")
     }
 }

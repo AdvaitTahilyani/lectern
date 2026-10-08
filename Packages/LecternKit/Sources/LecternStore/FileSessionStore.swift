@@ -7,7 +7,7 @@ import OSLog
 ///     <root>/courses.json
 ///     <root>/Courses/<course-uuid>/chat.json
 ///     <root>/Sessions/<session-uuid>/session.json
-///     <root>/Sessions/<session-uuid>/slides.pdf
+///     <root>/Sessions/<session-uuid>/slides-<id>.pdf   (one per deck; older lectures: slides.pdf)
 ///
 /// Writes are atomic and durable (written to a temporary file, flushed to the disk, then renamed
 /// over the old one), and the previous version is kept beside it as `<name>.bak`, so neither a
@@ -22,7 +22,8 @@ public actor FileSessionStore: SessionStoring {
         URL.applicationSupportDirectory.appending(path: "Lectern", directoryHint: .isDirectory)
     }
 
-    /// File name given to an imported slide PDF inside its session folder.
+    /// File name of the one slide PDF a session folder held before lectures could have several
+    /// decks. Still read; new decks get names of their own (see `importSlides`).
     public static let slidesFileName = "slides.pdf"
 
     public let root: URL
@@ -34,10 +35,17 @@ public actor FileSessionStore: SessionStoring {
     /// When true, `delete(sessionID:)` moves the session's folder to the Trash (recoverable)
     /// instead of removing it for good.
     public let movesDeletedToTrash: Bool
+    private let trash: @Sendable (URL) throws -> Void
 
-    public init(root: URL = FileSessionStore.defaultRoot, movesDeletedToTrash: Bool = false) {
+    /// - Parameter trash: moves a folder to the Trash. Injectable so tests can make it fail.
+    public init(
+        root: URL = FileSessionStore.defaultRoot,
+        movesDeletedToTrash: Bool = false,
+        trash: @escaping @Sendable (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) {
         self.root = root
         self.movesDeletedToTrash = movesDeletedToTrash
+        self.trash = trash
     }
 
     private var coursesURL: URL { root.appending(path: "courses.json") }
@@ -126,16 +134,30 @@ public actor FileSessionStore: SessionStoring {
     }
 
     /// Removes the session's folder, including its slide PDF: to the Trash when
-    /// `movesDeletedToTrash` is set (falling back to removal where there is no Trash, e.g. a
-    /// network volume), otherwise for good. Deleting an unknown session is a no-op.
+    /// `movesDeletedToTrash` is set, otherwise for good. A Trash that refuses the folder (a
+    /// permission or volume error, or a volume with no Trash) throws `StoreError.trashFailed` and
+    /// leaves the lecture untouched; it is never erased as a fallback. Deleting an unknown session
+    /// is a no-op.
     public func delete(sessionID: UUID) throws {
         let folder = sessionFolder(sessionID)
         guard fileManager.fileExists(atPath: folder.path) else { return }
-        if movesDeletedToTrash {
-            do { try fileManager.trashItem(at: folder, resultingItemURL: nil); return } catch {
-                Self.logger.error("Could not trash \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            }
+        guard movesDeletedToTrash else {
+            try fileManager.removeItem(at: folder)
+            return
         }
+        do { try trash(folder) } catch {
+            Self.logger.error("Could not trash \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            throw StoreError.trashFailed(folder, underlying: error)
+        }
+    }
+
+    /// Erases the session's folder for good, never touching the Trash. The caller must have the
+    /// user's explicit consent for an unrecoverable deletion.
+    // `async` so calls on the concrete type never resolve to the protocol's default, which is
+    // `delete(sessionID:)` and would go to the Trash.
+    public func deletePermanently(sessionID: UUID) async throws {
+        let folder = sessionFolder(sessionID)
+        guard fileManager.fileExists(atPath: folder.path) else { return }
         try fileManager.removeItem(at: folder)
     }
 
@@ -147,29 +169,47 @@ public actor FileSessionStore: SessionStoring {
         return folder
     }
 
-    /// Copies `url` into the session folder as `slides.pdf` (replacing any previous deck) and
-    /// returns the stored file name.
+    /// Copies `url` into the session folder under a new name of its own ("slides-1a2b3c4d.pdf")
+    /// and returns that name. Each deck of a lecture keeps its own file, and a stored file is never
+    /// overwritten: a replaced deck's file stays valid until `removeSlides(named:from:)` once the
+    /// replacement is committed, so an in-flight render or index of the old deck never sees new
+    /// bytes under its name.
     public func importSlides(from url: URL, into sessionID: UUID) throws -> String {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard fileManager.fileExists(atPath: url.path) else { throw StoreError.sourceFileMissing(url) }
 
         let folder = try folder(for: sessionID)
-        let destination = folder.appending(path: Self.slidesFileName)
-        // Copy beside the destination first so a failed copy never destroys the previous deck.
+        var name: String
+        repeat {
+            name = "slides-\(UUID().uuidString.prefix(8).lowercased()).pdf"
+        } while fileManager.fileExists(atPath: folder.appending(path: name).path)
+        // Copy to a hidden staging name first, so a cut-short copy never looks like a deck.
         let staging = folder.appending(path: ".incoming-\(UUID().uuidString).pdf")
         try fileManager.copyItem(at: url, to: staging)
         do {
-            if fileManager.fileExists(atPath: destination.path) {
-                _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: destination)
-            }
+            try fileManager.moveItem(at: staging, to: folder.appending(path: name))
         } catch {
             try? fileManager.removeItem(at: staging)
             throw error
         }
-        return Self.slidesFileName
+        return name
+    }
+
+    /// Deletes a slide PDF of the session that no deck refers to any more. Only slide files
+    /// (`slides.pdf`, `slides-….pdf`) are ever removed; a missing file is a no-op. `async` so calls
+    /// on the concrete type never resolve to the protocol's no-op default.
+    public func removeSlides(named fileName: String, from sessionID: UUID) async throws {
+        guard Self.isSlideFileName(fileName) else { throw StoreError.notASlideFile(fileName) }
+        let file = sessionFolder(sessionID).appending(path: fileName)
+        guard fileManager.fileExists(atPath: file.path) else { return }
+        try fileManager.removeItem(at: file)
+    }
+
+    /// Names `importSlides` produces, plus the single `slides.pdf` of older libraries.
+    static func isSlideFileName(_ name: String) -> Bool {
+        guard !name.contains("/"), name.hasSuffix(".pdf") else { return false }
+        return name == slidesFileName || (name.hasPrefix("slides-") && name.count > "slides-.pdf".count)
     }
 
     // MARK: Reading & writing

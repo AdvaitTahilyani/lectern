@@ -152,6 +152,10 @@ private final class FakeRunner: AppleScriptRunning, @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: directory) }
         let pptx = try PPTXFixture.make(in: directory)
         await #expect(throws: ImportError.noPresentationApp) { try await converter(FakeRunner(), installed: []).convertToPDF(pptx) }
+        let key = directory.appendingPathComponent("deck.key")
+        FileManager.default.createFile(atPath: key.path, contents: Data("x".utf8))
+        // PowerPoint can't open Keynote files, so having only it installed doesn't help.
+        await #expect(throws: ImportError.keynoteNotInstalled) { try await converter(FakeRunner(), installed: [PresentationConverter.powerPointBundleID]).convertToPDF(key) }
         await #expect(throws: ImportError.unsupportedFileType("docx")) { try await converter(FakeRunner()).convertToPDF(directory.appendingPathComponent("a.docx")) }
     }
 

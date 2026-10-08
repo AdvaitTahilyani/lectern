@@ -1,5 +1,6 @@
 import SwiftUI
 import LecternCore
+import LecternImport
 import UniformTypeIdentifiers
 
 /// "Import Recording…": a file or a MediaSpace lecture, plus course/title/deck (DESIGN.md §4.13).
@@ -7,7 +8,6 @@ struct ImportSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var showFileChooser = false
-    @State private var showDeckChooser = false
 
     var body: some View {
         @Bindable var draft = app.importDraft
@@ -33,8 +33,12 @@ struct ImportSheet: View {
         .fileImporter(isPresented: $showFileChooser, allowedContentTypes: [.audiovisualContent]) { r in
             if case .success(let url) = r { draft.setFile(url) }
         }
-        .fileImporter(isPresented: $showDeckChooser, allowedContentTypes: [.pdf]) { r in
-            if case .success(let url) = r { draft.setDeck(url) }
+    }
+
+    /// An AppKit panel: a second `fileImporter` on this view never presented (only one per view works).
+    private func chooseDeck() {
+        DeckIntake.choose(extensions: ["pdf"], multiple: false, message: "Choose the slide deck for this recording.") { urls in
+            if let url = urls.first { app.importDraft.setDeck(url) }
         }
     }
 
@@ -131,19 +135,19 @@ struct ImportSheet: View {
             HStack(spacing: DS.Space.s) {
                 if let images = draft.deckImages, let url = draft.deckURL {
                     SlideImage(image: images.image(page: 1, width: 64), page: 1, radius: DS.Radius.chip).frame(width: 64, height: 36)
-                    Text("\(url.lastPathComponent) · \(images.pageCount) slides").font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    Text("\(url.lastPathComponent) · \(images.pageCount) slide\(images.pageCount == 1 ? "" : "s")").font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Button { draft.setDeck(nil) } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).foregroundStyle(.tertiary)
                         .accessibilityLabel("Remove slide deck")
                 } else {
-                    Button("Choose Slide Deck…") { showDeckChooser = true }.controlSize(.small)
+                    Button("Choose Slide Deck…") { chooseDeck() }.controlSize(.small)
                     Text("Optional").font(DS.Typo.footnote).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
             if draft.deckURL == nil, let first = draft.suggestedDeckURLs.first {
                 HStack(spacing: DS.Space.s) {
-                    Button("Use \(first.lastPathComponent)") { draft.setDeck(first) }.controlSize(.small)
+                    Button("Use \(first.lastPathComponent)") { draft.setDeck(first) }.controlSize(.small).lineLimit(1).truncationMode(.middle)
                     let others = draft.suggestedDeckURLs.dropFirst()
                     if !others.isEmpty {
                         Menu("Other Decks") {
@@ -151,7 +155,7 @@ struct ImportSheet: View {
                         }
                         .controlSize(.small).fixedSize()
                     }
-                    Text("From the course's slides folder").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                    Text("From the course's slides folder").font(DS.Typo.footnote).foregroundStyle(.secondary).lineLimit(1).layoutPriority(-1)
                 }
             }
             if let error = draft.deckSuggestionsError {
@@ -165,6 +169,8 @@ struct ImportSheet: View {
 struct MediaSpaceSheet: View {
     var onFound: (MediaSpaceSource) -> Void
     @Environment(AppModel.self) private var app
+    /// Shared with the web view, which keeps it current; the toolbar reads and drives it.
+    @State private var browser = MediaSpaceBrowserState()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -176,8 +182,35 @@ struct MediaSpaceSheet: View {
             }
             .padding(DS.Space.l)
             Divider()
-            app.services.mediaSpaceBrowser.makeBrowser { source in onFound(source) }
+            navigationBar
+            Divider()
+            app.services.mediaSpaceBrowser.makeBrowser(state: browser) { source in onFound(source) }
         }
         .frame(width: 860, height: 620)
+    }
+
+    private var navigationBar: some View {
+        HStack(spacing: DS.Space.s) {
+            Button { browser.goBack() } label: { Image(systemName: "chevron.left") }
+                .disabled(!browser.canGoBack).help("Back").accessibilityLabel("Back")
+            Button { browser.goForward() } label: { Image(systemName: "chevron.right") }
+                .disabled(!browser.canGoForward).help("Forward").accessibilityLabel("Forward")
+            Button { browser.reload() } label: { Image(systemName: "arrow.clockwise") }
+                .help("Reload").accessibilityLabel("Reload")
+            Button { browser.goHome() } label: { Image(systemName: "house") }
+                .help("MediaSpace home").accessibilityLabel("MediaSpace home")
+            if browser.isLoading { ProgressView().controlSize(.small) }
+            Text(browser.pageTitle ?? "").font(DS.Typo.footnote).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: DS.Space.s)
+            if browser.isOnMediaPage {
+                Label("Lecture found", systemImage: "checkmark.circle.fill")
+                    .font(DS.Typo.footnote).foregroundStyle(DS.Colors.correct)
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, DS.Space.l)
+        .frame(height: 32)
     }
 }

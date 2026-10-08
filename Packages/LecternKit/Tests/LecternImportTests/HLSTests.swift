@@ -116,4 +116,63 @@ import Testing
         }
         #expect(server.requests.filter { $0.lastPathComponent == "seg-2.ts" }.count == 1)
     }
+
+    // MARK: Audit B40 / B41
+
+    @Test func parsesByteRangesWithAndWithoutOffsets() throws {
+        let text = """
+        #EXTM3U
+        #EXTINF:2,
+        #EXT-X-BYTERANGE:1000@0
+        media.ts
+        #EXTINF:2,
+        #EXT-X-BYTERANGE:500
+        media.ts
+        #EXTINF:2,
+        #EXT-X-BYTERANGE:300@5000
+        media.ts
+        #EXTINF:2,
+        plain.ts
+        """
+        let playlist = try HLSParser.parseMedia(text, baseURL: Self.base)
+        #expect(playlist.segments.map(\.byteRange) == [0..<1000, 1000..<1500, 5000..<5300, nil])
+        #expect(throws: ImportError.self) { try HLSParser.parseMedia("#EXTM3U\n#EXT-X-BYTERANGE:abc\n#EXTINF:1,\ns.ts", baseURL: Self.base) }
+    }
+
+    @Test func downloadsOnlyTheDeclaredByteRanges() async throws {
+        let audio = MPEGTSAudioDemuxerTests.frames(3).reduce(Data(), +)
+        let segment = TSBuilder.segment(audioChunks: [audio])
+        // One media file holding two segments back to back.
+        let file = segment + segment
+        let playlist = try HLSParser.parseMedia(
+            "#EXTM3U\n#EXTINF:1,\n#EXT-X-BYTERANGE:\(segment.count)@0\nmedia.ts\n#EXTINF:1,\n#EXT-X-BYTERANGE:\(segment.count)\nmedia.ts\n#EXT-X-ENDLIST",
+            baseURL: URL(string: "https://cdn.test/a/index.m3u8")!
+        )
+        let directory = try makeTemporaryDirectory("hls-range")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The stub ignores Range and returns the whole file; the fetcher must cut it down.
+        let server = StubServer { _ in .data(file) }
+        let out = try await HLSAudioDownloader(fetcher: HTTPFetcher(session: server.session))
+            .download(playlist, toStem: directory.appendingPathComponent("out")) { _ in }
+        #expect(try Data(contentsOf: out).count == 2 * audio.count)
+        let ranges = server.ranges(for: URL(string: "https://cdn.test/a/media.ts")!).compactMap { $0 }.sorted()
+        #expect(ranges == ["bytes=0-\(segment.count - 1)", "bytes=\(segment.count)-\(2 * segment.count - 1)"].sorted())
+    }
+
+    @Test func prefersTheDefaultAudioRenditionThenTheLanguage() throws {
+        func master(_ media: String) throws -> HLSMasterPlaylist {
+            try HLSParser.parseMaster("#EXTM3U\n\(media)\n#EXT-X-STREAM-INF:BANDWIDTH=100000,AUDIO=\"a\"\nvideo.m3u8", baseURL: Self.base)
+        }
+        let commentaryFirst = try master("""
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Commentary",LANGUAGE="de",URI="commentary.m3u8"
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Lecture",LANGUAGE="en",DEFAULT=YES,URI="lecture.m3u8"
+        """)
+        #expect(commentaryFirst.audioStream(preferredLanguage: "fr")?.lastPathComponent == "lecture.m3u8")
+        let noDefault = try master("""
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Deutsch",LANGUAGE="de",URI="de.m3u8"
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en-US",URI="en.m3u8"
+        """)
+        #expect(noDefault.audioStream(preferredLanguage: "en")?.lastPathComponent == "en.m3u8")
+        #expect(noDefault.audioStream(preferredLanguage: "ja")?.lastPathComponent == "de.m3u8")   // nothing matches: first listed
+    }
 }

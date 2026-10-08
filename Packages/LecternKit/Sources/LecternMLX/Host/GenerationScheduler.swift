@@ -1,4 +1,5 @@
 import LecternCore
+import Synchronization
 
 /// Grants exclusive use of the GPU to one generation at a time, in priority order.
 ///
@@ -6,6 +7,10 @@ import LecternCore
 /// go before background work; within background work, rolling summaries go before timed quiz
 /// questions, so takeaways never queue behind a quiz ping. Equal priorities are served
 /// first-come first-served. A waiter whose task is cancelled leaves the queue at once.
+///
+/// A turn is not preempted by the scheduler itself, but the holder can see whether more urgent
+/// work is waiting (``hasWaiter(above:)``) and give the turn back: ``MLXModelHost`` does so for
+/// background generations at prefill steps and decoded tokens, then queues them again.
 actor GenerationScheduler {
     private struct Waiter {
         let id: UInt64
@@ -16,15 +21,28 @@ actor GenerationScheduler {
     private var isBusy = false
     private var waiters: [Waiter] = []
     private var nextID: UInt64 = 0
+    /// Highest priority among the waiters (`Int.min` when none), readable without the actor so a
+    /// generation running on the engine's queue can poll it per token.
+    private nonisolated let highestWaiting = Atomic<Int>(.min)
+
+    /// Lowest priority of interactive requests (someone is waiting for the answer).
+    static let interactivePriority = 5
+
+    /// Whether a request with a higher priority than `priority` is waiting for the GPU. Safe to
+    /// call from any thread.
+    nonisolated func hasWaiter(above priority: Int) -> Bool {
+        highestWaiting.load(ordering: .relaxed) > priority
+    }
 
     /// Scheduling priority of a request from a provider serving `role`.
     static func priority(of role: LLMRole?, request: RequestPriority = .background) -> Int {
         switch (request, role) {
         case (.interactive, .ask): 6
         case (.interactive, _): 5
-        // Background requests keep a role order for callers that don't set a priority.
-        case (.background, .ask): 4
-        case (.background, .summaries): 3
+        // Background work: the live card first (rolling summaries), then preparing Ask's
+        // prompt, then timed quiz questions.
+        case (.background, .summaries): 4
+        case (.background, .ask): 3
         case (.background, .quizzes): 2
         case (.background, nil): 1
         }
@@ -46,6 +64,7 @@ actor GenerationScheduler {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 waiters.append(Waiter(id: id, priority: priority, continuation: continuation))
+                publishHighestWaiting()
             }
         } onCancel: {
             Task { await self.cancelWaiter(id) }
@@ -67,11 +86,19 @@ actor GenerationScheduler {
             isBusy = false
             return
         }
-        waiters.remove(at: index).continuation.resume()
+        let next = waiters.remove(at: index)
+        publishHighestWaiting()
+        next.continuation.resume()
     }
 
     private func cancelWaiter(_ id: UInt64) {
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
-        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
+        let waiter = waiters.remove(at: index)
+        publishHighestWaiting()
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    private func publishHighestWaiting() {
+        highestWaiting.store(waiters.map(\.priority).max() ?? .min, ordering: .relaxed)
     }
 }

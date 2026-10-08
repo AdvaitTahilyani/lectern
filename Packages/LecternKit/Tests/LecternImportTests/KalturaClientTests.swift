@@ -61,6 +61,21 @@ import Testing
         #expect(segments.map(\.text) == ["first chunk.", "second chunk."])
     }
 
+    @Test func anAPIResponseThatDoesNotDecodeFallsBackToHLSToo() async throws {
+        let server = StubServer { url in
+            switch url.path {
+            case let p where p.hasSuffix("/action/list"): return .text(#"{"objectType":"KalturaAPIException","message":"nope"}"#)
+            case let p where p.hasSuffix("/a.m3u8") && p.contains("playManifest"):
+                return .text("#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,NAME=\"English\",DEFAULT=YES,URI=\"https://cdn.test/subs/a.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://cdn.test/v.m3u8")
+            case "/subs/a.m3u8": return .text("#EXTM3U\n#EXTINF:300.0,\nsegmentIndex/1.vtt\n#EXT-X-ENDLIST")
+            case "/subs/segmentIndex/1.vtt": return .text("WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nfirst chunk.\n")
+            default: return .notFound
+            }
+        }
+        let segments = try await KalturaClient(session: server.session).captions(for: Self.source)
+        #expect(segments.map(\.text) == ["first chunk."])
+    }
+
     @Test func entriesWithoutCaptionsYieldNothing() async throws {
         let server = StubServer { url in
             if url.path.hasSuffix("/action/list") { return .text(#"{"totalCount":0,"objects":[]}"#) }

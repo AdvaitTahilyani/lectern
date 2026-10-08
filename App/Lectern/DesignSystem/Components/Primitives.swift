@@ -18,11 +18,12 @@ struct LiveDot: View {
                     .scaleEffect(pulsing ? 1.6 : 1)
                     .opacity(pulsing ? 0 : 0.35)
                     .animation(.easeOut(duration: DS.Motion.livePulsePeriod).repeatForever(autoreverses: false), value: pulsing)
+                    .onAppear { pulsing = true }
+                    .onDisappear { pulsing = false }
             }
             Circle().fill(fill)
         }
         .frame(width: size, height: size)
-        .onAppear { pulsing = true }
         .accessibilityLabel(label)
     }
 
@@ -77,7 +78,7 @@ struct SessionClock: View {
 
     /// Updated per minute, not per second, to avoid VoiceOver chatter.
     private var accessibilityTime: String {
-        let m = Int(elapsed) / 60
+        let m = TimeFormat.wholeSeconds(elapsed) / 60
         return "\(m) minute\(m == 1 ? "" : "s")"
     }
 }
@@ -206,6 +207,8 @@ struct ModelStatusBadge: View {
             Image(systemName: "cloud.fill").font(.caption).foregroundStyle(.secondary)
         case .unavailable:
             Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(DS.Colors.warning)
+        case .checking:
+            ProgressView().controlSize(.mini)
         }
     }
 
@@ -215,6 +218,7 @@ struct ModelStatusBadge: View {
         case .downloading(let p): "Downloading \(Int(p * 100))%"
         case .cloud(let provider): style == .compact ? "\(provider) · Cloud" : "Cloud · \(provider)"
         case .unavailable(let reason): style == .compact ? "Unavailable" : reason
+        case .checking: "Checking models…"
         }
     }
 }
@@ -283,7 +287,7 @@ struct TimestampChip: View {
         .animation(DS.Motion.hover, value: hovered)
         .help(tooltip ?? "Show related slide")
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Shows related slide")
+        .accessibilityHint(isGutter ? "Shows the slide and topic at this time" : tooltip ?? "Shows related slide")
     }
 
     private var isGutter: Bool { if case .gutter = style { true } else { false } }
@@ -299,8 +303,8 @@ struct TimestampChip: View {
     }
 
     private var accessibilityLabel: String {
-        let m = Int(time) / 60, s = Int(time) % 60
-        return "\(m) minutes \(s) seconds"
+        let whole = TimeFormat.wholeSeconds(time), m = whole / 60, s = whole % 60
+        return "\(m) minute\(m == 1 ? "" : "s") \(s) second\(s == 1 ? "" : "s")"
     }
 }
 
@@ -405,11 +409,15 @@ struct ScoreRing: View {
                 .fontWeight(.semibold)
         }
         .frame(width: size, height: size)
-        .onAppear {
-            let target = total > 0 ? Double(correct) / Double(total) : 0
-            if reduceMotion { progress = target } else { withAnimation(DS.Motion.settle) { progress = target } }
-        }
+        .onAppear(perform: showScore)
+        .onChange(of: correct) { showScore() }
+        .onChange(of: total) { showScore() }
         .accessibilityLabel("\(correct) of \(total) correct")
+    }
+
+    private func showScore() {
+        let target = total > 0 ? Double(correct) / Double(total) : 0
+        if reduceMotion { progress = target } else { withAnimation(DS.Motion.settle) { progress = target } }
     }
 }
 

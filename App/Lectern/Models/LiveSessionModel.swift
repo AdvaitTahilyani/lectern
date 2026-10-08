@@ -27,9 +27,7 @@ final class LiveSessionModel {
         }
         var question: QuizQuestion
         var phase: Phase = .asking
-        var deadline: Date
         var selectedOption: Int?
-        var isHovered = false
         var shortAnswer = ""
 
         var activeQuestion: QuizQuestion {
@@ -70,6 +68,8 @@ final class LiveSessionModel {
         var freshSelected: Int?
         var freshGrade: QuizGrade?
         var isGrading = false
+        /// Why the fresh question couldn't be written or the answer couldn't be checked.
+        var error: String?
         var isFinished = false
         var current: MissedConcept? { index < concepts.count ? concepts[index] : nil }
     }
@@ -84,7 +84,11 @@ final class LiveSessionModel {
     private(set) var elapsed: TimeInterval
     private(set) var level: Float = 0
     private(set) var volatile: TranscriptSegment?
-    private(set) var paragraphs: [TranscriptParagraph] = []
+    private(set) var paragraphs: [TranscriptParagraph] = [] {
+        didSet { transcriptRevision &+= 1 }
+    }
+    /// Changes whenever `paragraphs` does (any text edit, regrouping or new segment); search caches key on it.
+    private(set) var transcriptRevision = 0
     private(set) var activity: BrainActivity = .idle
     private(set) var detectedSlide: Int?
     var followSlides = true
@@ -98,7 +102,9 @@ final class LiveSessionModel {
     /// Incremented whenever a takeaway settles; views use it for "N new" counts.
     private(set) var settledCount = 0
     private(set) var quiz: ActiveQuiz?
-    private(set) var pendingQuizBadge: QuizQuestion?
+    /// Questions waiting behind the one on screen (or behind the toolbar badge). A quiz stays until the
+    /// user answers, snoozes, skips or dismisses it, so new ones queue instead of replacing it.
+    private(set) var queuedQuizzes: [QuizQuestion] = []
     private(set) var streak = 0
     private(set) var streamingAnswer: String?
     private(set) var isAnswering = false
@@ -128,21 +134,27 @@ final class LiveSessionModel {
     var inspectorTab: InspectorTab = .transcript
     var isInspectorShown: Bool
     var showSlides: Bool
-    var pane: SessionPane = .takeaways
+    var pane: SessionPane = .takeaways {
+        // Questions held back while another pane was showing appear when the Takeaways come back.
+        didSet { if pane == .takeaways, oldValue != .takeaways { showNextQuizIfIdle() } }
+    }
     var expandedTakeawayID: UUID?
     var transcriptSeek: TranscriptSeek?
     var isFocusPanelOpen = false
     var isEditingTitle = false
     var showStopConfirmation = false
-    /// "Add Deck…" chooser; presented from the session root so tier changes never remove it.
-    var showDeckChooser = false
+    /// "Choose mic" picker, opened from the transcript's microphone warnings.
+    var showMicChooser = false
     var focusAskRequest = 0
     /// Bumped when the session root should take keyboard focus back (after leaving Ask, citations).
     var focusRootRequest = 0
     /// Bumped to open the slide viewer popover in the two-column tier (⌘3).
     var slideViewerRequest = 0
     /// Current responsive tier, mirrored from the view so pane/inspector commands can respect it.
-    var layoutTier: LayoutTier = .three
+    var layoutTier: LayoutTier = .three {
+        // Widening past the single-pane tier brings the Takeaways back, where held-back questions show.
+        didSet { if oldValue == .single, layoutTier != .single { showNextQuizIfIdle() } }
+    }
 
     var onSessionChanged: ((LectureSession) -> Void)?
     var onFinished: (() -> Void)?
@@ -153,19 +165,30 @@ final class LiveSessionModel {
     private var engine: (any TranscriptionEngine)?
     private var brain: (any LectureIntelligence)?
     private var slideIndex: (any SlideSearching)?
+    /// Reads the running engine's events. Pause/Finish never cancel it: it drains the words the
+    /// recognizer flushes at stop.
     private var engineTask: Task<Void, Never>?
+    /// The latest stop, finished once its reader has handled every flushed event.
     private var engineStop: Task<Void, Never>?
+    /// Bumped by every engine start and stop, so a start that completes after a stop (permission
+    /// prompt, model load) knows it is stale.
+    private var engineGeneration = 0
+    /// Final segments go to the brain in order; Finish waits for the last one.
+    private var brainIngest: Task<Void, Never>?
+    /// The microphone this lecture records from: Setup's choice, or "Choose mic" (nil follows the
+    /// system default).
+    private(set) var inputDeviceID: String?
     private var updatesTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var askTask: Task<Void, Never>?
-    private var quizTimerTask: Task<Void, Never>?
-    private var quizDismissTask: Task<Void, Never>?
-    private var snoozedTask: Task<Void, Never>?
-    private var deferredQuizTask: Task<Void, Never>?
+    /// One timer per question held back (typing, paused) or snoozed; each re-offers its own question.
+    private var quizTimers: [Task<Void, Never>] = []
     private var highlightTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     /// Set while the deck's slide index is being built: the brain is created when it finishes.
     private var brainStartTask: Task<Void, Never>?
+    /// Card details written after the summary (cancelled when the lecture is closed).
+    private var enrichTask: Task<Void, Never>?
     /// Hand-offs to the autosaver are chained so it always sees snapshots in order.
     private var handoff: Task<Void, Never>?
     private var libraryPublishTask: Task<Void, Never>?
@@ -203,9 +226,11 @@ final class LiveSessionModel {
         visitedSlides = Set(session.takeaways.flatMap(\.slidePages))
         detectedSlide = mode == .review ? (session.deck?.pages.first?.number) : session.currentSlide
         streak = 0
+        // Also live: a lecture resumed after a quit has its decks but no images yet (it showed
+        // "No slides"). A new lecture gets Setup's images first, which this then leaves alone.
+        Task { await self.loadSlideImages() }
         if mode == .review {
             summaryState = summary == nil ? .none : .ready
-            Task { await self.loadSlideImages() }
             writeMissingSummary()
         }
     }
@@ -222,7 +247,8 @@ final class LiveSessionModel {
     /// Pages in the deck; a stored deck without page metadata (seeded demo lectures) counts the
     /// rendered PDF instead, otherwise every slide chip past page 1 was refused (QA Q3-8).
     var pageCount: Int {
-        if let n = session.deck?.pages.count, n > 0 { return n }
+        let n = session.decks.reduce(0) { $0 + $1.pages.count }
+        if n > 0 { return n }
         return slideImages?.pageCount ?? 0
     }
     var displayedSlide: Int? { followSlides ? detectedSlide : (manualSlide ?? detectedSlide) }
@@ -293,22 +319,16 @@ final class LiveSessionModel {
 
     // MARK: - Lifecycle (live)
 
-    func start(deckURL: URL?) {
+    /// Starts recording from `inputDeviceID` (a CoreAudio UID; nil follows the system default).
+    /// `deckURL` is Setup's deck file (already ingested into the session); `conversion` its
+    /// PowerPoint/Keynote conversion, deleted once the PDF is copied.
+    func start(deckURL: URL?, inputDeviceID: String?, conversion: ConvertedPresentation? = nil) {
+        self.inputDeviceID = inputDeviceID
         if session.startedAt == nil { session.startedAt = .now }
         session.status = .live
         resumedAt = .now
         markDirty()
-        if let deckURL {
-            Task { [services, id] in
-                do {
-                    let name = try await services.store.importSlides(from: deckURL, into: id)
-                    self.session.deck?.fileName = name
-                    self.markDirty()
-                } catch {
-                    self.push(Notice(id: "deck-copy", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't copy the deck into the library", placement: .takeaways, actionLabel: nil))
-                }
-            }
-        }
+        if let deckURL { enqueueDeckWork { await $0.storeStartingDeck(from: deckURL, conversion: conversion) } }
         if slideImages == nil, deckURL != nil { slideImages = SlideImageStore(url: deckURL) }
         startBrain()
         startEngine(offset: elapsed)
@@ -354,23 +374,98 @@ final class LiveSessionModel {
     private func startEngine(offset: TimeInterval) {
         let engine = services.makeTranscriptionEngine(settings.transcriptionEngine)
         self.engine = engine
-        let options = TranscriptionOptions(inputDeviceID: settings.inputDeviceID, vocabulary: settings.vocabulary + session.vocabulary, timeOffset: offset)
+        engineGeneration += 1
+        let generation = engineGeneration
+        let options = TranscriptionOptions(inputDeviceID: inputDeviceID, vocabulary: settings.vocabulary + session.vocabulary, timeOffset: offset)
         lastAudioAt = .now
         // Engines are shared per kind, so a start right after a pause must wait for its stop.
         let stopping = engineStop
         engineTask = Task { [weak self] in
             await stopping?.value
+            guard self?.engineGeneration == generation else { return }   // stopped before it began
             do {
                 let stream = try await engine.start(options: options)
+                // Stopped while the engine was starting: that stop may have found nothing running.
+                if self?.engineGeneration != generation { await engine.stop() }
                 for try await event in stream {
                     guard let self else { return }
-                    self.handle(event)
+                    self.handle(event, isCurrent: self.engineGeneration == generation)
                 }
             } catch {
-                guard let self else { return }
-                self.push(Notice(id: "engine", kind: .warning, symbol: "mic.slash", title: "Transcription stopped: \(error.localizedDescription)", placement: .transcript, actionLabel: "Choose mic"))
+                self?.engineFailed(error, generation: generation)
             }
         }
+    }
+
+    /// Stops capture and lets the reader drain what the recognizer flushes (the last words and
+    /// their speaker labels). The returned task finishes once all of it is in the transcript and
+    /// handed to the brain; `pauseMarkerAt` is placed after those words.
+    @discardableResult
+    private func stopEngine(pauseMarkerAt: TimeInterval? = nil) -> Task<Void, Never> {
+        engineGeneration += 1
+        let engine = engine, reader = engineTask, previous = engineStop
+        self.engine = nil
+        volatile = nil
+        let stop = Task {
+            await previous?.value
+            await engine?.stop()
+            await reader?.value
+            await self.brainIngest?.value
+            if let pauseMarkerAt { self.appendPauseMarker(at: pauseMarkerAt) }
+        }
+        engineStop = stop
+        return stop
+    }
+
+    /// Capture or recognition failed: the lecture is paused (the clock stops) rather than showing
+    /// a running recording that hears nothing, and "Choose mic" offers a way back.
+    private func engineFailed(_ error: any Error, generation: Int) {
+        guard generation == engineGeneration, recordingState == .recording, !(error is CancellationError) else { return }
+        if let resumedAt { accumulated += Date.now.timeIntervalSince(resumedAt) }
+        resumedAt = nil
+        elapsed = accumulated
+        recordingState = .paused
+        session.status = .paused
+        stopEngine(pauseMarkerAt: elapsed)
+        level = 0
+        push(Notice(id: "engine", kind: .warning, symbol: "mic.slash", title: "Recording paused. Transcription stopped: \(error.localizedDescription)", placement: .transcript, actionLabel: "Choose mic"))
+        announce("Recording paused: transcription stopped")
+        markDirty()
+    }
+
+    /// Microphones to offer in "Choose mic".
+    var inputDevices: [AudioInputDevice] { services.inputDevices() }
+
+    /// "Choose mic": records from `id` from now on. A running capture restarts on it (the words
+    /// heard so far are flushed first); a paused lecture resumes on it.
+    func switchInputDevice(_ id: String?) {
+        showMicChooser = false
+        inputDeviceID = id
+        dismissNotice("engine")
+        dismissNotice("silence")
+        switch recordingState {
+        case .recording:
+            let now = resumedAt.map { accumulated + Date.now.timeIntervalSince($0) } ?? elapsed
+            stopEngine()
+            startEngine(offset: now)
+        case .paused:
+            resume()
+        case .finishing, .finished:
+            break
+        }
+    }
+
+    /// Quit while recording: stops capture and keeps the words the recognizer flushes, then saves.
+    /// The lecture stays live/paused on disk, so the next launch offers to resume or finish it.
+    func stopForQuit() async {
+        guard mode == .live, recordingState == .recording || recordingState == .paused else { return }
+        if let resumedAt { accumulated += Date.now.timeIntervalSince(resumedAt) }
+        resumedAt = nil
+        elapsed = accumulated
+        session.duration = accumulated
+        clockTask?.cancel()
+        await stopEngine().value
+        markDirty()
     }
 
     private func startClock() {
@@ -415,12 +510,7 @@ final class LiveSessionModel {
         self.resumedAt = nil
         recordingState = .paused
         session.status = .paused
-        appendPauseMarker(at: elapsed)
-        let engine = engine
-        engineTask?.cancel()
-        engineStop = Task { await engine?.stop() }
-        self.engine = nil
-        volatile = nil
+        stopEngine(pauseMarkerAt: elapsed)
         level = 0
         announce("Recording paused")
         markDirty()
@@ -445,11 +535,8 @@ final class LiveSessionModel {
         recordingState = .finishing
         showStopConfirmation = false
         clockTask?.cancel()
-        dismissQuiz()
-        let engine = engine
-        engineTask?.cancel()
-        self.engine = nil
-        volatile = nil
+        closeQuizzesForFinish()
+        let stopped = stopEngine()
         session.endedAt = .now
         session.duration = accumulated
         session.status = .finished
@@ -459,16 +546,8 @@ final class LiveSessionModel {
             summaryState = .writing
         }
         markDirty()
-        Task {
-            await flush()
-            await engine?.stop()
-            await readyBrain()?.finish()
-            await writeSummary()
-            recordingState = .finished
-            onFinished?()
-            await flush()
-            announce("Finished — summary ready")
-        }
+        // `stopped` ends once the recognizer's last words are in the transcript and the brain.
+        completeFinish(after: stopped)
     }
 
     /// Finishes a session that was interrupted by a crash: no engine, just close + summarize.
@@ -481,23 +560,35 @@ final class LiveSessionModel {
         mode = .review
         summaryState = .writing
         markDirty()
+        completeFinish(after: nil)
+    }
+
+    /// The end of Finish, shared by both paths: once the transcript is saved the lecture stops
+    /// being the active one (menu, Focus panel, starting another lecture), before the model work
+    /// that follows, which can take a minute on a busy device. Then the brain closes the last card
+    /// and the summary is written; the announcement says whether that worked.
+    private func completeFinish(after stopped: Task<Void, Never>?) {
         Task {
+            await stopped?.value
+            await flush()
+            recordingState = .finished
+            onFinished?()
             await readyBrain()?.finish()
             await writeSummary()
-            recordingState = .finished
             await flush()
+            if case .failed(let reason) = summaryState {
+                announce("Finished — the summary couldn't be written: \(reason)")
+            } else {
+                announce("Finished — summary ready")
+            }
         }
     }
 
-    /// Asks the brain for the lecture summary. Settled takeaways without details are expanded
-    /// first (a few), since details ground the summary's key concepts and are kept for the cards.
+    /// Asks the brain for the lecture summary (from the cards, with whatever details they already
+    /// have), then has it write details for a few cards that have none as background work: they
+    /// arrive through takeaway updates, yield to anything interactive, and failures are reported.
     private func writeSummary() async {
         guard let brain = await readyBrain() else { summaryState = .failed("No model"); return }
-        for t in settledTakeaways.prefix(8) where t.detail == nil {
-            if let detail = try? await brain.expand(takeawayID: t.id), let i = session.takeaways.firstIndex(where: { $0.id == t.id }) {
-                session.takeaways[i].detail = detail
-            }
-        }
         do {
             let summary = try await brain.lectureSummary()
             withAnimation(DS.Motion.morph) {
@@ -507,6 +598,11 @@ final class LiveSessionModel {
             markDirty()
         } catch {
             withAnimation(DS.Motion.morph) { summaryState = .failed(error.localizedDescription) }
+        }
+        enrichTask?.cancel()
+        enrichTask = Task {
+            await brain.enrichTakeaways(limit: 8)
+            saveSoon()
         }
     }
 
@@ -530,8 +626,15 @@ final class LiveSessionModel {
     }
 
     func applySettings(_ new: AppSettings) {
+        let providersChanged = new.providers != settings.providers
         settings = new
         withBrain { await $0.update(quiz: new.quiz, summaryIntervalSeconds: new.summaryIntervalSeconds) }
+        // The lecture's brain must use the provider the UI now names (B17); a brain created later
+        // gets it from `settings`.
+        if providersChanged, brain != nil, let makeProviders = services.makeRoleProviders {
+            let providers = makeProviders(new, id)
+            withBrain { await $0.update(providers: providers) }
+        }
     }
 
     func applyPreferences(_ new: UIPreferences) { preferences = new }
@@ -558,9 +661,12 @@ final class LiveSessionModel {
 
     // MARK: - Events
 
-    private func handle(_ event: TranscriptionEvent) {
+    /// One engine event. `isCurrent` is false while a stopped engine drains: its final words and
+    /// speaker labels still count, but its live text and level no longer belong on screen.
+    private func handle(_ event: TranscriptionEvent, isCurrent: Bool) {
         switch event {
         case .volatile(let seg):
+            guard isCurrent else { return }
             volatile = seg
             lastAudioAt = .now
         case .final(let heard):
@@ -570,9 +676,13 @@ final class LiveSessionModel {
             lastAudioAt = .now
             session.transcript.append(seg)
             append(seg)
-            withBrain { await $0.ingest(seg) }
+            if let brain {
+                let previous = brainIngest
+                brainIngest = Task { await previous?.value; await brain.ingest(seg) }
+            }
             markDirty()
         case .level(let l):
+            guard isCurrent else { return }
             level = l
             if l > 0.03 {
                 lastAudioAt = .now
@@ -585,18 +695,19 @@ final class LiveSessionModel {
         }
     }
 
-    /// Diarization labels arrive a few seconds after the text; later labels for an id win.
+    /// Diarization labels arrive a few seconds after the text; later labels for an id win. Only the
+    /// paragraphs from the earliest relabeled segment on are regrouped (audit P06).
     private func applySpeakers(_ labels: [UUID: SpeakerRole]) {
-        var changed = false
+        var earliest: Int?
         for (id, role) in labels {
             // Labels are almost always for the newest segments, so look from the end.
             if let i = session.transcript.lastIndex(where: { $0.id == id }), session.transcript[i].speaker != role {
                 session.transcript[i].speaker = role
-                changed = true
+                earliest = min(earliest ?? i, i)
             }
         }
-        guard changed else { return }
-        rebuildParagraphs()
+        guard let earliest else { return }
+        paragraphs = Self.regroup(paragraphs, transcript: session.transcript, pauses: pauseMarkers, from: session.transcript[earliest].id)
         withBrain { await $0.applySpeakers(labels) }
         markDirty()
     }
@@ -650,8 +761,22 @@ final class LiveSessionModel {
         paragraphs.append(TranscriptParagraph(id: TranscriptParagraph.pauseID(at: time), kind: .pause, start: time, end: time, segments: []))
     }
 
-    private func rebuildParagraphs() {
-        paragraphs = Self.paragraphs(from: session.transcript, pauses: pauseMarkers)
+    /// `paragraphs` after a change to the segment `segmentID` or later ones: the paragraphs before
+    /// the one preceding that segment's are kept (grouping only looks back one paragraph), the rest
+    /// are rebuilt from `transcript`. Same result as `paragraphs(from:pauses:)`, in time
+    /// proportional to the tail.
+    nonisolated static func regroup(_ paragraphs: [TranscriptParagraph], transcript: [TranscriptSegment], pauses: [TimeInterval], from segmentID: UUID) -> [TranscriptParagraph] {
+        guard let changed = paragraphs.lastIndex(where: { $0.kind == .speech && $0.segments.contains { $0.id == segmentID } }) else {
+            return Self.paragraphs(from: transcript, pauses: pauses)
+        }
+        let keep = max(0, changed - 1)
+        guard let first = paragraphs[keep...].lazy.compactMap(\.segments.first).first,
+              let tail = transcript.lastIndex(where: { $0.id == first.id }) else {
+            return Self.paragraphs(from: transcript, pauses: pauses)
+        }
+        let placedPauses = paragraphs[..<keep].count { $0.kind == .pause }
+        let rebuilt = Self.paragraphs(from: Array(transcript[tail...]), pauses: Array(pauses.sorted().dropFirst(placedPauses)))
+        return Array(paragraphs[..<keep]) + rebuilt
     }
 
     /// Join rule: same speaker, gap < 1.5 s, and under ~6 lines of text.
@@ -687,15 +812,25 @@ final class LiveSessionModel {
 
     // MARK: - Slides
 
+    /// Shows `page` and makes it the lecture's current slide: a manual correction when tracking is
+    /// wrong (thumbnail click, ←/→, the hero's arrows, a citation). Auto follow pauses so tracking
+    /// doesn't take it straight back; "Resume following" (or Auto) turns it on again and tracking
+    /// continues forward from this slide, also after a correction backwards.
     func selectSlide(_ page: Int) {
         guard page >= 1, page <= max(pageCount, 1) else { return }
         withAnimation(DS.Motion.quick) {
             manualSlide = page
             followSlides = false
             if backtrackSuggestion == page { backtrackSuggestion = nil }
+            if mode == .live { detectedSlide = page }
         }
-        if mode == .live { withBrain { await $0.setCurrentSlide(page) } }
-        if mode == .review { seekTranscript(to: firstTime(forSlide: page)) }
+        if mode == .live {
+            visitedSlides.insert(page)
+            session.currentSlide = page
+            markDirty()
+            withBrain { await $0.setCurrentSlide(page) }
+        }
+        if mode == .review, let start = firstTime(forSlide: page) { seekTranscript(to: start) }
     }
 
     /// Accepts the brain's "back on slide N?" suggestion: tracking resumes from there.
@@ -718,10 +853,13 @@ final class LiveSessionModel {
     }
 
     func stepSlide(_ delta: Int) {
+        guard pageCount > 0 else { return }
         let current = displayedSlide ?? 1
-        selectSlide(min(max(1, current + delta), max(pageCount, 1)))
+        selectSlide(min(max(1, current + delta), pageCount))
     }
 
+    /// Turns Auto back on. Live, tracking carries on from the slide shown (a manual correction
+    /// already became the current slide), so nothing jumps.
     func resumeFollowing() {
         withAnimation(DS.Motion.quick) {
             followSlides = true
@@ -739,38 +877,201 @@ final class LiveSessionModel {
         }
     }
 
-    private func firstTime(forSlide page: Int) -> TimeInterval {
-        takeaways.first { $0.slidePages.contains(page) }?.start ?? 0
+    /// When a takeaway first covers `page`; nil when none does.
+    private func firstTime(forSlide page: Int) -> TimeInterval? {
+        takeaways.first { $0.slidePages.contains(page) }?.start
     }
 
-    /// Adds a deck mid-session (or in review) and indexes it in the background.
-    func addDeck(url: URL) {
-        slideImages = SlideImageStore(url: url)
-        Task { [services, id] in
-            do {
-                let deck = try await services.slideIngestor.ingest(pdfAt: url) { _ in }
-                var stored = deck
-                stored.fileName = try await services.store.importSlides(from: url, into: id)
-                self.session.deck = stored
-                if self.detectedSlide == nil { self.detectedSlide = 1 }
-                self.markDirty()
-                // Index the new deck (off the main actor) and hand it to a brain that already
-                // exists, so Ask, quizzes and takeaways use it without reopening the lecture. A
-                // brain created later picks up `slideIndex` itself.
-                let index = await services.makeSlideIndex(stored)
-                guard self.session.deck?.fileName == stored.fileName else { return }   // replaced meanwhile
-                self.slideIndex = index
-                await self.brain?.attachDeck(stored, slides: index)
-            } catch {
-                self.push(Notice(id: "deck", kind: .warning, symbol: "exclamationmark.triangle", title: error.localizedDescription, placement: .takeaways, actionLabel: nil))
+    // MARK: - Decks
+
+    /// Each deck's stretch of the combined slide numbers (deck boundaries in the Slides column).
+    var deckSpans: [DeckSpan] { session.deckSpans }
+    /// Files being prepared to join the lecture (converting, reading), by display name.
+    private(set) var decksBeingAdded: [String] = []
+    /// Deck operations run one after another, so their commits never interleave.
+    private var deckTask: Task<Void, Never>?
+    /// Bumped by every deck commit; work started for an older one stops at its next step.
+    private var deckRevision = 0
+
+    /// File extensions the lecture accepts as decks (PDF, plus PowerPoint/Keynote when available).
+    var acceptedDeckExtensions: Set<String> { DeckIntake.acceptedExtensions(services) }
+
+    /// Shows the open panel for adding decks ("Add Deck…").
+    func chooseDecks() {
+        DeckIntake.choose(extensions: acceptedDeckExtensions, multiple: true, message: "Choose slide decks to add to “\(title)”.") { [weak self] urls in
+            self?.addDecks(urls: urls)
+        }
+    }
+
+    /// Adds decks after the existing ones (chosen or dropped; PowerPoint/Keynote files are
+    /// converted first), live or in Review. Each reaches the session, the saved lecture, the slide
+    /// images, slide tracking, jargon fixing and the brain together.
+    func addDecks(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        decksBeingAdded += urls.map(\.lastPathComponent)
+        enqueueDeckWork { model in
+            for url in urls {
+                await model.addDeck(url)
+                model.decksBeingAdded.removeFirst(min(1, model.decksBeingAdded.count))
             }
         }
     }
 
+    /// Removes the deck at `index` (its PDF is deleted once nothing shows it).
+    func removeDeck(at index: Int) {
+        enqueueDeckWork { model in
+            guard model.session.decks.indices.contains(index) else { return }
+            var decks = model.session.decks
+            let removed = decks.remove(at: index)
+            await model.commitDecks(decks)
+            // Delete the file only once the lecture saved without it.
+            guard !model.session.decks.contains(where: { $0.fileName == removed.fileName }), !model.isDiscarded else { return }
+            await model.flush()
+            do { try await model.services.store.removeSlides(named: removed.fileName, from: model.id) } catch {
+                model.push(Notice(id: "deck-remove", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't delete the removed deck's file: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
+            }
+        }
+    }
+
+    /// Moves the deck at `index` by `offset` places (−1 earlier, +1 later).
+    func moveDeck(at index: Int, by offset: Int) {
+        enqueueDeckWork { model in
+            var decks = model.session.decks
+            let target = index + offset
+            guard decks.indices.contains(index), decks.indices.contains(target) else { return }
+            decks.swapAt(index, target)
+            await model.commitDecks(decks)
+        }
+    }
+
+    /// Runs `work` after the deck work already queued. Cancelling the queue's last task (close,
+    /// delete) cancels everything queued before it too.
+    private func enqueueDeckWork(_ work: @escaping @MainActor (LiveSessionModel) async -> Void) {
+        let previous = deckTask
+        deckTask = Task { [weak self] in
+            await withTaskCancellationHandler { await previous?.value } onCancel: { previous?.cancel() }
+            guard let self, !Task.isCancelled, !isDiscarded else { return }
+            await work(self)
+        }
+    }
+
+    /// Prepares `url`, copies it into the lecture's folder under a name of its own, then commits.
+    private func addDeck(_ url: URL) async {
+        do {
+            let prepared = try await DeckIntake.prepare(url, services: services)
+            defer { prepared.dispose() }
+            try Task.checkCancellation()
+            guard !isDiscarded else { return }
+            var deck = prepared.deck
+            deck.fileName = try await services.store.importSlides(from: prepared.pdf, into: id)
+            guard !Task.isCancelled, !isDiscarded else {
+                try? await services.store.removeSlides(named: deck.fileName, from: id)
+                return
+            }
+            await commitDecks(session.decks + [deck])
+            reportMissingText(deck)
+        } catch is CancellationError {
+        } catch {
+            push(Notice(id: "deck", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't add “\(url.lastPathComponent)”: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
+        }
+    }
+
+    /// Audit B43: slides OCR couldn't read are said, not hidden behind a successful import.
+    private func reportMissingText(_ deck: SlideDeck) {
+        let missing = deck.pagesMissingText
+        guard !missing.isEmpty else { return }
+        let list = missing.prefix(6).map(String.init).joined(separator: ", ") + (missing.count > 6 ? "…" : "")
+        push(Notice(id: "deck-ocr", kind: .warning, symbol: "text.viewfinder", title: "Couldn't read the text of \(missing.count == 1 ? "slide" : "slides") \(list) in “\(deck.originalFileName)”: they won't be searched or followed", placement: .takeaways, actionLabel: nil))
+    }
+
+    /// Makes `decks` the lecture's decks, as one step: stored slide references and the slide state
+    /// shown here are renumbered (see `LectureSession.replaceDecks`), the images, the slide index
+    /// and the brain switch to the new decks, and the lecture is handed to the autosaver at once
+    /// (also in Review, which has no recording clock to save it, audit B06).
+    private func commitDecks(_ decks: [SlideDeck]) async {
+        guard !isDiscarded, !Task.isCancelled else { return }
+        deckRevision += 1
+        let revision = deckRevision
+        let hadDecks = !session.decks.isEmpty
+        let oldPageCount = session.decks.reduce(0) { $0 + $1.pages.count }
+        let map = session.replaceDecks(with: decks)
+        let renumbered = map.count != oldPageCount || map.contains { $0.key != $0.value }
+        remapSlideState(map, hadDecks: hadDecks)
+        markDirty()
+        saveIfDirty()
+        // `folder(for:)` creates the folder, so never after the lecture was deleted.
+        if !isDiscarded, let folder = try? await services.store.folder(for: id), revision == deckRevision {
+            slideImages = SlideImageStore(decks: session.decks, folder: folder)
+        }
+        // A brain still being created indexes the old decks; let it finish, then update it.
+        await brainStartTask?.value
+        let combined = session.deck
+        let index = if let combined { await services.makeSlideIndex(combined) } else { nil as (any SlideSearching)? }
+        guard revision == deckRevision, !isDiscarded else { return }
+        slideIndex = index
+        guard let brain else { return }
+        if renumbered {
+            // The brain's own takeaways and quiz history still carry the old slide numbers: start
+            // a fresh one from the renumbered lecture.
+            replaceBrain()
+        } else if let combined {
+            await brain.attachDeck(combined, slides: index)
+            // Adding a deck after the others keeps the lecture's place (attaching starts tracking over).
+            if hadDecks, mode == .live, let current = detectedSlide { await brain.setCurrentSlide(current) }
+        }
+    }
+
+    /// Starts the brain over from the lecture as it is now (after its slides were renumbered).
+    private func replaceBrain() {
+        updatesTask?.cancel()
+        brain = nil
+        createBrain()
+    }
+
+    /// Setup's deck, ingested before the lecture started, copied into the lecture's folder; a
+    /// conversion's temporary PDF is then deleted (audit B28).
+    private func storeStartingDeck(from url: URL, conversion: ConvertedPresentation?) async {
+        defer { conversion?.dispose() }
+        do {
+            guard !isDiscarded, !Task.isCancelled else { return }
+            let name = try await services.store.importSlides(from: url, into: id)
+            guard session.decks.count == 1, !isDiscarded, !Task.isCancelled else {
+                try? await services.store.removeSlides(named: name, from: id)
+                return
+            }
+            session.decks[0].fileName = name
+            markDirty()
+            saveIfDirty()
+            // A converted deck's PDF is about to be deleted: show the library copy instead. (Setup's
+            // own PDF keeps working, and its images are already rendered.)
+            if conversion != nil, let folder = try? await services.store.folder(for: id) {
+                slideImages = SlideImageStore(decks: session.decks, folder: folder)
+            }
+        } catch {
+            push(Notice(id: "deck-copy", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't copy the deck into the library: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
+        }
+    }
+
+    /// Carries the slide state shown here through a renumbering (`map`: old → new; absent = gone).
+    private func remapSlideState(_ map: [Int: Int], hadDecks: Bool) {
+        guard hadDecks else {
+            if detectedSlide == nil, mode == .review { detectedSlide = 1 }
+            return
+        }
+        detectedSlide = detectedSlide.flatMap { map[$0] }
+        manualSlide = manualSlide.flatMap { map[$0] }
+        if manualSlide == nil { followSlides = true }
+        highlightedSlide = highlightedSlide.flatMap { map[$0] }
+        backtrackSuggestion = backtrackSuggestion.flatMap { map[$0] }
+        visitedSlides = Set(visitedSlides.compactMap { map[$0] })
+        if session.decks.isEmpty { detectedSlide = nil }
+    }
+
+    /// The images for a lecture opened from the library.
     private func loadSlideImages() async {
-        guard slideImages == nil, let deck = session.deck else { return }
-        if let folder = try? await services.store.folder(for: id) {
-            slideImages = SlideImageStore(url: folder.appendingPathComponent(deck.fileName))
+        guard slideImages == nil, !session.decks.isEmpty else { return }
+        if let folder = try? await services.store.folder(for: id), slideImages == nil {
+            slideImages = SlideImageStore(decks: session.decks, folder: folder)
         }
     }
 
@@ -884,47 +1185,48 @@ final class LiveSessionModel {
 
     // MARK: - Quiz pings
 
+    /// A question from the brain. It is shown when nothing else is on screen, queued behind the one that
+    /// is, and held back (retried in a minute) while the user is typing in Ask or recording is paused.
     private func offer(_ q: QuizQuestion) {
-        guard mode == .live, settings.quiz.enabled else { return }
-        if quiz != nil || isTypingInAsk || recordingState != .recording {
-            deferredQuizTask?.cancel()
-            deferredQuizTask = Task { [weak self] in
+        guard mode == .live, settings.quiz.enabled, q.isWellFormed else { return }
+        guard quiz?.question.id != q.id, !queuedQuizzes.contains(where: { $0.id == q.id }) else { return }
+        if isTypingInAsk || recordingState != .recording {
+            quizTimers.append(Task { [weak self] in
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
                 self?.offer(q)
-            }
+            })
             return
         }
-        let quietTier = pane != .takeaways
-        if preferences.quizStyle == .badge || quietTier {
-            withAnimation(DS.Motion.quick) { pendingQuizBadge = q }
-            return
-        }
-        present(q)
+        withAnimation(DS.Motion.quick) { queuedQuizzes.append(q) }
+        showNextQuizIfIdle()
     }
 
-    /// Opens the badge's pending question (Quiet style / narrow tier).
+    /// Shows the next queued question as the card, unless one is already showing or the user chose the
+    /// toolbar badge (Quiet style, or a pane where a card would be out of place); then it waits for a tap.
+    private func showNextQuizIfIdle() {
+        guard quiz == nil, !queuedQuizzes.isEmpty else { return }
+        // `pane` only matters in the single-pane tier; wider tiers always show the Takeaways.
+        let quietTier = layoutTier == .single && pane != .takeaways
+        guard preferences.quizStyle != .badge, !quietTier else { return }
+        openPendingQuiz()
+    }
+
+    /// Opens the next waiting question (the toolbar badge, Quiet style / narrow tier).
     func openPendingQuiz() {
-        guard let q = pendingQuizBadge else { return }
-        pendingQuizBadge = nil
+        guard quiz == nil, !queuedQuizzes.isEmpty else { return }
+        let q = withAnimation(DS.Motion.quick) { queuedQuizzes.removeFirst() }
         present(q)
     }
 
     private func present(_ q: QuizQuestion) {
-        let deadline = Date.now.addingTimeInterval(preferences.quizTimeToAnswer)
         withAnimation(DS.Motion.float) {
-            quiz = ActiveQuiz(question: q, deadline: deadline)
+            quiz = ActiveQuiz(question: q)
         }
         if !session.quiz.contains(where: { $0.id == q.id }) {
             session.quiz.append(QuizRecord(question: q, askedAt: elapsed))
         }
         announce("Quick check: \(q.prompt)")
-        quizTimerTask?.cancel()
-        quizTimerTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(max(1, deadline.timeIntervalSinceNow)))
-            guard !Task.isCancelled, let self, let active = self.quiz, active.question.id == q.id, active.phase == .asking else { return }
-            self.skipQuiz()
-        }
         markDirty()
     }
 
@@ -932,8 +1234,11 @@ final class LiveSessionModel {
         guard var active = quiz, active.acceptsAnswers else { return }
         active.selectedOption = index
         quiz = active
+        let questionID = active.activeQuestion.id
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
+            // The card may have been skipped (and the next question shown) in the meantime.
+            guard self?.quiz?.activeQuestion.id == questionID else { return }
             self?.submitAnswer("\(index)")
         }
     }
@@ -951,7 +1256,6 @@ final class LiveSessionModel {
 
     private func submitAnswer(_ answer: String) {
         guard var active = quiz, active.acceptsAnswers, let brain else { return }
-        quizTimerTask?.cancel()
         let question = active.activeQuestion
         let isFollowUp = question.id != active.question.id
         if case .wrong(let grade, let f?, _) = active.phase, isFollowUp {
@@ -963,18 +1267,15 @@ final class LiveSessionModel {
         quiz = active
         let wantsFollowUp = !isFollowUp && preferences.followUpWhenWrong
         Task { [weak self] in
-            // The follow-up is generated *before* the explanation is shown so there is no wait.
-            async let followUp: QuizQuestion? = wantsFollowUp ? (try? await brain.makeQuestion(followUpOf: question)) : nil
             do {
                 let grade = try await brain.grade(question, answer: answer)
                 guard let self, var active = self.quiz, active.activeQuestion.id == question.id else { return }
-                self.recordOutcome(question: question, answer: answer, grade: grade)
+                let record = self.recordOutcome(question: question, answer: answer, grade: grade)
                 if isFollowUp, case .gradingFollowUp(let first, let f) = active.phase {
                     if grade.isCorrect { self.streak += 1 }
                     active.phase = .followUpResult(first, followUp: f, result: grade)
                     withAnimation(DS.Motion.settle) { self.quiz = active }
                     self.announce(grade.isCorrect ? "Correct" : "Not quite")
-                    self.scheduleDismiss()
                     return
                 }
                 if grade.isCorrect {
@@ -982,7 +1283,6 @@ final class LiveSessionModel {
                     active.phase = .correct(grade)
                     withAnimation(DS.Motion.settle) { self.quiz = active }
                     self.announce("Correct")
-                    self.scheduleDismiss()
                 } else {
                     self.streak = 0
                     active.phase = .wrong(grade, followUp: nil, followUpPending: wantsFollowUp)
@@ -990,7 +1290,10 @@ final class LiveSessionModel {
                     withAnimation(DS.Motion.settle) { self.quiz = active }
                     self.announce("Not quite. \(grade.feedback)")
                     if wantsFollowUp {
-                        let f = await followUp
+                        // The brain words the follow-up around what the student answered, so it must
+                        // have the record first (the fire-and-forget copy may not have arrived yet).
+                        await brain.record(record)
+                        let f = try? await brain.makeQuestion(followUpOf: question)
                         guard var again = self.quiz, again.activeQuestion.id == question.id else { return }
                         var followUpQuestion = f
                         followUpQuestion?.followUpOf = question.id
@@ -998,22 +1301,27 @@ final class LiveSessionModel {
                         withAnimation(DS.Motion.float) { self.quiz = again }
                         if let followUpQuestion {
                             self.session.quiz.append(QuizRecord(question: followUpQuestion, askedAt: self.elapsed))
-                        } else {
-                            self.scheduleDismiss(after: 8)
                         }
-                    } else {
-                        self.scheduleDismiss(after: 8)
                     }
                 }
             } catch {
                 guard let self else { return }
                 self.push(Notice(id: "grade", kind: .warning, symbol: "exclamationmark.triangle", title: "Couldn't grade: \(error.localizedDescription)", placement: .takeaways, actionLabel: nil))
-                self.dismissQuiz()
+                // The question stays up so the user can answer again; nothing is recorded for it yet.
+                guard var failed = self.quiz, failed.activeQuestion.id == question.id else { return }
+                switch failed.phase {
+                case .grading: failed.phase = .asking
+                case .gradingFollowUp(let first, let f): failed.phase = .wrong(first, followUp: f, followUpPending: false)
+                default: return
+                }
+                failed.selectedOption = nil
+                withAnimation(DS.Motion.settle) { self.quiz = failed }
             }
         }
     }
 
-    private func recordOutcome(question: QuizQuestion, answer: String?, grade: QuizGrade?, outcome: QuizOutcome? = nil) {
+    @discardableResult
+    private func recordOutcome(question: QuizQuestion, answer: String?, grade: QuizGrade?, outcome: QuizOutcome? = nil) -> QuizRecord {
         let resolved = outcome ?? (grade?.isCorrect == true ? .correct : .incorrect)
         var record = session.quiz.first { $0.id == question.id } ?? QuizRecord(question: question, askedAt: elapsed)
         record.answer = answer
@@ -1024,56 +1332,43 @@ final class LiveSessionModel {
         let snapshot = record
         withBrain { await $0.record(snapshot) }
         markDirty()
+        return snapshot
     }
 
+    /// Puts the question away for five minutes (it is not recorded as skipped), then offers it again.
     func snoozeQuiz() {
         guard let active = quiz, active.phase == .asking else { return }
-        quizTimerTask?.cancel()
         let q = active.question
         session.quiz.removeAll { $0.id == q.id }
         withAnimation(DS.Motion.float) { quiz = nil }
-        snoozedTask?.cancel()
-        snoozedTask = Task { [weak self] in
+        quizTimers.append(Task { [weak self] in
             try? await Task.sleep(for: .seconds(300))
             guard !Task.isCancelled else { return }
             self?.offer(q)
-        }
+        })
+        showNextQuizIfIdle()
     }
 
+    /// Closes the card on the user's say-so (Skip, Esc, or the ✕ on a result). An unanswered question is
+    /// recorded as skipped; the next queued one, if any, takes its place.
     func skipQuiz() {
         guard let active = quiz else { return }
-        quizTimerTask?.cancel()
         if active.phase == .asking {
             recordOutcome(question: active.question, answer: nil, grade: nil, outcome: .skipped)
         } else if case .wrong(_, let f?, _) = active.phase {
             recordOutcome(question: f, answer: nil, grade: nil, outcome: .skipped)
         }
         withAnimation(DS.Motion.float) { quiz = nil }
+        showNextQuizIfIdle()
     }
 
-    func dismissQuiz() {
-        quizTimerTask?.cancel()
-        quizDismissTask?.cancel()
-        if let active = quiz, active.phase == .asking {
-            recordOutcome(question: active.question, answer: nil, grade: nil, outcome: .skipped)
-        }
-        withAnimation(DS.Motion.float) { quiz = nil }
-    }
-
-    func setQuizHovered(_ hovered: Bool) {
-        quiz?.isHovered = hovered
-        if let active = quiz, active.isResult {
-            if hovered { quizDismissTask?.cancel() } else { scheduleDismiss() }
-        }
-    }
-
-    private func scheduleDismiss(after seconds: Double = 4) {
-        quizDismissTask?.cancel()
-        quizDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, let self, self.quiz?.isHovered != true else { return }
-            withAnimation(DS.Motion.float) { self.quiz = nil }
-        }
+    /// The lecture is ending: the card closes and questions that were never shown are dropped (they have
+    /// no record, so nothing is lost from the quiz history).
+    private func closeQuizzesForFinish() {
+        quizTimers.forEach { $0.cancel() }
+        quizTimers = []
+        withAnimation(DS.Motion.float) { queuedQuizzes = [] }
+        skipQuiz()
     }
 
     // MARK: - Ask
@@ -1158,14 +1453,30 @@ final class LiveSessionModel {
 
     private func loadFreshQuestion() {
         guard let flow = reviewFlow, let current = flow.current else { return }
+        reviewFlow?.error = nil
         Task { [weak self] in
-            let q = try? await self?.readyBrain()?.makeQuestion(followUpOf: current.record.question)
-            guard let self, self.reviewFlow?.current?.id == current.id else { return }
-            withAnimation(DS.Motion.settle) { self.reviewFlow?.freshQuestion = q }
+            do {
+                guard let brain = await self?.readyBrain() else { return }
+                let q = try await brain.makeQuestion(followUpOf: current.record.question)
+                guard let self, self.reviewFlow?.current?.id == current.id else { return }
+                withAnimation(DS.Motion.settle) { self.reviewFlow?.freshQuestion = q }
+            } catch is CancellationError {
+            } catch {
+                guard let self, self.reviewFlow?.current?.id == current.id else { return }
+                withAnimation(DS.Motion.settle) { self.reviewFlow?.error = Self.friendly(error) }
+            }
         }
     }
 
+    /// "Try again" after a failure: writes the question again, or checks the same answer again.
+    func reviewRetry(answer: String) {
+        guard let flow = reviewFlow else { return }
+        if flow.freshQuestion == nil { loadFreshQuestion() } else { reviewSubmit(answer: flow.freshSelected.map(String.init) ?? answer) }
+    }
+
     func reviewSelect(_ index: Int) {
+        // A key press can arrive while the last answer is still being checked (or already was).
+        guard let flow = reviewFlow, flow.freshQuestion != nil, !flow.isGrading, flow.freshGrade == nil else { return }
         reviewFlow?.freshSelected = index
         reviewSubmit(answer: "\(index)")
     }
@@ -1173,13 +1484,23 @@ final class LiveSessionModel {
     func reviewSubmit(answer: String) {
         guard var flow = reviewFlow, let q = flow.freshQuestion, !flow.isGrading, flow.freshGrade == nil, let brain else { return }
         flow.isGrading = true
+        flow.error = nil
         reviewFlow = flow
         Task { [weak self] in
-            let grade = try? await brain.grade(q, answer: answer)
-            guard let self, self.reviewFlow?.freshQuestion?.id == q.id else { return }
-            withAnimation(DS.Motion.settle) {
-                self.reviewFlow?.isGrading = false
-                self.reviewFlow?.freshGrade = grade
+            do {
+                let grade = try await brain.grade(q, answer: answer)
+                guard let self, self.reviewFlow?.freshQuestion?.id == q.id else { return }
+                withAnimation(DS.Motion.settle) {
+                    self.reviewFlow?.isGrading = false
+                    self.reviewFlow?.freshGrade = grade
+                }
+            } catch is CancellationError {
+            } catch {
+                guard let self, self.reviewFlow?.freshQuestion?.id == q.id else { return }
+                withAnimation(DS.Motion.settle) {
+                    self.reviewFlow?.isGrading = false
+                    self.reviewFlow?.error = Self.friendly(error)
+                }
             }
         }
     }
@@ -1191,6 +1512,7 @@ final class LiveSessionModel {
         flow.freshSelected = nil
         flow.freshGrade = nil
         flow.isGrading = false
+        flow.error = nil
         if flow.index >= flow.concepts.count { flow.isFinished = true }
         withAnimation(DS.Motion.settle) { reviewFlow = flow }
         if !flow.isFinished { loadFreshQuestion() }
@@ -1288,6 +1610,9 @@ final class LiveSessionModel {
 
     func dismissNotice(_ id: String) {
         withAnimation(DS.Motion.float) { notices.removeAll { $0.id == id } }
+        // The clock raises "silence" again at once if audio is still missing; dismissing it means "not
+        // for another 20 s".
+        if id == "silence" { lastAudioAt = .now }
     }
 
     func notice(for placement: Notice.Placement) -> Notice? { notices.first { $0.placement == placement } }
@@ -1365,6 +1690,9 @@ final class LiveSessionModel {
     func discardPendingSave() async {
         isDiscarded = true
         saveTask?.cancel()
+        // Deck work copies files into the lecture's folder: stop it before the folder goes.
+        deckTask?.cancel()
+        await deckTask?.value
         await handoff?.value
         await autosaver.discard()
     }
@@ -1372,16 +1700,17 @@ final class LiveSessionModel {
     /// A finished lecture with nothing running: safe to close when it leaves the screen.
     var isIdle: Bool {
         mode == .review && recordingState == .finished && summaryState != .writing && !isAnswering && !isBusy
-            && recap == nil && reviewFlow == nil && !isFocusPanelOpen
+            && recap == nil && reviewFlow == nil && !isFocusPanelOpen && decksBeingAdded.isEmpty
     }
 
     /// Saves, then stops everything this model started (the brain and its update loop, timers) so
     /// the model can be released. Called when a review lecture leaves the screen.
     func close() async {
         await flush()
-        for task in [askTask, recapTask, quizTimerTask, quizDismissTask, snoozedTask, deferredQuizTask, highlightTask, saveTask, updatesTask, clockTask, engineTask, brainStartTask] {
+        for task in [askTask, recapTask, highlightTask, saveTask, updatesTask, clockTask, engineTask, brainStartTask, deckTask, enrichTask] {
             task?.cancel()
         }
+        quizTimers.forEach { $0.cancel() }
         brain = nil
     }
 

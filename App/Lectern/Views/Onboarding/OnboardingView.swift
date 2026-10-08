@@ -1,5 +1,6 @@
 import SwiftUI
 import LecternCore
+import LecternLLM
 
 /// First-launch onboarding, 4 steps (DESIGN.md §4.11).
 struct OnboardingView: View {
@@ -66,7 +67,7 @@ struct OnboardingView: View {
                 Text("Live takeaways from every lecture, on your Mac.").font(DS.Typo.body).foregroundStyle(.secondary)
             case 1:
                 Text("Lectern needs your microphone.").font(DS.Typo.title)
-                Text("Audio is processed on this Mac and is not stored unless you choose to.").font(DS.Typo.body).foregroundStyle(.secondary)
+                Text("Audio is processed on this Mac and never stored: Lectern keeps the transcript, not the recording.").font(DS.Typo.body).foregroundStyle(.secondary)
                 if permission == .granted {
                     LevelMeter(level: level, peak: level, width: 200)
                 } else {
@@ -169,11 +170,11 @@ struct OnboardingView: View {
     }
 
     private func test(_ kind: ProviderKind) {
-        let key = keys[kind] ?? ""
+        let key = (keys[kind] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         tests[kind] = .testing
         Task {
             do {
-                let h = try await app.services.providerHealthCheck(ProviderConfig(kind: kind, model: SettingsModel.cloudModels[kind]?.first ?? ""), key)
+                let h = try await app.services.providerHealthCheck(ProviderConfig(kind: kind, model: ProviderCatalog.defaultModel(for: kind)), key)
                 try? app.services.keychain.setAPIKey(key, for: kind)
                 tests[kind] = .ok(latencyMs: h.latencyMilliseconds, detail: h.detail)
             } catch {
@@ -205,7 +206,7 @@ struct OnboardingView: View {
     private func finish() {
         stopMeter()
         app.completeOnboarding()
-        openWindow(id: "main")
+        showMainWindow { openWindow(id: "main") }
         dismissWindow(id: "onboarding")
     }
 }

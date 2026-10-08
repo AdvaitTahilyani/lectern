@@ -69,13 +69,14 @@ final class LecternAppDelegate: NSObject, NSApplicationDelegate {
 
     private var terminationReplied = false
 
-    /// Quitting waits (up to 5 s) for open lectures to be written, so the last seconds of a
-    /// recording survive.
+    /// Quitting stops the recording, waits for the recognizer's last words and writes open
+    /// lectures, so the last seconds of a recording survive. A hung disk write can delay quitting
+    /// by at most 10 s.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let app = AppModelActivation.shared, !app.openSessions.isEmpty else { return .terminateNow }
         terminationReplied = false
-        Task { await app.flushSessions(); replyToTermination() }
-        Task { try? await Task.sleep(for: .seconds(5)); replyToTermination() }
+        Task { await app.prepareForQuit(); replyToTermination() }
+        Task { try? await Task.sleep(for: .seconds(10)); replyToTermination() }
         return .terminateLater
     }
 
@@ -114,12 +115,12 @@ private struct MenuBarContent: View {
             Divider()
             Button(live.recordingState == .paused ? "Resume" : "Pause") { live.togglePause() }.keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Finish Lecture…") {
-                NSApp.activate()
-                live.showStopConfirmation = true
+                showMainWindow { openWindow(id: "main") }
+                app.confirmFinish(live)
             }.keyboardShortcut(".", modifiers: .command)
             Divider()
             Button(live.isFocusPanelOpen ? "Hide Focus Panel" : "Show Focus Panel") { app.toggleFocusPanel() }.keyboardShortcut("f", modifiers: [.command, .shift])
-            Button("Open Lectern") { NSApp.activate(); openWindow(id: "main") }
+            Button("Open Lectern") { showMainWindow { openWindow(id: "main") } }
             Divider()
             Button("Settings…") { openSettings() }.keyboardShortcut(",", modifiers: .command)
         }
@@ -148,17 +149,21 @@ struct LecternCommands: Commands {
             let live = app.liveSession
             Button(live?.recordingState == .paused ? "Resume" : "Pause") { live?.togglePause() }
                 .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(live == nil)
-            Button("Stop…") { live?.showStopConfirmation = true }.keyboardShortcut(".", modifiers: .command).disabled(live == nil)
+            Button("Stop…") { if let live { app.confirmFinish(live) } }.keyboardShortcut(".", modifiers: .command).disabled(live == nil)
             Divider()
             Button("Ask") { currentSession?.focusAsk() }.keyboardShortcut("k", modifiers: .command).disabled(currentSession == nil)
-            Button("Ask (Alternate)") { currentSession?.focusAsk() }.keyboardShortcut("l", modifiers: .command).disabled(currentSession == nil)
-            Button("Catch Me Up (Last 5 Min)") { live?.ask("Catch me up (last 5 min)") }.keyboardShortcut("k", modifiers: [.command, .shift]).disabled(live == nil)
+            Button("Catch Me Up (Last 5 Min)") {
+                // `ask` alone leaves the answer in a closed inspector (or a pane that isn't showing).
+                currentSession?.focusAsk()
+                currentSession?.ask("Catch me up (last 5 min)")
+            }.keyboardShortcut("k", modifiers: [.command, .shift]).disabled(currentSession?.isLive != true)
             Button("Ask This Course…") { app.toggleCourseAsk() }.keyboardShortcut("k", modifiers: [.command, .option])
             Divider()
             Button("Toggle Focus Panel") { app.toggleFocusPanel() }.keyboardShortcut("f", modifiers: [.command, .shift]).disabled(live == nil)
-            Button("Toggle Inspector") { currentSession?.toggleInspector() }.keyboardShortcut("i", modifiers: [.command, .option]).disabled(currentSession == nil)
+            Button("Toggle Inspector") { currentSession?.toggleInspector() }.keyboardShortcut("i", modifiers: [.command, .option]).disabled(currentSession == nil || currentSession?.layoutTier == .single)
             Button("Toggle Slides") { currentSession?.showSlides.toggle() }.keyboardShortcut("s", modifiers: [.command, .option]).disabled(currentSession == nil)
             Button("Resume Slide Following") { currentSession?.resumeFollowing() }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(currentSession == nil)
+            Button("Add Slide Deck…") { currentSession?.chooseDecks() }.keyboardShortcut("d", modifiers: [.command, .shift]).disabled(currentSession == nil)
             Divider()
             Button("Takeaways") { currentSession?.selectPane(.takeaways) }.keyboardShortcut("1", modifiers: .command).disabled(currentSession == nil)
             Button("Transcript") { currentSession?.selectPane(.transcript) }.keyboardShortcut("2", modifiers: .command).disabled(currentSession == nil)
@@ -180,8 +185,29 @@ struct LecternCommands: Commands {
     }
 
     private var currentSession: LiveSessionModel? {
-        if case .session(let id) = app.path.last { return app.session(for: id) }
-        return nil
+        app.activeNavigation.visibleSessionID.flatMap { app.session(for: $0) }
+    }
+}
+
+extension AppModel {
+    /// Brings the live lecture on screen and asks whether to finish it: the confirmation is a
+    /// popover on that lecture's toolbar, so it shows nothing while another screen is up.
+    func confirmFinish(_ live: LiveSessionModel) {
+        if activeNavigation.visibleSessionID != live.id { openSession(live.id) }
+        live.showStopConfirmation = true
+    }
+}
+
+/// Brings the main window forward, opening one only when none is on screen (`openWindow` always
+/// creates a new window, so calling it with one already open piles up duplicates).
+@MainActor
+func showMainWindow(openIfNeeded open: () -> Void) {
+    NSApp.activate()
+    if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && ($0.isVisible || $0.isMiniaturized) }) {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+    } else {
+        open()
     }
 }
 

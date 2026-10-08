@@ -3,7 +3,7 @@ import LecternCore
 
 /// One match from a library-wide search.
 public struct SearchHit: Sendable, Hashable, Identifiable {
-    public enum Kind: String, Sendable, Hashable {
+    public enum Kind: String, Sendable, Hashable, CaseIterable {
         case title
         case takeaway
         /// The presenter notes of a slide.
@@ -39,37 +39,77 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
 /// segment, or two adjacent transcript segments for phrases that straddle a caption break).
 /// Results are ordered title, takeaway, slide-notes, then transcript hits; within a kind, by
 /// the order of `sessions` (pass them newest first) and then by time.
+///
+/// `kinds` restricts the search to some kinds of field (the Library's scope picker): the others are not
+/// searched at all, so the result limit is spent only on the chosen kinds. When several kinds match, the
+/// limit is shared between them (see `allocate`) so a flood of title hits cannot hide every transcript hit.
 public enum LibrarySearch {
     /// Longest snippet, in characters.
     private static let snippetLength = 140
     /// Transcript hits kept per session, so a common word cannot bury every other lecture.
     public static let transcriptHitsPerSession = 20
 
-    public static func search(_ query: String, in sessions: [LectureSession], limit: Int = 200) -> [SearchHit] {
+    public static func search(_ query: String, in sessions: [LectureSession], limit: Int = 200, kinds: Set<SearchHit.Kind> = Set(SearchHit.Kind.allCases)) -> [SearchHit] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !words.isEmpty, limit > 0 else { return [] }
+        guard !words.isEmpty, limit > 0, !kinds.isEmpty else { return [] }
 
         let asciiWords = words.map { word in word.utf8.allSatisfy { $0 < 0x80 } ? Array(word.lowercased().utf8) : nil }
         var titles: [SearchHit] = [], takeaways: [SearchHit] = [], notes: [SearchHit] = [], transcripts: [SearchHit] = []
         for session in sessions {
-            if let snippet = snippet(in: session.title, words: words) {
+            // A superseded search (the user kept typing) stops here; the caller discards the result.
+            if Task.isCancelled { return [] }
+            if kinds.contains(.title), titles.count < limit, let snippet = snippet(in: session.title, words: words) {
                 titles.append(SearchHit(sessionID: session.id, kind: .title, snippet: snippet))
             }
-            for takeaway in session.takeaways.sorted(by: { $0.start < $1.start }) {
-                let fields = searchableFields(of: takeaway)
-                if let snippet = fields.lazy.compactMap({ snippet(in: $0, words: words) }).first {
-                    takeaways.append(SearchHit(sessionID: session.id, kind: .takeaway, snippet: snippet, time: takeaway.start))
+            if kinds.contains(.takeaway), takeaways.count < limit {
+                for takeaway in session.takeaways.sorted(by: { $0.start < $1.start }) {
+                    let fields = searchableFields(of: takeaway)
+                    if let snippet = fields.lazy.compactMap({ snippet(in: $0, words: words) }).first {
+                        takeaways.append(SearchHit(sessionID: session.id, kind: .takeaway, snippet: snippet, time: takeaway.start))
+                    }
                 }
             }
-            for page in session.deck?.pages ?? [] {
-                if let text = page.notes, let snippet = snippet(in: text, words: words) {
-                    notes.append(SearchHit(sessionID: session.id, kind: .slideNotes, snippet: snippet, slide: page.number))
+            if kinds.contains(.slideNotes), notes.count < limit {
+                for page in session.deck?.pages ?? [] {
+                    if let text = page.notes, let snippet = snippet(in: text, words: words) {
+                        notes.append(SearchHit(sessionID: session.id, kind: .slideNotes, snippet: snippet, slide: page.number))
+                    }
                 }
             }
-            // Transcript hits come last, so hits beyond `limit` could never be shown.
-            if transcripts.count < limit { transcripts += transcriptHits(in: session, words: words, asciiWords: asciiWords) }
+            // No kind can contribute more than `limit` hits, so scanning stops once it has that many.
+            if kinds.contains(.transcript), transcripts.count < limit { transcripts += transcriptHits(in: session, words: words, asciiWords: asciiWords) }
         }
-        return Array((titles + takeaways + notes + transcripts).prefix(limit))
+        let groups = [titles, takeaways, notes, transcripts]
+        let shares = allocate(groups.map(\.count), limit: limit)
+        return zip(groups, shares).flatMap { $0.prefix($1) }
+    }
+
+    /// Splits `limit` between result groups: an equal share each, where a group with fewer hits than its share
+    /// returns the surplus to the groups that have more (the remainder goes to the earlier groups).
+    static func allocate(_ counts: [Int], limit: Int) -> [Int] {
+        var shares = [Int](repeating: 0, count: counts.count)
+        var open = counts.indices.filter { counts[$0] > 0 }
+        var remaining = limit
+        while !open.isEmpty, remaining > 0 {
+            let equal = remaining / open.count
+            let fits = open.filter { counts[$0] - shares[$0] <= equal }
+            if fits.isEmpty {
+                // Everyone wants more than an equal share: hand it out, the remainder to the earlier groups.
+                var extra = remaining - equal * open.count
+                for index in open {
+                    shares[index] += equal + (extra > 0 ? 1 : 0)
+                    extra -= extra > 0 ? 1 : 0
+                }
+                remaining = 0
+            } else {
+                for index in fits {
+                    remaining -= counts[index] - shares[index]
+                    shares[index] = counts[index]
+                }
+                open.removeAll { fits.contains($0) }
+            }
+        }
+        return shares
     }
 
     // MARK: Fields

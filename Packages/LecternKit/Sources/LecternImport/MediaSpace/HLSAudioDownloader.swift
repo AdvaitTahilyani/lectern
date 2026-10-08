@@ -63,7 +63,7 @@ struct HLSAudioDownloader: Sendable {
         var attempt = 0
         while true {
             do {
-                return try MPEGTSAudioDemuxer.extractAudio(from: try await fetcher.data(from: segment.url))
+                return try MPEGTSAudioDemuxer.extractAudio(from: try await fetcher.data(from: segment.url, byteRange: segment.byteRange))
             } catch where attempt < retries && Self.isTransient(error) {
                 attempt += 1
                 try await Task.sleep(for: .milliseconds(400 * attempt))

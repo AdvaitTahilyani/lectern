@@ -30,6 +30,12 @@ extension LectureBrain {
         }
         // Whatever still couldn't be summarized belongs to the last card rather than to no card.
         if summarizedCount < segments.count, let last = segments.last {
+            // Said once, so the lecture isn't presented as fully summarized.
+            let from = segments[summarizedCount].start
+            let range = "\(TimeFormat.clock(from))–\(TimeFormat.clock(last.end))"
+            emit(.error(timeline.live == nil
+                ? "Takeaways: \(range) couldn't be summarized and has no card."
+                : "Takeaways: \(range) couldn't be summarized; the last card covers it without describing it."))
             timeline.extendLive(to: last.end)
             summarizedCount = segments.count
         }
@@ -47,8 +53,19 @@ extension LectureBrain {
         guard !isFinishing, summarizedCount < segments.count, !summaryBackoff.isBlocked(at: sessionTime) else { return false }
         let pending = segments[summarizedCount...]
         if TranscriptText.wordCount(pending) >= tuning.wordsPerUpdate { return true }
-        let interval = timeline.takeaways.isEmpty ? min(summaryInterval, tuning.firstUpdateSeconds) : summaryInterval
-        return sessionTime - pending.first!.start >= interval
+        return sessionTime - pending.first!.start >= updateInterval
+    }
+
+    /// Transcript seconds until the next rolling update is due by the interval (the word threshold
+    /// can bring it forward); a full interval when nothing is waiting.
+    func secondsUntilNextSummary() -> TimeInterval {
+        guard summarizedCount < segments.count else { return updateInterval }
+        return updateInterval - (sessionTime - segments[summarizedCount].start)
+    }
+
+    /// Seconds of new transcript per rolling update (shorter until the first card exists).
+    var updateInterval: TimeInterval {
+        timeline.takeaways.isEmpty ? min(summaryInterval, tuning.firstUpdateSeconds) : summaryInterval
     }
 
     func scheduleSummaryIfNeeded() {
@@ -72,7 +89,7 @@ extension LectureBrain {
             let newEnd = chunkEnd()
             let newRange = summarizedCount..<newEnd
             let live = timeline.live
-            let windowStart = windowStart(for: newRange, hasLive: live != nil)
+            let windowStart = windowStart(for: newRange)
             var chunk = TopicTimeline.Chunk(segments: segments, window: windowStart..<newEnd, new: newRange)
             let isLastChunk = final && newEnd == segments.count
             let newStart = newRange.isEmpty ? (live?.end ?? 0) : segments[newRange.lowerBound].start
@@ -113,7 +130,17 @@ extension LectureBrain {
                                                       fallback: chunk.relevantPages).filter { isPresented($0, at: newLast) }
 
                 let previousLive = timeline.live
-                switch timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages) {
+                let outcome = timeline.apply(reply, chunk: chunk, validPages: excerpts.validPages)
+                // The live card is shown as soon as it is known; coverage work below (recap,
+                // announcements and Q&A cards) may need further model calls.
+                var shown: [Takeaway]?
+                switch outcome {
+                case .refined, .split:
+                    shown = timeline.takeaways
+                    emit(.takeaways(timeline.takeaways))
+                case .ignored, .opened: break
+                }
+                switch outcome {
                 // Nothing opened yet: keep the skipped lines in the window so the first card can
                 // still claim them. A lecture often opens with something that reads like admin
                 // ("let me correct last week's slides…") but carries real content; if the model
@@ -138,7 +165,7 @@ extension LectureBrain {
                 await trackAdminRun(kind: reply.newLinesKind, newRange: newRange)
                 summarizedCount = max(summarizedCount, newEnd)
                 summaryBackoff.succeeded()
-                emit(.takeaways(timeline.takeaways))
+                if shown != timeline.takeaways { emit(.takeaways(timeline.takeaways)) }
                 return true
             } catch where error.isCancellation {
                 return false
@@ -198,7 +225,7 @@ extension LectureBrain {
     private func chunkEnd() -> Int {
         guard summarizedCount < segments.count else { return summarizedCount }
         let first = segments[summarizedCount]
-        let interval = timeline.takeaways.isEmpty ? min(summaryInterval, tuning.firstUpdateSeconds) : summaryInterval
+        let interval = updateInterval
         var end = summarizedCount
         var tokens = 0
         var words = 0
@@ -216,7 +243,7 @@ extension LectureBrain {
     /// Start of the live topic's transcript window. When the window outgrows its budget the anchor
     /// jumps forward in one step, keeping about half the budget of older context, so the next
     /// several prompts again share an identical transcript prefix.
-    private func windowStart(for newRange: Range<Int>, hasLive: Bool) -> Int {
+    private func windowStart(for newRange: Range<Int>) -> Int {
         var start = min(topicWindowStart, newRange.lowerBound)
         let total = TranscriptText.tokens(segments[start..<newRange.upperBound])
         if total > TokenBudget.topicWindow {

@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct JSONExtractorTests {
     private func object(_ text: String) -> [String: Any]? {
-        guard let json = JSONExtractor.extractObject(from: text) else { return nil }
+        guard let json = JSONExtractor.extract(from: text)?.json else { return nil }
         return try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
     }
 
@@ -120,8 +120,8 @@ import Testing
     }
 
     @Test func nothingToExtract() {
-        #expect(JSONExtractor.extractObject(from: "I can't help with that.") == nil)
-        #expect(JSONExtractor.extractObject(from: "") == nil)
+        #expect(JSONExtractor.extract(from: "I can't help with that.") == nil)
+        #expect(JSONExtractor.extract(from: "") == nil)
         #expect(throws: JSONExtractionError.self) { try JSONExtractor.decode(GradeReply.self, from: "no json") }
     }
 
@@ -269,4 +269,20 @@ import Testing
         #expect(PlainMath.clean("FOLLOW(E) = { ), $ } and $ ∈ FOLLOW(S)") == "FOLLOW(E) = { ), $ } and $ ∈ FOLLOW(S)")
         #expect(PlainMath.clean("FOLLOW(E) = {), $} and FOLLOW(T) = {+, ), $}") == "FOLLOW(E) = {), $} and FOLLOW(T) = {+, ), $}")
     }
+
+    /// A number too large for `Int` in a reply must not crash the app (it used to trap in `Int(_:)`).
+    @Test func hugeNumbersDecodeWithoutTrapping() throws {
+        let reply = try JSONExtractor.decode(SegmentationReply.self, from: #"{"action":"continue","title":1e300,"summary":"s","slides":[100000000000000000000]}"#)
+        #expect(reply.title == String(1e300))
+        #expect(reply.slides.isEmpty || reply.slides.allSatisfy { $0 > 0 })
+        #expect(lenientNumberText(1e20) == "1e+20")
+        #expect(lenientNumberText(42) == "42")
+    }
+
+    @Test func everyReplySchemaIsPrecompiled() {
+        #expect(LectureBrain.jsonSchemas.contains(CardReply.schema))
+        #expect(LectureBrain.jsonSchemas.contains(OptionCheckReply.schema))
+        #expect(OptionCheckReply.shape.contains("[2]"))
+    }
+
 }

@@ -73,6 +73,8 @@ extension LectureBrain {
         let explanation = questionContexts[question.id]?.explanation ?? question.explanation
         switch question.kind {
         case let .multipleChoice(options, correctIndex):
+            // A publicly constructed question can carry a key outside its options; indexing it would trap.
+            guard options.indices.contains(correctIndex) else { throw BrainError.unusableReply("the saved answer key is outside the options") }
             guard let chosen = QuizPlanner.choiceIndex(answer, options: options) else { throw BrainError.invalidAnswer }
             let isCorrect = chosen == correctIndex
             let messages = Prompts.multipleChoiceFeedback(material, question: question, options: options, correct: correctIndex,
@@ -128,7 +130,8 @@ extension LectureBrain {
         }
         // Takeaways come first: a timed question never competes with a pending or overdue
         // rolling update for the model, and there are none once the lecturer has ended class.
-        guard summaryTask == nil, !shouldSummarize(), classEndedAt == nil else { return }
+        guard summaryTask == nil, !shouldSummarize(), classEndedAt == nil,
+              secondsUntilNextSummary() >= tuning.quizHeadroomSeconds else { return }
         guard sessionTime - lastQuizAt >= quizSettings.intervalMinutes * 60, sessionTime >= quizRetryAt,
               (segments.last?.end ?? 0) - quizMaterialMark >= tuning.quizNewMaterialSeconds,
               planner.chooseTakeaway(from: quizzableTakeaways) != nil else { return }

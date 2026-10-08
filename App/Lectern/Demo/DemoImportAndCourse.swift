@@ -1,5 +1,6 @@
 import Foundation
 import LecternCore
+import LecternImport
 import SwiftUI
 
 // MARK: - Recording import
@@ -47,16 +48,17 @@ nonisolated struct DemoRecordingImporter: RecordingImporting {
 }
 
 /// Provides the embedded MediaSpace browser. The real implementation (LecternImport's
-/// `MediaSpaceBrowserView(onFound:)`) is wired by the lead; this keeps views independent of it.
+/// `MediaSpaceBrowserView`) drives `state`, which the hosting sheet reads for its navigation
+/// buttons; the demo stand-in leaves it untouched.
 @MainActor
 protocol MediaSpaceBrowserProviding: Sendable {
-    func makeBrowser(onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView
+    func makeBrowser(state: MediaSpaceBrowserState, onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView
 }
 
 /// Stand-in for the embedded browser: a mock MediaSpace page with a "lecture found" button.
 nonisolated struct DemoMediaSpaceBrowser: MediaSpaceBrowserProviding {
     @MainActor
-    func makeBrowser(onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView {
+    func makeBrowser(state: MediaSpaceBrowserState, onFound: @escaping (MediaSpaceSource) -> Void) -> AnyView {
         AnyView(DemoMediaSpacePage(onFound: onFound))
     }
 }
@@ -129,11 +131,9 @@ nonisolated struct DemoPresentationConverter: PresentationConverting {
 
 nonisolated enum PresentationConversionError: LocalizedError {
     case automationDenied
-    case keynoteMissing
     var errorDescription: String? {
         switch self {
         case .automationDenied: "Lectern needs permission to control Keynote. Allow it in System Settings › Privacy & Security › Automation, then try again."
-        case .keynoteMissing: "Keynote isn't installed, so this file can't be converted. Export it to PDF and drop that instead."
         }
     }
 }
@@ -150,7 +150,7 @@ nonisolated struct DemoCourseAssistant: CourseAssisting {
         let (stream, continuation) = AsyncThrowingStream<CourseAskEvent, Error>.makeStream()
         let text = answerText(for: question)
         let sessions = Dictionary(uniqueKeysWithValues: lectures.map { ($0.ordinal, $0.session.id) })
-        Task {
+        let task = Task {
             do {
                 try await Task.sleep(for: .seconds(0.9 / max(0.1, speed)))
                 var emitted = ""
@@ -172,6 +172,7 @@ nonisolated struct DemoCourseAssistant: CourseAssisting {
                 continuation.finish(throwing: LLMError.cancelled)
             }
         }
+        continuation.onTermination = { _ in task.cancel() }
         return stream
     }
 
