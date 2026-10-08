@@ -1,5 +1,6 @@
 import Foundation
 import LecternCore
+import Synchronization
 import MLX
 import MLXLLM
 import MLXLMCommon
@@ -20,6 +21,8 @@ public actor MLXModelHost {
     public nonisolated let modelManager: ModelManager
 
     private let scheduler = GenerationScheduler()
+    /// Set by `shutdown()`; read by running generations at every prefill step and token.
+    private nonisolated let stopping = StopFlag()
     /// Resident engines, least recently used first.
     private var engines: [(id: String, engine: MLXInferenceEngine)] = []
     /// Resident models whose warm-up has run.
@@ -70,6 +73,15 @@ public actor MLXModelHost {
         warmed.contains(id) && engines.contains { $0.id == id }
     }
 
+    /// Stops all generation and unloads every model, for app termination. New requests fail, the
+    /// running one stops at its next prefill step or token, and this returns once the GPU is
+    /// free: exiting while MLX still has work in flight crashes in its teardown.
+    public func shutdown() async {
+        stopping.set()
+        try? await withGPU(priority: .max) {}
+        unload()
+    }
+
     /// Unloads `id`, or every model when nil. A generation in progress finishes first.
     public func unload(_ id: String? = nil) {
         unloads += 1
@@ -99,18 +111,21 @@ public actor MLXModelHost {
         // A loaded model's files were validated when it loaded (removing a model unloads it
         // first), so only a model that still has to load is checked; the check reads every
         // weight file's header and must not run per request.
+        guard !stopping.isSet else { throw CancellationError() }
         guard isLoaded(id) || modelManager.isDownloaded(id) else { throw LLMError.modelNotDownloaded(id) }
         let queuedAt = ContinuousClock.now
         let canYield = preemptible && priority < GenerationScheduler.interactivePriority
         let scheduler = scheduler
+        let stopping = stopping
         var preemptions = 0
         while true {
             let yields = canYield && preemptions < Self.maxPreemptions
-            let shouldYield: @Sendable () -> Bool = { yields && scheduler.hasWaiter(above: priority) }
+            let shouldYield: @Sendable () -> Bool = { stopping.isSet || (yields && scheduler.hasWaiter(above: priority)) }
             do {
                 return try await generateOnce(model: id, request: request, priority: priority, queuedAt: queuedAt,
                                               shouldYield: shouldYield, onText: onText)
             } catch is GenerationPreempted {
+                if stopping.isSet { throw CancellationError() }
                 preemptions += 1
             }
         }
@@ -148,8 +163,9 @@ public actor MLXModelHost {
         try await scheduler.acquire(priority: priority)
         do {
             // The turn may have been handed over just as the caller cancelled; don't spend a
-            // model load or a prefill on it.
+            // model load or a prefill on it. After `shutdown()` only its own turn runs.
             try Task.checkCancellation()
+            if stopping.isSet, priority != .max { throw CancellationError() }
             let result = try await body()
             await scheduler.release()
             return result
@@ -207,4 +223,11 @@ public actor MLXModelHost {
             unload()
         }
     }
+}
+
+/// A one-way flag shared with running generations.
+private final class StopFlag: Sendable {
+    private let value = Mutex(false)
+    var isSet: Bool { value.withLock { $0 } }
+    func set() { value.withLock { $0 = true } }
 }

@@ -67,23 +67,36 @@ struct LecternApp: App {
 final class LecternAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    private var terminationReplied = false
+    /// 0: not asked to quit yet, 1: cleaning up, 2: cleaned up (the next request quits).
+    private var quitStage = 0
 
     /// Quitting stops the recording, waits for the recognizer's last words and writes open
-    /// lectures, so the last seconds of a recording survive. A hung disk write can delay quitting
-    /// by at most 10 s.
+    /// lectures, so the last seconds of a recording survive; then it stops on-device model work
+    /// (exiting while the GPU is busy crashes in MLX's teardown). The first request is cancelled
+    /// and the cleanup runs normally, then quits again: replying `.terminateLater` would park the
+    /// main thread in AppKit's modal wait, where main-actor work (the cleanup itself) can't run.
+    /// A hung disk write or generation delays quitting by at most 10 s.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let app = AppModelActivation.shared, !app.openSessions.isEmpty else { return .terminateNow }
-        terminationReplied = false
-        Task { await app.prepareForQuit(); replyToTermination() }
-        Task { try? await Task.sleep(for: .seconds(10)); replyToTermination() }
-        return .terminateLater
-    }
-
-    private func replyToTermination() {
-        guard !terminationReplied else { return }
-        terminationReplied = true
-        NSApp.reply(toApplicationShouldTerminate: true)
+        switch quitStage {
+        case 2: return .terminateNow
+        case 1: return .terminateCancel
+        default: break
+        }
+        quitStage = 1
+        Task {
+            let (done, signal) = AsyncStream.makeStream(of: Void.self)
+            Task {
+                if let app = AppModelActivation.shared, !app.openSessions.isEmpty { await app.prepareForQuit() }
+                if !DemoConfiguration.current.isEnabled { await OnDeviceStack.shutdownModels() }
+                signal.yield()
+            }
+            let limit = Task { try? await Task.sleep(for: .seconds(10)); signal.yield() }
+            for await _ in done { break }
+            limit.cancel()
+            quitStage = 2
+            NSApp.terminate(nil)
+        }
+        return .terminateCancel
     }
 }
 

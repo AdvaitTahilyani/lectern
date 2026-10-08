@@ -10,6 +10,12 @@ import LecternTranscription
 nonisolated final class OnDeviceStack: Sendable {
     static let shared = OnDeviceStack()
 
+    /// Stops on-device generation and unloads models before the app exits. Static so quitting
+    /// never creates the stack (and its model manager) just to shut it down.
+    static func shutdownModels() async {
+        await MLXModelHost.shared.shutdown()
+    }
+
     let modelManager: LiveModelManager
 
     private init() {

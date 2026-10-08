@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LecternCore
 import LecternMLX
@@ -19,13 +20,30 @@ nonisolated enum SelfTest {
             switch name {
             case "mlx": ok = await mlx()
             case "pipeline": ok = await PipelineSelfTest.run(arguments: CommandLine.arguments)
+            case "quit": await quitDuringGeneration(); return
             case "ask": ok = await AskSelfTest.run(arguments: CommandLine.arguments)
             default:
                 print("[selftest] unknown test \(name)")
                 ok = false
             }
+            await OnDeviceStack.shutdownModels()   // exiting with GPU work in flight crashes MLX
             exit(ok ? 0 : 1)
         }
+    }
+
+    /// Quits while an on-device generation is running, through the app's real termination path
+    /// (`-raw`: a bare `exit`, the pre-fix behavior). A clean exit leaves no crash report.
+    private static func quitDuringGeneration() async {
+        let provider = MLXProvider(model: AppSettings.defaultOnDeviceModel, role: .summaries)
+        try? await provider.warmUp()
+        let generation = Task {
+            _ = try? await provider.complete(LLMRequest(messages: [.user("Write a long essay about compilers.")], maxTokens: 4000))
+        }
+        try? await Task.sleep(for: .seconds(4))   // the essay is mid-decode by now
+        print("[selftest] quitting mid-generation")
+        if CommandLine.arguments.contains("-raw") { exit(0) }
+        await MainActor.run { NSApp.terminate(nil) }
+        _ = generation
     }
 
     private static func mlx() async -> Bool {
