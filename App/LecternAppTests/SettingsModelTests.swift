@@ -145,6 +145,9 @@ private func settle(until condition: @MainActor () -> Bool) async {
         model.localServerURL = "http://localhost:11434/v1"
         model.localServerModel = "m"
         model.test(.localServer)
+        // The checks run in their own tasks; start the second only once the first has reached the
+        // probe, so "slow" really is the earlier request.
+        await settle { probe.calls.count == 1 }
         model.test(.localServer)
         await settle { model.testState(.localServer) == .ok(latencyMs: 5, detail: "fresh") }
         try? await Task.sleep(for: .milliseconds(500))
